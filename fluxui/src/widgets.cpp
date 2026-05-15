@@ -5,6 +5,8 @@
 #include <chrono>
 #include <cctype>
 #include <thread>
+#include <future>
+#include <atomic>
 
 #include "fluxui/platform.h"
 
@@ -501,6 +503,18 @@ void Widget::layoutFlexChildren() {
     float contentEnd = cursor;
     int laidOut = 0;
 
+    // Parallel layout for large number of children
+    const bool parallelLayout = children.size() > 32;
+    std::vector<std::future<void>> futures;
+    if (parallelLayout) futures.reserve(children.size());
+
+    struct ChildLayoutTask {
+        Widget* widget;
+        Rect area;
+    };
+    std::vector<ChildLayoutTask> tasks;
+    if (parallelLayout) tasks.reserve(children.size());
+
     for (size_t i = 0; i < children.size(); i++) {
         auto& child = children[i];
         if (!child->visible) continue;
@@ -528,16 +542,20 @@ void Widget::layoutFlexChildren() {
 
             Rect childArea = {cursor + cs.margin.left, cy + cs.margin.top,
                               std::max(0.0f, childW), std::max(0.0f, childH)};
-            child->layout(childArea);
-
-            if (!cs.height.isSet() && cs.overflow != Overflow::Scroll &&
-                child->contentHeight > child->bounds.h) {
-                child->bounds.h = child->contentHeight;
+            
+            if (parallelLayout) {
+                tasks.push_back({child.get(), childArea});
+                cursor += childW + cs.margin.horizontal() + nextGap;
+            } else {
+                child->layout(childArea);
+                if (!cs.height.isSet() && cs.overflow != Overflow::Scroll &&
+                    child->contentHeight > child->bounds.h) {
+                    child->bounds.h = child->contentHeight;
+                }
+                cursor += child->bounds.w + cs.margin.horizontal() + nextGap;
+                maxCross = std::max(maxCross, child->bounds.h + cs.margin.vertical());
             }
-
-            cursor += child->bounds.w + cs.margin.horizontal() + nextGap;
-            contentEnd = std::max(contentEnd, child->bounds.x + child->bounds.w + cs.margin.right);
-            maxCross = std::max(maxCross, child->bounds.h + cs.margin.vertical());
+            contentEnd = std::max(contentEnd, cursor - nextGap); 
         } else {
             childW = cs.width.isSet() ? cs.width.resolve(contentW) : contentW;
             if (cs.flexGrow > 0 && totalFlexGrow > 0) {
@@ -555,12 +573,37 @@ void Widget::layoutFlexChildren() {
 
             Rect childArea = {cx + cs.margin.left, cursor + cs.margin.top,
                               std::max(0.0f, childW), std::max(0.0f, childH)};
-            child->layout(childArea);
 
-            float actualH = child->bounds.h + cs.margin.vertical();
-            cursor += actualH + nextGap;
+            if (parallelLayout) {
+                tasks.push_back({child.get(), childArea});
+                cursor += childH + cs.margin.vertical() + nextGap;
+            } else {
+                child->layout(childArea);
+                cursor += child->bounds.h + cs.margin.vertical() + nextGap;
+                maxCross = std::max(maxCross, child->bounds.w + cs.margin.horizontal());
+            }
             contentEnd = cursor;
-            maxCross = std::max(maxCross, child->bounds.w + cs.margin.horizontal());
+        }
+    }
+
+    if (parallelLayout) {
+        for (auto& task : tasks) {
+            futures.push_back(std::async(std::launch::async, [task]() {
+                task.widget->layout(task.area);
+                if (!task.widget->computedStyle.height.isSet() && 
+                    task.widget->computedStyle.overflow != Overflow::Scroll &&
+                    task.widget->contentHeight > task.widget->bounds.h) {
+                    task.widget->bounds.h = task.widget->contentHeight;
+                }
+            }));
+        }
+        for (auto& f : futures) f.get();
+
+        // Second pass to update maxCross
+        for (auto& child : children) {
+            if (!child->visible || isOutOfFlow(child.get())) continue;
+            maxCross = std::max(maxCross, (isRow ? child->bounds.h : child->bounds.w) + 
+                                          (isRow ? child->computedStyle.margin.vertical() : child->computedStyle.margin.horizontal()));
         }
     }
 
