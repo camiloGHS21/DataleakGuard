@@ -26,8 +26,8 @@ int main() {
     stbtt_fontinfo info;
     if (!stbtt_InitFont(&info, ttf.data(), 0)) { std::cerr << "Failed to init font" << std::endl; return 1; }
     
-    float fontSize = 32.0f; // Bake at standard 16px size
-    float dpiScale = 1.0f; // Scale 1.0
+    float fontSize = 16.0f; // Bake at standard 16px size
+    float dpiScale = 1.0f; 
     float scaledSize = fontSize * dpiScale;
     int atlasWidth = 1024;
     int atlasHeight = 1024;

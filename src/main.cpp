@@ -663,23 +663,29 @@ int main(int argc, char** argv) {
     }
 
     bool fontLoaded = false;
-    const char* fontPaths[] = {
-        "assets/fonts/Inter-Regular.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/System/Library/Fonts/SFPro.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "assets/fonts/Roboto-Regular.ttf",
-        nullptr
-    };
-    for (int i = 0; fontPaths[i]; i++) {
-        if (app.renderer().loadFont(fontPaths[i], 16.0f)) {
-            fontLoaded = true;
-            std::cout << "Loaded font: " << fontPaths[i] << std::endl;
-            break;
+    // Prioritize pre-baked font for instant-on and zero I/O
+    if (app.renderer().loadFontFromMemory(nullptr, 0, 16.0f, "default")) {
+        fontLoaded = true;
+        std::cout << "Using optimized pre-baked font atlas" << std::endl;
+    } else {
+        const char* fontPaths[] = {
+            "assets/fonts/Inter-Regular.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/System/Library/Fonts/SFPro.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "assets/fonts/Roboto-Regular.ttf",
+            nullptr
+        };
+        for (int i = 0; fontPaths[i]; i++) {
+            if (app.renderer().loadFont(fontPaths[i], 16.0f)) {
+                fontLoaded = true;
+                std::cout << "Loaded font: " << fontPaths[i] << std::endl;
+                break;
+            }
         }
     }
     if (!fontLoaded) {

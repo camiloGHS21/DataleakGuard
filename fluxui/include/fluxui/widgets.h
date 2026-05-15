@@ -161,6 +161,7 @@ public:
 
 protected:
     void layoutFlexChildren();
+    void layoutPositionedChildren();
     void renderBackground(Renderer& renderer);
     void renderChildren(Renderer& renderer);
     float maxScrollY() const;

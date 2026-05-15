@@ -3303,20 +3303,15 @@ void Renderer::endFrame() {
 
 #include "font_atlas.h"
 
-bool Renderer::loadFont(const std::string& path, float size, const std::string& name) {
-    // Ignore the path completely to remove disk latency.
-    return loadFontFromMemory(nullptr, 0, size, name);
-}
-
-bool Renderer::loadFontFromMemory(const unsigned char* data, int dataSize, float size, const std::string& name) {
-    FontData font;
-    font.fontSize = font_size; // The baked font size
+static bool loadBakedFontAtlas(FontData& font, RenderBackendType backend) {
+    font.fontSize = font_size;
     font.atlasWidth = font_atlas_width;
     font.atlasHeight = font_atlas_height;
     font.ascent = font_ascent;
     font.descent = font_descent;
     font.lineGap = font_lineGap;
-    
+    font.sourceData.clear();
+
     for (int i = 0; i < 1024; ++i) {
         font.glyphs[i].x0 = font_glyphs[i].x0;
         font.glyphs[i].y0 = font_glyphs[i].y0;
@@ -3328,11 +3323,10 @@ bool Renderer::loadFontFromMemory(const unsigned char* data, int dataSize, float
         font.glyphs[i].width = font_glyphs[i].width;
         font.glyphs[i].height = font_glyphs[i].height;
     }
-    
-    if (activeBackend_ == RenderBackendType::Vulkan) {
+
+    if (backend == RenderBackendType::Vulkan) {
         font.atlasPixels.assign(font_atlas_pixels, font_atlas_pixels + sizeof(font_atlas_pixels));
         font.textureId = 0;
-        font.loaded = true;
     } else {
         glGenTextures(1, &font.textureId);
         glBindTexture(GL_TEXTURE_2D, font.textureId);
@@ -3343,27 +3337,171 @@ bool Renderer::loadFontFromMemory(const unsigned char* data, int dataSize, float
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        font.loaded = true;
     }
-    
-    fonts_[name] = font;
+
+    font.loaded = true;
+    return true;
+}
+
+bool Renderer::loadFont(const std::string& path, float size, const std::string& name) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return false;
+
+    std::streamsize fileSize = file.tellg();
+    if (fileSize <= 0) return false;
+
+    file.seekg(0, std::ios::beg);
+    std::vector<unsigned char> data((size_t)fileSize);
+    if (!file.read(reinterpret_cast<char*>(data.data()), fileSize)) return false;
+
+    return loadFontFromMemory(data.data(), (int)data.size(), size, name);
+}
+
+bool Renderer::loadFontFromMemory(const unsigned char* data, int dataSize, float size, const std::string& name) {
+    FontData font;
+    if (data && dataSize > 0) {
+        font.sourceData.assign(data, data + dataSize);
+        if (!buildFontAtlas(font, data, dataSize, size)) {
+            return false;
+        }
+    } else if (!loadBakedFontAtlas(font, activeBackend_)) {
+        return false;
+    }
+
+    fonts_[name] = std::move(font);
     textMeasureCache_.clear();
     if (!currentFont_) currentFont_ = &fonts_[name];
-    
+
     return true;
 }
 
 bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size) {
+    if (!data || dataSize <= 0) return false;
+
+    stbtt_fontinfo info;
+    if (!stbtt_InitFont(&info, data, stbtt_GetFontOffsetForIndex(data, 0))) {
+        return false;
+    }
+
+    float bakedSize = std::max(8.0f, size);
+    float pixelSize = bakedSize * std::max(1.0f, dpiScale_);
+    int atlasSize = pixelSize > 48.0f ? 4096 : (pixelSize > 28.0f ? 2048 : 1024);
+    std::vector<unsigned char> atlas((size_t)atlasSize * (size_t)atlasSize, 0);
+    std::vector<stbtt_packedchar> packed(1024);
+
+    stbtt_pack_context pc;
+    if (!stbtt_PackBegin(&pc, atlas.data(), atlasSize, atlasSize, 0, 1, nullptr)) {
+        return false;
+    }
+    int oversample = pixelSize <= 20.0f ? 3 : 2;
+    stbtt_PackSetOversampling(&pc, oversample, oversample);
+    bool packedOk = stbtt_PackFontRange(&pc, data, 0, pixelSize, 32, 1024 - 32, packed.data() + 32) != 0;
+    stbtt_PackEnd(&pc);
+
+    if (!packedOk && atlasSize < 4096) {
+        atlasSize = atlasSize < 2048 ? 2048 : 4096;
+        atlas.assign((size_t)atlasSize * (size_t)atlasSize, 0);
+        if (!stbtt_PackBegin(&pc, atlas.data(), atlasSize, atlasSize, 0, 1, nullptr)) {
+            return false;
+        }
+        stbtt_PackSetOversampling(&pc, oversample, oversample);
+        packedOk = stbtt_PackFontRange(&pc, data, 0, pixelSize, 32, 1024 - 32, packed.data() + 32) != 0;
+        stbtt_PackEnd(&pc);
+    }
+    if (!packedOk) return false;
+
+    int ascent = 0;
+    int descent = 0;
+    int lineGap = 0;
+    stbtt_GetFontVMetrics(&info, &ascent, &descent, &lineGap);
+    float scale = stbtt_ScaleForPixelHeight(&info, pixelSize);
+
+    font.fontSize = pixelSize;
+    font.atlasWidth = atlasSize;
+    font.atlasHeight = atlasSize;
+    font.ascent = ascent * scale;
+    font.descent = descent * scale;
+    font.lineGap = lineGap * scale;
+
+    for (int i = 0; i < 1024; ++i) {
+        font.glyphs[i] = {};
+    }
+
+    for (int i = 32; i < 1024; ++i) {
+        const auto& ch = packed[i];
+        font.glyphs[i].x0 = ch.x0 / (float)atlasSize;
+        font.glyphs[i].y0 = ch.y0 / (float)atlasSize;
+        font.glyphs[i].x1 = ch.x1 / (float)atlasSize;
+        font.glyphs[i].y1 = ch.y1 / (float)atlasSize;
+        font.glyphs[i].xoff = ch.xoff;
+        font.glyphs[i].yoff = ch.yoff;
+        font.glyphs[i].xadvance = ch.xadvance;
+        
+        // Fix: width and height should be logical size, not atlas pixel size.
+        // stbtt_packedchar coordinates (x0, y0, x1, y1) are in atlas pixels.
+        // When oversampling is used, these are multiplied by the oversample factor.
+        // We need to divide by the oversample factor to get the logical size in points/pixels.
+        font.glyphs[i].width = (float)(ch.x1 - ch.x0) / (float)oversample;
+        font.glyphs[i].height = (float)(ch.y1 - ch.y0) / (float)oversample;
+    }
+
+    if (activeBackend_ == RenderBackendType::Vulkan) {
+        font.atlasPixels = std::move(atlas);
+        font.textureId = 0;
+    } else {
+        if (font.textureId) glDeleteTextures(1, &font.textureId);
+        glGenTextures(1, &font.textureId);
+        glBindTexture(GL_TEXTURE_2D, font.textureId);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, font.atlasWidth, font.atlasHeight,
+                     0, GL_RED, GL_UNSIGNED_BYTE, atlas.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        font.atlasPixels.clear();
+    }
+
+    font.loaded = true;
     return true;
 }
 
 FontData* Renderer::getFontForSize(const std::string& fontName, float fontSize) {
     auto baseIt = fonts_.find(fontName);
-    if (baseIt != fonts_.end() && baseIt->second.loaded) return &baseIt->second;
-    return nullptr;
+    if (baseIt == fonts_.end() || !baseIt->second.loaded) return nullptr;
+
+    int snappedSize = std::max(8, (int)std::round(fontSize * std::max(1.0f, dpiScale_)));
+    int baseSize = std::max(8, (int)std::round(baseIt->second.fontSize));
+    if (snappedSize == baseSize || baseIt->second.sourceData.empty()) {
+        return &baseIt->second;
+    }
+
+    std::string sizedName = fontName + "@" + std::to_string(snappedSize);
+    auto sizedIt = fonts_.find(sizedName);
+    if (sizedIt != fonts_.end() && sizedIt->second.loaded) {
+        return &sizedIt->second;
+    }
+
+    FontData sizedFont;
+    const auto& source = baseIt->second.sourceData;
+    if (!buildFontAtlas(sizedFont, source.data(), (int)source.size(),
+                        snappedSize / std::max(1.0f, dpiScale_))) {
+        return &baseIt->second;
+    }
+
+    sizedFont.sourceData.clear();
+    auto [it, inserted] = fonts_.emplace(std::move(sizedName), std::move(sizedFont));
+    (void)inserted;
+    textMeasureCache_.clear();
+    return &it->second;
 }
 
 const FontData* Renderer::findFontForMeasure(const std::string& fontName, float fontSize) const {
+    int snappedSize = std::max(8, (int)std::round(fontSize * std::max(1.0f, dpiScale_)));
+    std::string sizedName = fontName + "@" + std::to_string(snappedSize);
+    auto sizedIt = fonts_.find(sizedName);
+    if (sizedIt != fonts_.end() && sizedIt->second.loaded) return &sizedIt->second;
+
     auto baseIt = fonts_.find(fontName);
     if (baseIt != fonts_.end() && baseIt->second.loaded) return &baseIt->second;
     return nullptr;

@@ -229,6 +229,7 @@ struct Style {
     AlignItems alignItems = AlignItems::Stretch;
     float flexGrow = 0;
     float flexShrink = 1;
+    CSSValue flexBasis;
     float gap = 0;
     Overflow overflow = Overflow::Visible;
 

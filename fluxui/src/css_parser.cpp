@@ -2,6 +2,7 @@
 #include "fluxui/css_parser.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <utility>
 
@@ -41,6 +42,101 @@ static bool hasClassName(const std::string& className, const std::string& wanted
         if (cls == wanted) return true;
     }
     return false;
+}
+
+static std::string trimLocal(const std::string& s) {
+    size_t start = s.find_first_not_of(" \t\n\r");
+    size_t end = s.find_last_not_of(" \t\n\r");
+    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+}
+
+static std::string lowerAscii(std::string s) {
+    for (char& c : s) {
+        c = (char)std::tolower((unsigned char)c);
+    }
+    return s;
+}
+
+static std::string functionInner(const std::string& value) {
+    auto start = value.find('(');
+    auto end = value.rfind(')');
+    if (start == std::string::npos || end == std::string::npos || end <= start) return "";
+    return value.substr(start + 1, end - start - 1);
+}
+
+static std::vector<std::string> splitColorTokens(const std::string& inner) {
+    std::vector<std::string> tokens;
+    std::string current;
+    int depth = 0;
+    for (char c : inner) {
+        if (c == '(') depth++;
+        if (c == ')' && depth > 0) depth--;
+        bool separator = depth == 0 && (c == ',' || c == '/' || std::isspace((unsigned char)c));
+        if (separator) {
+            if (!current.empty()) {
+                tokens.push_back(trimLocal(current));
+                current.clear();
+            }
+        } else {
+            current += c;
+        }
+    }
+    if (!current.empty()) tokens.push_back(trimLocal(current));
+    return tokens;
+}
+
+static float parseNumberToken(std::string token, bool* isPercent = nullptr) {
+    token = trimLocal(lowerAscii(token));
+    bool percent = false;
+    if (!token.empty() && token.back() == '%') {
+        percent = true;
+        token.pop_back();
+    }
+    for (const auto& suffix : {"px", "rem", "em", "deg", "turn", "rad", "ms", "s"}) {
+        auto pos = token.find(suffix);
+        if (pos != std::string::npos) {
+            token = token.substr(0, pos);
+            break;
+        }
+    }
+    if (isPercent) *isPercent = percent;
+    try {
+        return std::stof(token);
+    } catch (...) {
+        return 0.0f;
+    }
+}
+
+static float parseRgbChannel(const std::string& token) {
+    bool percent = false;
+    float value = parseNumberToken(token, &percent);
+    if (percent) return std::clamp(value / 100.0f, 0.0f, 1.0f);
+    if (value > 1.0f) value /= 255.0f;
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+static float parseAlphaChannel(const std::string& token) {
+    bool percent = false;
+    float value = parseNumberToken(token, &percent);
+    if (percent) value /= 100.0f;
+    return std::clamp(value, 0.0f, 1.0f);
+}
+
+static float parseHue(const std::string& token) {
+    std::string v = trimLocal(lowerAscii(token));
+    float hue = parseNumberToken(v);
+    if (v.find("turn") != std::string::npos) hue *= 360.0f;
+    else if (v.find("rad") != std::string::npos) hue = hue * 180.0f / 3.1415926535f;
+    hue = std::fmod(hue, 360.0f);
+    if (hue < 0.0f) hue += 360.0f;
+    return hue;
+}
+
+static float parseHslPercent(const std::string& token) {
+    bool percent = false;
+    float value = parseNumberToken(token, &percent);
+    if (percent || value > 1.0f) value /= 100.0f;
+    return std::clamp(value, 0.0f, 1.0f);
 }
 
 std::string StyleSheet::cacheKey(const std::string& className,
@@ -293,9 +389,15 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         } else {
             style.backgroundColor = parseColor(value);
         }
+    } else if (name == "background-image") {
+        if (value.find("linear-gradient") != std::string::npos) {
+            style.backgroundGradient = parseGradient(value);
+        }
     } else if (name == "border-radius") {
         style.borderRadius = parseBorderRadius(value);
-    } else if (name == "border") {
+    } else if (name == "border" || name == "border-top" ||
+               name == "border-right" || name == "border-bottom" ||
+               name == "border-left") {
         style.border = parseBorder(value);
     } else if (name == "border-color") {
         style.border.color = parseColor(value);
@@ -329,6 +431,12 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.margin.bottom = parseFloat(value);
     } else if (name == "margin-left") {
         style.margin.left = parseFloat(value);
+    } else if (name == "inset") {
+        EdgeInsets inset = parseEdgeInsets(value);
+        style.top = CSSValue::px(inset.top);
+        style.right = CSSValue::px(inset.right);
+        style.bottom = CSSValue::px(inset.bottom);
+        style.left = CSSValue::px(inset.left);
     } else if (name == "width") {
         style.width = parseCSSValue(value);
     } else if (name == "height") {
@@ -376,13 +484,40 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         else if (value == "center") style.alignItems = AlignItems::Center;
         else if (value == "flex-start") style.alignItems = AlignItems::FlexStart;
         else style.alignItems = AlignItems::Stretch;
-    } else if (name == "gap") {
+    } else if (name == "place-items") {
+        if (value == "center") {
+            style.alignItems = AlignItems::Center;
+            style.justifyContent = JustifyContent::Center;
+        }
+    } else if (name == "gap" || name == "row-gap" || name == "column-gap") {
         style.gap = parseFloat(value);
+    } else if (name == "flex") {
+        std::string v = trim(value);
+        if (v == "none") {
+            style.flexGrow = 0.0f;
+            style.flexShrink = 0.0f;
+            style.flexBasis = CSSValue::autoVal();
+        } else if (v == "auto") {
+            style.flexGrow = 1.0f;
+            style.flexShrink = 1.0f;
+            style.flexBasis = CSSValue::autoVal();
+        } else {
+            std::istringstream ss(v);
+            std::vector<std::string> tokens;
+            std::string token;
+            while (ss >> token) tokens.push_back(token);
+            if (!tokens.empty()) style.flexGrow = parseFloat(tokens[0]);
+            style.flexShrink = tokens.size() > 1 ? parseFloat(tokens[1]) : 1.0f;
+            if (tokens.size() > 2) style.flexBasis = parseCSSValue(tokens[2]);
+            else if (tokens.size() == 1) style.flexBasis = CSSValue::pct(0.0f);
+        }
     } else if (name == "flex-grow") {
         style.flexGrow = parseFloat(value);
     } else if (name == "flex-shrink") {
         style.flexShrink = parseFloat(value);
-    } else if (name == "overflow") {
+    } else if (name == "flex-basis") {
+        style.flexBasis = parseCSSValue(value);
+    } else if (name == "overflow" || name == "overflow-x" || name == "overflow-y") {
         if (value == "hidden") style.overflow = Overflow::Hidden;
         else if (value == "scroll") style.overflow = Overflow::Scroll;
         else style.overflow = Overflow::Visible;
@@ -583,67 +718,44 @@ void StyleSheet::mergeActiveProperty(Style& style, const std::string& name, cons
 Color StyleSheet::parseColor(const std::string& val) {
     std::string v = trim(val);
     if (v.empty()) return Color();
+    std::string lower = lowerAscii(v);
 
     // Hex colors
     if (v[0] == '#') return Color::fromHex(v);
 
     // Named colors
-    if (v == "transparent") return Color(0, 0, 0, 0);
-    if (v == "white") return Color(1, 1, 1, 1);
-    if (v == "black") return Color(0, 0, 0, 1);
-    if (v == "red") return Color(1, 0, 0, 1);
-    if (v == "green") return Color(0, 0.5f, 0, 1);
-    if (v == "blue") return Color(0, 0, 1, 1);
-    if (v == "yellow") return Color(1, 1, 0, 1);
-    if (v == "cyan") return Color(0, 1, 1, 1);
-    if (v == "magenta") return Color(1, 0, 1, 1);
+    if (lower == "transparent") return Color(0, 0, 0, 0);
+    if (lower == "white") return Color(1, 1, 1, 1);
+    if (lower == "black") return Color(0, 0, 0, 1);
+    if (lower == "red") return Color(1, 0, 0, 1);
+    if (lower == "green") return Color(0, 0.5f, 0, 1);
+    if (lower == "blue") return Color(0, 0, 1, 1);
+    if (lower == "yellow") return Color(1, 1, 0, 1);
+    if (lower == "cyan") return Color(0, 1, 1, 1);
+    if (lower == "magenta") return Color(1, 0, 1, 1);
+    if (lower == "gray" || lower == "grey") return Color(0.5f, 0.5f, 0.5f, 1);
 
-    // rgb(r, g, b) or rgba(r, g, b, a)
-    if (v.substr(0, 4) == "rgba") {
-        auto start = v.find('(');
-        auto end = v.find(')');
-        if (start != std::string::npos && end != std::string::npos) {
-            std::string inner = v.substr(start + 1, end - start - 1);
-            std::istringstream ss(inner);
-            float r, g, b, a;
-            char comma;
-            ss >> r >> comma >> g >> comma >> b >> comma >> a;
-            if (r > 1 || g > 1 || b > 1) { r /= 255; g /= 255; b /= 255; }
-            return Color(r, g, b, a);
-        }
-    }
-    if (v.substr(0, 3) == "rgb") {
-        auto start = v.find('(');
-        auto end = v.find(')');
-        if (start != std::string::npos && end != std::string::npos) {
-            std::string inner = v.substr(start + 1, end - start - 1);
-            std::istringstream ss(inner);
-            float r, g, b;
-            char comma;
-            ss >> r >> comma >> g >> comma >> b;
-            if (r > 1 || g > 1 || b > 1) { r /= 255; g /= 255; b /= 255; }
-            return Color(r, g, b, 1);
+    // rgb()/rgba() with comma or modern space-slash syntax.
+    if (lower.rfind("rgb", 0) == 0) {
+        auto tokens = splitColorTokens(functionInner(v));
+        if (tokens.size() >= 3) {
+            float a = tokens.size() >= 4 ? parseAlphaChannel(tokens[3]) : 1.0f;
+            return Color(parseRgbChannel(tokens[0]),
+                         parseRgbChannel(tokens[1]),
+                         parseRgbChannel(tokens[2]),
+                         a);
         }
     }
 
-    // hsl(h, s%, l%)
-    if (v.substr(0, 3) == "hsl") {
-        auto start = v.find('(');
-        auto end = v.find(')');
-        if (start != std::string::npos && end != std::string::npos) {
-            std::string inner = v.substr(start + 1, end - start - 1);
-            // Remove % signs
-            std::string clean;
-            for (char c : inner) {
-                if (c != '%') clean += c;
-            }
-            std::istringstream ss(clean);
-            float h, s, l;
-            char comma;
-            ss >> h >> comma >> s >> comma >> l;
-            s /= 100.0f;
-            l /= 100.0f;
-            return Color::fromHSL(h, s, l);
+    // hsl()/hsla() with comma or modern space-slash syntax.
+    if (lower.rfind("hsl", 0) == 0) {
+        auto tokens = splitColorTokens(functionInner(v));
+        if (tokens.size() >= 3) {
+            float a = tokens.size() >= 4 ? parseAlphaChannel(tokens[3]) : 1.0f;
+            return Color::fromHSL(parseHue(tokens[0]),
+                                  parseHslPercent(tokens[1]),
+                                  parseHslPercent(tokens[2]),
+                                  a);
         }
     }
 
@@ -652,11 +764,19 @@ Color StyleSheet::parseColor(const std::string& val) {
 
 CSSValue StyleSheet::parseCSSValue(const std::string& val) {
     std::string v = trim(val);
-    if (v == "auto") return CSSValue::autoVal();
+    std::string lower = lowerAscii(v);
+    if (lower == "auto") return CSSValue::autoVal();
     if (v.empty()) return CSSValue();
 
     if (v.back() == '%') {
         return CSSValue::pct(std::stof(v.substr(0, v.size() - 1)));
+    }
+
+    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "rem") {
+        return CSSValue::px(parseFloat(lower) * 16.0f);
+    }
+    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "em") {
+        return CSSValue::px(parseFloat(lower) * 16.0f);
     }
 
     // Remove px suffix
@@ -747,7 +867,8 @@ Border StyleSheet::parseBorder(const std::string& val) {
         }
         if (!token.empty() && (token == "white" || token == "black" || token == "transparent" ||
             token == "red" || token == "green" || token == "blue" ||
-            token == "yellow" || token == "cyan" || token == "magenta")) {
+            token == "yellow" || token == "cyan" || token == "magenta" ||
+            token == "gray" || token == "grey")) {
             border.color = parseColor(token);
             continue;
         }
@@ -784,11 +905,13 @@ BoxShadow StyleSheet::parseBoxShadow(const std::string& val) {
         v = v.substr(0, hashPos) + v.substr(end);
     } else {
         auto rgbPos = v.find("rgb");
-        if (rgbPos != std::string::npos) {
-            auto end = v.find(')', rgbPos);
+        auto hslPos = v.find("hsl");
+        auto colorPos = rgbPos != std::string::npos ? rgbPos : hslPos;
+        if (colorPos != std::string::npos) {
+            auto end = v.find(')', colorPos);
             if (end != std::string::npos) {
-                colorStr = v.substr(rgbPos, end - rgbPos + 1);
-                v = v.substr(0, rgbPos) + v.substr(end + 1);
+                colorStr = v.substr(colorPos, end - colorPos + 1);
+                v = v.substr(0, colorPos) + v.substr(end + 1);
             }
         }
     }

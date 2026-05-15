@@ -167,6 +167,12 @@ static bool consumesParentMainAxisHeight(const Widget* widget, const Style& styl
            parentStyle.flexDirection == FlexDirection::ColumnReverse;
 }
 
+static bool isOutOfFlow(const Widget* widget) {
+    if (!widget) return false;
+    return widget->computedStyle.position == Position::Absolute ||
+           widget->computedStyle.position == Position::Fixed;
+}
+
 static bool rectIntersects(const Rect& a, const Rect& b, float padding = 0.0f) {
     return a.x + a.w >= b.x - padding &&
            a.x <= b.x + b.w + padding &&
@@ -200,6 +206,7 @@ static size_t layoutStyleSignature(const Style& s) {
     hashCombine(seed, std::hash<int>{}((int)s.overflow));
     hashFloat(seed, s.flexGrow);
     hashFloat(seed, s.flexShrink);
+    hashCSSValue(seed, s.flexBasis);
     hashFloat(seed, s.gap);
     hashCSSValue(seed, s.width);
     hashCSSValue(seed, s.height);
@@ -215,6 +222,10 @@ static size_t layoutStyleSignature(const Style& s) {
     hashFloat(seed, s.margin.right);
     hashFloat(seed, s.margin.bottom);
     hashFloat(seed, s.margin.left);
+    hashCSSValue(seed, s.top);
+    hashCSSValue(seed, s.right);
+    hashCSSValue(seed, s.bottom);
+    hashCSSValue(seed, s.left);
     hashFloat(seed, s.fontSize);
     hashFloat(seed, s.lineHeight);
     hashCombine(seed, std::hash<int>{}((int)s.fontWeight));
@@ -270,6 +281,11 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         if (style.minHeight.isSet()) computedStyle.minHeight = style.minHeight;
         if (style.maxWidth.isSet()) computedStyle.maxWidth = style.maxWidth;
         if (style.maxHeight.isSet()) computedStyle.maxHeight = style.maxHeight;
+        if (style.top.isSet()) computedStyle.top = style.top;
+        if (style.right.isSet()) computedStyle.right = style.right;
+        if (style.bottom.isSet()) computedStyle.bottom = style.bottom;
+        if (style.left.isSet()) computedStyle.left = style.left;
+        if (style.position != Position::Static) computedStyle.position = style.position;
         if (style.fontSize > 0 && style.fontSize != 14.0f) computedStyle.fontSize = style.fontSize;
         if (style.padding.top > 0 || style.padding.right > 0 ||
             style.padding.bottom > 0 || style.padding.left > 0)
@@ -279,6 +295,7 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
             computedStyle.margin = style.margin;
         if (style.gap > 0) computedStyle.gap = style.gap;
         if (style.flexGrow > 0) computedStyle.flexGrow = style.flexGrow;
+        if (style.flexBasis.isSet()) computedStyle.flexBasis = style.flexBasis;
         if (style.borderRadius.maxRadius() > 0) computedStyle.borderRadius = style.borderRadius;
         if (style.backgroundColor.a > 0) computedStyle.backgroundColor = style.backgroundColor;
         if (style.cursor != CursorType::Default) computedStyle.cursor = style.cursor;
@@ -349,6 +366,7 @@ void Widget::layout(const Rect& parentBounds) {
         float cy = bounds.y + s.padding.top;
         for (auto& child : children) {
             if (!child->visible) continue;
+            if (isOutOfFlow(child.get())) continue;
             auto& cs = child->computedStyle;
             Rect childArea = {
                 bounds.x + s.padding.left,
@@ -363,6 +381,7 @@ void Widget::layout(const Rect& parentBounds) {
         if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty()) {
             float maxY = bounds.y;
             for (auto& c : children) {
+                if (!c->visible || isOutOfFlow(c.get())) continue;
                 maxY = std::max(maxY, c->bounds.y + c->bounds.h + c->computedStyle.margin.bottom);
             }
             bounds.h = std::max(bounds.h, maxY - bounds.y + s.padding.bottom);
@@ -371,6 +390,7 @@ void Widget::layout(const Rect& parentBounds) {
     }
 
     if (s.maxHeight.isSet()) bounds.h = std::min(bounds.h, s.maxHeight.resolve(parentBounds.h));
+    layoutPositionedChildren();
     layoutDirty = false;
 }
 
@@ -393,13 +413,17 @@ void Widget::layoutFlexChildren() {
         for (size_t i = 0; i < children.size(); i++) {
             auto& child = children[i];
             if (!child->visible) continue;
+            if (isOutOfFlow(child.get())) continue;
 
             visibleCount++;
             auto& cs = child->computedStyle;
             totalFlexGrow += cs.flexGrow;
 
             float childW = cs.width.isSet() ? cs.width.resolve(contentW) : contentW;
-            if (cs.height.isSet()) {
+            if (cs.flexBasis.isSet() && !cs.flexBasis.isAuto()) {
+                measuredMain[i] = cs.flexBasis.resolve(contentH);
+                fixedSize += measuredMain[i] + cs.margin.vertical();
+            } else if (cs.height.isSet()) {
                 measuredMain[i] = cs.height.resolve(contentH);
                 fixedSize += measuredMain[i] + cs.margin.vertical();
             } else if (cs.flexGrow <= 0) {
@@ -413,11 +437,15 @@ void Widget::layoutFlexChildren() {
         for (size_t i = 0; i < children.size(); i++) {
             auto& child = children[i];
             if (!child->visible) continue;
+            if (isOutOfFlow(child.get())) continue;
 
             visibleCount++;
             auto& cs = child->computedStyle;
             totalFlexGrow += cs.flexGrow;
-            if (cs.width.isSet()) {
+            if (cs.flexBasis.isSet() && !cs.flexBasis.isAuto()) {
+                measuredMain[i] = cs.flexBasis.resolve(contentW);
+                fixedSize += measuredMain[i] + cs.margin.horizontal();
+            } else if (cs.width.isSet()) {
                 measuredMain[i] = cs.width.resolve(contentW);
                 fixedSize += measuredMain[i] + cs.margin.horizontal();
             } else if (cs.flexGrow <= 0) {
@@ -478,6 +506,7 @@ void Widget::layoutFlexChildren() {
     for (size_t i = 0; i < children.size(); i++) {
         auto& child = children[i];
         if (!child->visible) continue;
+        if (isOutOfFlow(child.get())) continue;
         auto& cs = child->computedStyle;
         float nextGap = (++laidOut < visibleCount) ? gapOffset : 0.0f;
 
@@ -485,7 +514,7 @@ void Widget::layoutFlexChildren() {
 
         if (isRow) {
             if (cs.flexGrow > 0 && totalFlexGrow > 0) {
-                childW = availableSpace * (cs.flexGrow / totalFlexGrow);
+                childW = measuredMain[i] + availableSpace * (cs.flexGrow / totalFlexGrow);
             } else {
                 childW = measuredMain[i];
             }
@@ -514,7 +543,7 @@ void Widget::layoutFlexChildren() {
         } else {
             childW = cs.width.isSet() ? cs.width.resolve(contentW) : contentW;
             if (cs.flexGrow > 0 && totalFlexGrow > 0) {
-                childH = availableSpace * (cs.flexGrow / totalFlexGrow);
+                childH = measuredMain[i] + availableSpace * (cs.flexGrow / totalFlexGrow);
             } else {
                 childH = measuredMain[i];
             }
@@ -550,6 +579,62 @@ void Widget::layoutFlexChildren() {
 
     if (!s.height.isSet() && !consumesParentMainAxisHeight(this, s)) {
         bounds.h = std::max(bounds.h, contentHeight);
+    }
+}
+
+void Widget::layoutPositionedChildren() {
+    auto& s = computedStyle;
+    float contentX = bounds.x + s.padding.left;
+    float contentY = bounds.y + s.padding.top;
+    float contentW = std::max(0.0f, bounds.w - s.padding.horizontal());
+    float contentH = std::max(0.0f, bounds.h - s.padding.vertical());
+
+    for (auto& child : children) {
+        if (!child->visible || !isOutOfFlow(child.get())) continue;
+        auto& cs = child->computedStyle;
+
+        bool hasLeft = cs.left.isSet();
+        bool hasRight = cs.right.isSet();
+        bool hasTop = cs.top.isSet();
+        bool hasBottom = cs.bottom.isSet();
+
+        float left = hasLeft ? cs.left.resolve(contentW) : 0.0f;
+        float right = hasRight ? cs.right.resolve(contentW) : 0.0f;
+        float top = hasTop ? cs.top.resolve(contentH) : 0.0f;
+        float bottom = hasBottom ? cs.bottom.resolve(contentH) : 0.0f;
+
+        float childW = cs.width.isSet() ? cs.width.resolve(contentW) :
+            (hasLeft && hasRight ? contentW - left - right - cs.margin.horizontal()
+                                 : contentW - cs.margin.horizontal());
+        float childH = cs.height.isSet() ? cs.height.resolve(contentH) :
+            (hasTop && hasBottom ? contentH - top - bottom - cs.margin.vertical() : 0.0f);
+
+        float childX = hasLeft ? contentX + left :
+            (hasRight ? contentX + contentW - right - std::max(0.0f, childW) - cs.margin.horizontal()
+                      : contentX);
+        float childY = hasTop ? contentY + top :
+            (hasBottom && childH > 0.0f
+                ? contentY + contentH - bottom - std::max(0.0f, childH) - cs.margin.vertical()
+                : contentY);
+
+        Rect childArea = {
+            childX + cs.margin.left,
+            childY + cs.margin.top,
+            std::max(0.0f, childW),
+            std::max(0.0f, childH)
+        };
+        child->layout(childArea);
+
+        if (!hasTop && hasBottom && !cs.height.isSet()) {
+            childY = contentY + contentH - bottom - child->bounds.h - cs.margin.bottom;
+            childArea.y = childY + cs.margin.top;
+            child->layout(childArea);
+        }
+        if (!hasLeft && hasRight && !cs.width.isSet()) {
+            childX = contentX + contentW - right - child->bounds.w - cs.margin.right;
+            childArea.x = childX + cs.margin.left;
+            child->layout(childArea);
+        }
     }
 }
 
