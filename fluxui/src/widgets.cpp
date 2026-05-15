@@ -732,10 +732,22 @@ void Widget::update(const InputState& input) {
     }
 
     // Smooth hover animation
+    // Spring physics for hover animation
     float target = hovered ? 1.0f : 0.0f;
-    float speed = 1.0f / std::max(computedStyle.transitionDuration, 0.01f);
-    if (hoverAnim < target) hoverAnim = std::min(hoverAnim + input.deltaTime * speed, target);
-    if (hoverAnim > target) hoverAnim = std::max(hoverAnim - input.deltaTime * speed, target);
+    float dt = std::clamp(input.deltaTime, 0.001f, 0.1f);
+    float k = computedStyle.springStiffness;
+    float d = computedStyle.springDamping;
+    
+    // Semi-implicit Euler integration
+    float force = -k * (hoverAnim - target) - d * hoverVelocity;
+    hoverVelocity += force * dt;
+    hoverAnim += hoverVelocity * dt;
+
+    // Small epsilon to stabilize
+    if (std::abs(hoverAnim - target) < 0.0001f && std::abs(hoverVelocity) < 0.0001f) {
+        hoverAnim = target;
+        hoverVelocity = 0.0f;
+    }
 
     pressed = hovered && input.mouseDown[0];
 
@@ -820,10 +832,17 @@ void Widget::update(const InputState& input) {
             clampScroll();
         }
 
-        // Smooth scroll interpolation
-        float smoothSpeed = scrollbarDragging ? 60.0f : 18.0f;
-        scrollY += (targetScrollY - scrollY) * std::min(1.0f, input.deltaTime * smoothSpeed);
-        if (std::abs(targetScrollY - scrollY) < 0.1f) scrollY = targetScrollY;
+        // Physics-based smooth scroll (Spring)
+        float sk = 250.0f; // scroll stiffness
+        float sd = 30.0f;  // scroll damping
+        float sForce = -sk * (scrollY - targetScrollY) - sd * scrollVelocity;
+        scrollVelocity += sForce * dt;
+        scrollY += scrollVelocity * dt;
+
+        if (std::abs(scrollY - targetScrollY) < 0.05f && std::abs(scrollVelocity) < 0.05f) {
+            scrollY = targetScrollY;
+            scrollVelocity = 0.0f;
+        }
         clampScroll();
     } else {
         scrollbarHovered = false;

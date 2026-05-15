@@ -86,9 +86,11 @@ public:
 
     // Animation & Scroll state
     float hoverAnim = 0;  // 0..1 for smooth transitions
+    float hoverVelocity = 0; // for spring physics
     float renderScale = 1.0f;
     float scrollY = 0;
     float targetScrollY = 0;
+    float scrollVelocity = 0;
     float contentHeight = 0;
     bool layoutDirty = true;
     bool styleDirty = true;

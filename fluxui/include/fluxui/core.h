@@ -278,6 +278,8 @@ struct Style {
     CursorType cursor = CursorType::Default;
     float transitionDuration = 0.15f; // seconds
     float scale = 1.0f; // 1.0 = normal size
+    float springStiffness = 180.0f;  // for physics-based animations
+    float springDamping = 18.0f;     // for physics-based animations
 
     // Hover state overrides
     Color hoverBackgroundColor;
