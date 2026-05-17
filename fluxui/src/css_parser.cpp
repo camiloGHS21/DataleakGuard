@@ -1450,6 +1450,7 @@ static bool applyCSSWideProperty(Style& target,
         target.scale = source.scale;
     } else if (name == "box-sizing") {
         target.boxSizing = source.boxSizing;
+        target.hasBoxSizing = true;
     } else if (name == "visibility") {
         target.visibility = source.visibility;
     } else if (name == "text-overflow") {
@@ -1954,6 +1955,7 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
     else if (name == "box-sizing") {
         if (value == "border-box") style.boxSizing = BoxSizing::BorderBox;
         else style.boxSizing = BoxSizing::ContentBox;
+        style.hasBoxSizing = true;
     } else if (name == "visibility") {
         if (value == "hidden") style.visibility = Visibility::Hidden;
         else if (value == "collapse") style.visibility = Visibility::Collapse;

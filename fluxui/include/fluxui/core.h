@@ -298,6 +298,7 @@ struct Style {
     Overflow overflowX = Overflow::Visible;
     Overflow overflowY = Overflow::Visible;
     BoxSizing boxSizing = BoxSizing::ContentBox;
+    bool hasBoxSizing = false;
     Visibility visibility = Visibility::Visible;
     PointerEvents pointerEvents = PointerEvents::Auto;
     int zIndex = 0;
