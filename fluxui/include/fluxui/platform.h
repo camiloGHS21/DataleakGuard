@@ -34,6 +34,24 @@ struct PlatformWindowConfig {
     bool resizable = true;
 };
 
+// ============================================================
+//  Cross-platform input event (unified format for all OS)
+// ============================================================
+struct PlatformInputEvent {
+    enum Type : int {
+        MouseMove = 0, MouseDown, MouseUp,
+        Scroll, KeyDown, KeyUp, TextInput,
+        Resize, Close, Expose
+    };
+    Type type;
+    float x = 0, y = 0;      // position, scroll delta, or window size
+    int button = 0;           // mouse button (0=left,1=right,2=middle) or key code
+    int modifiers = 0;        // MOD_SHIFT, MOD_CTRL, etc.
+    char text[32] = {};       // UTF-8 text for TextInput events
+};
+
+using PlatformEventCallback = void(*)(void* context, const PlatformInputEvent& event);
+
 class Platform {
 public:
     static bool init();
@@ -51,6 +69,9 @@ public:
     static void setCursor(NativeCursorHandle cursor);
     
     static void getWindowSize(NativeWindowHandle window, int& w, int& h);
+
+    // Cross-platform input event callback
+    static void setEventCallback(void* context, PlatformEventCallback callback);
     
     // Vulkan specific
     static void* loadVulkanLibrary();

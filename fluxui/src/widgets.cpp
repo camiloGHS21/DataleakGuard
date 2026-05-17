@@ -2092,8 +2092,124 @@ void Internal_OnWindowEvent(void* appPtr, UINT msg, WPARAM wParam, LPARAM lParam
     }
 }
 #else
-// Placeholder for other platforms
+// ============================================================
+//  Cross-platform event handler (Linux, macOS, Android)
+//  Mirrors the Windows WndProc handler above using PlatformInputEvent
+// ============================================================
 void Internal_OnWindowEvent(void* app, uint32_t msg, uint64_t w, uint64_t l) {}
+
+static void fluxuiPlatformEventHandler(void* ctx, const PlatformInputEvent& event) {
+    Application* app = static_cast<Application*>(ctx);
+    if (!app) return;
+
+    switch (event.type) {
+    case PlatformInputEvent::Close:
+        app->running = false;
+        break;
+    case PlatformInputEvent::Resize: {
+        int w = (int)event.x;
+        int h = (int)event.y;
+        app->input().windowSize = {event.x, event.y};
+        if (app->root()) {
+            app->root()->resetTransientMotion();
+        }
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::WindowResized;
+        uiEvent.position = app->input().windowSize;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::MouseMove: {
+        Vec2 oldPos = app->input().mousePos;
+        app->input().mousePos = {event.x, event.y};
+        app->input().mouseDelta = app->input().mousePos - oldPos;
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::MouseMove;
+        uiEvent.position = app->input().mousePos;
+        uiEvent.delta = app->input().mouseDelta;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::MouseDown: {
+        int btn = event.button;
+        if (btn >= 0 && btn < 3) {
+            app->input().mouseDown[btn] = true;
+            app->input().mouseClicked[btn] = true;
+            app->input().mouseClickCount[btn] = 1;
+        }
+        app->input().mousePos = {event.x, event.y};
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::MouseDown;
+        uiEvent.position = {event.x, event.y};
+        uiEvent.button = btn + 1;
+        uiEvent.clickCount = 1;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::MouseUp: {
+        int btn = event.button;
+        if (btn >= 0 && btn < 3) {
+            app->input().mouseDown[btn] = false;
+            app->input().mouseReleased[btn] = true;
+        }
+        app->input().mousePos = {event.x, event.y};
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::MouseUp;
+        uiEvent.position = {event.x, event.y};
+        uiEvent.button = btn + 1;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::Scroll: {
+        app->input().scroll.y += event.y;
+        app->input().scroll.x += event.x;
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::MouseWheel;
+        uiEvent.delta = {event.x, event.y};
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::KeyDown: {
+        app->input().keyCode = event.button;
+        app->input().modifiers = event.modifiers;
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::KeyDown;
+        uiEvent.keyCode = event.button;
+        uiEvent.modifiers = event.modifiers;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::KeyUp: {
+        UIEvent uiEvent;
+        uiEvent.type = UIEventType::KeyUp;
+        uiEvent.keyCode = event.button;
+        uiEvent.modifiers = event.modifiers;
+        app->emit(std::move(uiEvent));
+        app->requestRedraw();
+        break;
+    }
+    case PlatformInputEvent::TextInput: {
+        if (event.text[0] != '\0') {
+            app->input().text += event.text;
+            UIEvent uiEvent;
+            uiEvent.type = UIEventType::TextInput;
+            uiEvent.text = event.text;
+            app->emit(std::move(uiEvent));
+            app->requestRedraw();
+        }
+        break;
+    }
+    case PlatformInputEvent::Expose:
+        app->requestRedraw();
+        break;
+    }
+}
 #endif
 
 bool Application::init(const std::string& title, int width, int height) {
@@ -2109,6 +2225,8 @@ bool Application::init(const std::string& title, int width, int height) {
 
 #ifdef _WIN32
     SetWindowLongPtr((HWND)window_, GWLP_USERDATA, (LONG_PTR)this);
+#else
+    Platform::setEventCallback(this, fluxuiPlatformEventHandler);
 #endif
 
     renderer_.setBackend(backendPreference_);

@@ -3,15 +3,70 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
+#include <X11/keysym.h>
+#include <X11/XKBlib.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
 #include <dlfcn.h>
+#include <cstring>
 #include <iostream>
 
 namespace FluxUI {
 
 static Display* g_display = nullptr;
+static Window g_window = 0;
 static Atom g_wmDeleteMessage;
+static void* g_eventContext = nullptr;
+static PlatformEventCallback g_eventCallback = nullptr;
+
+void Platform::setEventCallback(void* context, PlatformEventCallback callback) {
+    g_eventContext = context;
+    g_eventCallback = callback;
+}
+
+static void dispatchEvent(const PlatformInputEvent& event) {
+    if (g_eventCallback && g_eventContext) {
+        g_eventCallback(g_eventContext, event);
+    }
+}
+
+// Convert X11 KeySym to a portable virtual key code compatible with Windows VK_ codes
+static int keysymToVK(KeySym sym) {
+    if (sym >= XK_a && sym <= XK_z) return 'A' + (int)(sym - XK_a);
+    if (sym >= XK_A && sym <= XK_Z) return 'A' + (int)(sym - XK_A);
+    if (sym >= XK_0 && sym <= XK_9) return '0' + (int)(sym - XK_0);
+    if (sym >= XK_F1 && sym <= XK_F12) return 0x70 + (int)(sym - XK_F1); // VK_F1..VK_F12
+    switch (sym) {
+        case XK_Return:    return 0x0D; // VK_RETURN
+        case XK_Escape:    return 0x1B; // VK_ESCAPE
+        case XK_Tab:       return 0x09; // VK_TAB
+        case XK_BackSpace: return 0x08; // VK_BACK
+        case XK_Delete:    return 0x2E; // VK_DELETE
+        case XK_Left:      return 0x25; // VK_LEFT
+        case XK_Up:        return 0x26; // VK_UP
+        case XK_Right:     return 0x27; // VK_RIGHT
+        case XK_Down:      return 0x28; // VK_DOWN
+        case XK_Home:      return 0x24; // VK_HOME
+        case XK_End:       return 0x23; // VK_END
+        case XK_Page_Up:   return 0x21; // VK_PRIOR
+        case XK_Page_Down: return 0x22; // VK_NEXT
+        case XK_Insert:    return 0x2D; // VK_INSERT
+        case XK_space:     return 0x20; // VK_SPACE
+        case XK_Shift_L: case XK_Shift_R:     return 0x10; // VK_SHIFT
+        case XK_Control_L: case XK_Control_R: return 0x11; // VK_CONTROL
+        case XK_Alt_L: case XK_Alt_R:         return 0x12; // VK_MENU
+        default: return (int)sym & 0xFF;
+    }
+}
+
+static int getX11Modifiers(unsigned int state) {
+    int mods = MOD_NONE;
+    if (state & ShiftMask)   mods |= MOD_SHIFT;
+    if (state & ControlMask) mods |= MOD_CTRL;
+    if (state & Mod1Mask)    mods |= MOD_ALT;   // Alt
+    if (state & Mod4Mask)    mods |= MOD_GUI;    // Super/Meta
+    return mods;
+}
 
 bool Platform::init() {
     XInitThreads();
@@ -29,6 +84,7 @@ void Platform::shutdown() {
         XCloseDisplay(g_display);
         g_display = nullptr;
     }
+    g_window = 0;
 }
 
 NativeWindowHandle Platform::createWindow(const PlatformWindowConfig& config) {
@@ -40,7 +96,7 @@ NativeWindowHandle Platform::createWindow(const PlatformWindowConfig& config) {
     XSetWindowAttributes attributes;
     attributes.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask | 
                             ButtonPressMask | ButtonReleaseMask | PointerMotionMask | 
-                            StructureNotifyMask;
+                            StructureNotifyMask | FocusChangeMask;
 
     unsigned long mask = CWEventMask;
 
@@ -67,6 +123,7 @@ NativeWindowHandle Platform::createWindow(const PlatformWindowConfig& config) {
     XMapWindow(g_display, window);
     XFlush(g_display);
 
+    g_window = window;
     return (NativeWindowHandle)window;
 }
 
@@ -74,27 +131,146 @@ void Platform::destroyWindow(NativeWindowHandle window) {
     if (g_display && window) {
         XDestroyWindow(g_display, (Window)window);
         XFlush(g_display);
+        if ((Window)window == g_window) g_window = 0;
     }
 }
 
 void Platform::processEvents(bool& running) {
     if (!g_display) return;
     
-    XEvent event;
+    XEvent xev;
     while (XPending(g_display)) {
-        XNextEvent(g_display, &event);
+        XNextEvent(g_display, &xev);
         
-        if (event.type == ClientMessage) {
-            if ((Atom)event.xclient.data.l[0] == g_wmDeleteMessage) {
+        switch (xev.type) {
+        case ClientMessage: {
+            if ((Atom)xev.xclient.data.l[0] == g_wmDeleteMessage) {
                 running = false;
+                PlatformInputEvent e{};
+                e.type = PlatformInputEvent::Close;
+                dispatchEvent(e);
             }
+            break;
         }
-        // TODO: Map other X11 events to internal events
+        case MotionNotify: {
+            PlatformInputEvent e{};
+            e.type = PlatformInputEvent::MouseMove;
+            e.x = (float)xev.xmotion.x;
+            e.y = (float)xev.xmotion.y;
+            e.modifiers = getX11Modifiers(xev.xmotion.state);
+            dispatchEvent(e);
+            break;
+        }
+        case ButtonPress: {
+            // X11: Button 1=left, 2=middle, 3=right, 4=scroll up, 5=scroll down
+            if (xev.xbutton.button == 4 || xev.xbutton.button == 5) {
+                // Scroll wheel
+                PlatformInputEvent e{};
+                e.type = PlatformInputEvent::Scroll;
+                e.y = (xev.xbutton.button == 4) ? 1.0f : -1.0f;
+                dispatchEvent(e);
+            } else if (xev.xbutton.button >= 1 && xev.xbutton.button <= 3) {
+                PlatformInputEvent e{};
+                e.type = PlatformInputEvent::MouseDown;
+                e.x = (float)xev.xbutton.x;
+                e.y = (float)xev.xbutton.y;
+                // Map: X11 1→0(left), 2→2(middle), 3→1(right)
+                int btn = 0;
+                if (xev.xbutton.button == 1) btn = 0;
+                else if (xev.xbutton.button == 3) btn = 1;
+                else if (xev.xbutton.button == 2) btn = 2;
+                e.button = btn;
+                e.modifiers = getX11Modifiers(xev.xbutton.state);
+                dispatchEvent(e);
+            }
+            break;
+        }
+        case ButtonRelease: {
+            if (xev.xbutton.button >= 1 && xev.xbutton.button <= 3) {
+                PlatformInputEvent e{};
+                e.type = PlatformInputEvent::MouseUp;
+                e.x = (float)xev.xbutton.x;
+                e.y = (float)xev.xbutton.y;
+                int btn = 0;
+                if (xev.xbutton.button == 1) btn = 0;
+                else if (xev.xbutton.button == 3) btn = 1;
+                else if (xev.xbutton.button == 2) btn = 2;
+                e.button = btn;
+                e.modifiers = getX11Modifiers(xev.xbutton.state);
+                dispatchEvent(e);
+            }
+            break;
+        }
+        case KeyPress: {
+            KeySym sym = XkbKeycodeToKeysym(g_display, xev.xkey.keycode, 0, 0);
+
+            // Dispatch key event
+            PlatformInputEvent e{};
+            e.type = PlatformInputEvent::KeyDown;
+            e.button = keysymToVK(sym);
+            e.modifiers = getX11Modifiers(xev.xkey.state);
+            dispatchEvent(e);
+
+            // Also dispatch text input for printable characters
+            char buf[32] = {};
+            KeySym keysym;
+            int len = XLookupString(&xev.xkey, buf, sizeof(buf) - 1, &keysym, nullptr);
+            if (len > 0 && (unsigned char)buf[0] >= 32) {
+                PlatformInputEvent te{};
+                te.type = PlatformInputEvent::TextInput;
+                std::memcpy(te.text, buf, std::min(len, 31));
+                te.text[std::min(len, 31)] = '\0';
+                dispatchEvent(te);
+            }
+            break;
+        }
+        case KeyRelease: {
+            // Check for auto-repeat (X11 sends KeyRelease+KeyPress pairs)
+            if (XEventsQueued(g_display, QueuedAfterReading)) {
+                XEvent next;
+                XPeekEvent(g_display, &next);
+                if (next.type == KeyPress && next.xkey.time == xev.xkey.time &&
+                    next.xkey.keycode == xev.xkey.keycode) {
+                    // Auto-repeat — skip the release, the press will be handled next
+                    break;
+                }
+            }
+            KeySym sym = XkbKeycodeToKeysym(g_display, xev.xkey.keycode, 0, 0);
+            PlatformInputEvent e{};
+            e.type = PlatformInputEvent::KeyUp;
+            e.button = keysymToVK(sym);
+            e.modifiers = getX11Modifiers(xev.xkey.state);
+            dispatchEvent(e);
+            break;
+        }
+        case ConfigureNotify: {
+            PlatformInputEvent e{};
+            e.type = PlatformInputEvent::Resize;
+            e.x = (float)xev.xconfigure.width;
+            e.y = (float)xev.xconfigure.height;
+            dispatchEvent(e);
+            break;
+        }
+        case Expose: {
+            if (xev.xexpose.count == 0) {
+                PlatformInputEvent e{};
+                e.type = PlatformInputEvent::Expose;
+                dispatchEvent(e);
+            }
+            break;
+        }
+        default:
+            break;
+        }
     }
 }
 
 void Platform::setClipboardText(const char* text) {
-    // Basic clipboard implementation requires handling selection events in X11
+    if (!g_display || !g_window) return;
+    // Claim clipboard ownership with XA_CLIPBOARD
+    Atom clipboard = XInternAtom(g_display, "CLIPBOARD", False);
+    XSetSelectionOwner(g_display, clipboard, g_window, CurrentTime);
+    // Note: Full clipboard requires handling SelectionRequest events
 }
 
 std::string Platform::getClipboardText() {
@@ -113,7 +289,10 @@ NativeCursorHandle Platform::createSystemCursor(CursorType type) {
 }
 
 void Platform::setCursor(NativeCursorHandle cursor) {
-    // Requires window context to set cursor effectively in X11
+    if (g_display && g_window && cursor) {
+        XDefineCursor(g_display, g_window, (Cursor)(uintptr_t)cursor);
+        XFlush(g_display);
+    }
 }
 
 void Platform::getWindowSize(NativeWindowHandle window, int& w, int& h) {

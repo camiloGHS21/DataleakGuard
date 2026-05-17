@@ -10,6 +10,15 @@
 
 namespace FluxUI {
 
+// Cross-platform event callback storage
+static void* g_eventContext = nullptr;
+static PlatformEventCallback g_eventCallback = nullptr;
+
+void Platform::setEventCallback(void* context, PlatformEventCallback callback) {
+    g_eventContext = context;
+    g_eventCallback = callback;
+}
+
 // Forward declaration of the internal event callback
 extern void Internal_OnWindowEvent(void* app, UINT msg, WPARAM wParam, LPARAM lParam);
 
