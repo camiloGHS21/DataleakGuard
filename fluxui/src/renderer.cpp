@@ -3599,16 +3599,22 @@ FontData* Renderer::getFontForSize(const std::string& fontName, float fontSize) 
 }
 
 std::string Renderer::resolveFontName(const std::string& fontName, FontWeight weight) const {
-    if (weight != FontWeight::Bold) {
-        return fontName;
+    std::string baseName = fontName.empty() ? "default" : fontName;
+    auto baseIt = fonts_.find(baseName);
+    if ((baseIt == fonts_.end() || !baseIt->second.loaded) && baseName != "default") {
+        baseName = "default";
     }
 
-    std::string boldName = fontName + "-bold";
+    if (weight != FontWeight::Bold) {
+        return baseName;
+    }
+
+    std::string boldName = baseName + "-bold";
     auto boldIt = fonts_.find(boldName);
     if (boldIt != fonts_.end() && boldIt->second.loaded) {
         return boldName;
     }
-    return fontName;
+    return baseName;
 }
 
 const FontData* Renderer::findFontForMeasure(const std::string& fontName, float fontSize) const {

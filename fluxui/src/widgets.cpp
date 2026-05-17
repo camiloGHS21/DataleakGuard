@@ -180,6 +180,25 @@ static bool rectIntersects(const Rect& a, const Rect& b, float padding = 0.0f) {
            a.y <= b.y + b.h + padding;
 }
 
+static bool isDisplayNone(const Widget* widget) {
+    return widget && widget->computedStyle.display == Display::None;
+}
+
+static bool canPaintWidget(const Widget* widget) {
+    return widget && widget->visible &&
+           widget->computedStyle.display != Display::None &&
+           widget->computedStyle.visibility == Visibility::Visible;
+}
+
+static bool canHitTestWidget(const Widget* widget) {
+    return canPaintWidget(widget) &&
+           widget->computedStyle.pointerEvents != PointerEvents::None;
+}
+
+static std::string renderFontName(const Style& style) {
+    return style.fontFamily.empty() ? "default" : style.fontFamily;
+}
+
 static std::string applyTextTransform(const std::string& text, TextTransform transform) {
     if (transform == TextTransform::None || text.empty()) return text;
 
@@ -203,6 +222,34 @@ static std::string applyTextTransform(const std::string& text, TextTransform tra
         }
     }
     return out;
+}
+
+static void renderTextDecoration(Renderer& renderer,
+                                 const std::string& text,
+                                 const Rect& rect,
+                                 const Color& textColor,
+                                 const Style& style) {
+    if (style.textDecoration == TextDecoration::None || text.empty()) return;
+
+    std::string fontName = renderFontName(style);
+    float textWidth = renderer.measureText(text, style.fontSize, fontName).x;
+    float x = rect.x;
+    if (style.textAlign == TextAlign::Center) {
+        x = rect.x + (rect.w - textWidth) * 0.5f;
+    } else if (style.textAlign == TextAlign::Right) {
+        x = rect.x + rect.w - textWidth;
+    }
+
+    Color lineColor = style.hasTextDecorationColor ? style.textDecorationColor : textColor;
+    float thickness = std::max(1.0f, std::round(style.fontSize / 14.0f));
+    float y = rect.y + rect.h * 0.5f;
+    if (style.textDecoration == TextDecoration::Underline) {
+        y += style.fontSize * 0.36f;
+    } else if (style.textDecoration == TextDecoration::Overline) {
+        y -= style.fontSize * 0.44f;
+    }
+    renderer.drawRoundedRect({x, y, std::max(0.0f, textWidth), thickness},
+                             lineColor, BorderRadius(thickness * 0.5f));
 }
 
 static bool rectEqual(const Rect& a, const Rect& b) {
@@ -437,6 +484,13 @@ void Widget::layout(const Rect& parentBounds) {
     lastLayoutParentBounds = parentBounds;
 
     auto& s = computedStyle;
+    if (s.display == Display::None) {
+        bounds = {parentBounds.x, parentBounds.y, 0.0f, 0.0f};
+        contentHeight = 0.0f;
+        layoutDirty = false;
+        return;
+    }
+
     bool heightProvidedByParentFlex = consumesParentMainAxisHeight(this, s);
 
     // Calculate own bounds
@@ -461,6 +515,7 @@ void Widget::layout(const Rect& parentBounds) {
         float cy = bounds.y + s.padding.top;
         for (auto& child : children) {
             if (!child->visible) continue;
+            if (isDisplayNone(child.get())) continue;
             if (isOutOfFlow(child.get())) continue;
             auto& cs = child->computedStyle;
             Rect childArea = {
@@ -477,6 +532,7 @@ void Widget::layout(const Rect& parentBounds) {
             float maxY = bounds.y;
             for (auto& c : children) {
                 if (!c->visible || isOutOfFlow(c.get())) continue;
+                if (isDisplayNone(c.get())) continue;
                 maxY = std::max(maxY, c->bounds.y + c->bounds.h + c->computedStyle.margin.bottom);
             }
             bounds.h = std::max(bounds.h, maxY - bounds.y + s.padding.bottom);
@@ -508,6 +564,7 @@ void Widget::layoutFlexChildren() {
         for (size_t i = 0; i < children.size(); i++) {
             auto& child = children[i];
             if (!child->visible) continue;
+            if (isDisplayNone(child.get())) continue;
             if (isOutOfFlow(child.get())) continue;
 
             visibleCount++;
@@ -532,6 +589,7 @@ void Widget::layoutFlexChildren() {
         for (size_t i = 0; i < children.size(); i++) {
             auto& child = children[i];
             if (!child->visible) continue;
+            if (isDisplayNone(child.get())) continue;
             if (isOutOfFlow(child.get())) continue;
 
             visibleCount++;
@@ -613,6 +671,7 @@ void Widget::layoutFlexChildren() {
     for (size_t i = 0; i < children.size(); i++) {
         auto& child = children[i];
         if (!child->visible) continue;
+        if (isDisplayNone(child.get())) continue;
         if (isOutOfFlow(child.get())) continue;
         auto& cs = child->computedStyle;
         float nextGap = (++laidOut < visibleCount) ? gapOffset : 0.0f;
@@ -722,7 +781,7 @@ void Widget::layoutFlexChildren() {
 
         // Second pass to update maxCross
         for (auto& child : children) {
-            if (!child->visible || isOutOfFlow(child.get())) continue;
+            if (!child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) continue;
             maxCross = std::max(maxCross, (isRow ? child->bounds.h : child->bounds.w) + 
                                           (isRow ? child->computedStyle.margin.vertical() : child->computedStyle.margin.horizontal()));
         }
@@ -752,7 +811,7 @@ void Widget::layoutPositionedChildren() {
     float contentH = std::max(0.0f, bounds.h - s.padding.vertical());
 
     for (auto& child : children) {
-        if (!child->visible || !isOutOfFlow(child.get())) continue;
+        if (!child->visible || isDisplayNone(child.get()) || !isOutOfFlow(child.get())) continue;
         auto& cs = child->computedStyle;
 
         bool hasLeft = cs.left.isSet();
@@ -872,7 +931,12 @@ void Widget::resetTransientMotion() {
 }
 
 void Widget::update(const InputState& input) {
-    if (!visible) return;
+    if (!visible || computedStyle.display == Display::None ||
+        computedStyle.visibility != Visibility::Visible) {
+        hovered = false;
+        pressed = false;
+        return;
+    }
 
     hovered = bounds.contains(input.mousePos);
 
@@ -1047,6 +1111,7 @@ void Widget::update(const InputState& input) {
 
     for (size_t i = 0; i < children.size(); i++) {
         auto& child = children[i];
+        if (!child->visible || isDisplayNone(child.get())) continue;
         
         // If outside the virtualized range, skip update logic but keep focus/dragging
         if (i < startIndex || i >= endIndex) {
@@ -1069,7 +1134,7 @@ void Widget::update(const InputState& input) {
 }
 
 CursorType Widget::cursorAt(Vec2 point) const {
-    if (!visible || computedStyle.display == Display::None) {
+    if (!canHitTestWidget(this)) {
         return CursorType::Default;
     }
     if (scrollbarDragging) {
@@ -1101,7 +1166,7 @@ CursorType Widget::cursorAt(Vec2 point) const {
 }
 
 Widget* Widget::hitTest(Vec2 point, bool interactiveOnly) {
-    if (!visible || computedStyle.display == Display::None || !bounds.contains(point)) {
+    if (!canHitTestWidget(this) || !bounds.contains(point)) {
         return nullptr;
     }
 
@@ -1252,7 +1317,7 @@ void Widget::renderChildren(Renderer& renderer) {
 
     for (size_t i = startIndex; i < endIndex; i++) {
         auto& child = children[i];
-        if (!child->visible) continue;
+        if (!canPaintWidget(child.get())) continue;
         if (clip && !rectIntersects(child->bounds, visibleContent, 64.0f)) continue;
         child->render(renderer);
     }
@@ -1292,7 +1357,7 @@ void Widget::renderChildren(Renderer& renderer) {
 }
 
 void Widget::render(Renderer& renderer) {
-    if (!visible || computedStyle.display == Display::None) return;
+    if (!canPaintWidget(this)) return;
 
     bool hasScale = (renderScale != 1.0f);
     if (hasScale) {
@@ -1324,7 +1389,7 @@ void Text::layout(const Rect& parentBounds) {
 }
 
 void Text::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
     renderBackground(renderer);
 
     Color textColor = computedStyle.color;
@@ -1346,9 +1411,11 @@ void Text::render(Renderer& renderer) {
     };
 
     std::string displayText = applyTextTransform(content, computedStyle.textTransform);
+    std::string fontName = renderFontName(computedStyle);
     renderer.drawTextInRect(displayText, textRect, textColor,
                             computedStyle.fontSize, computedStyle.textAlign,
-                            computedStyle.fontWeight);
+                            computedStyle.fontWeight, fontName);
+    renderTextDecoration(renderer, displayText, textRect, textColor, computedStyle);
     renderChildren(renderer);
 }
 
@@ -1366,7 +1433,7 @@ void Button::layout(const Rect& parentBounds) {
 }
 
 void Button::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
 
     bool hasScale = (renderScale != 1.0f);
     if (hasScale) {
@@ -1453,8 +1520,10 @@ void Button::render(Renderer& renderer) {
         std::max(0.0f, drawBounds.h - s.padding.vertical())
     };
     std::string displayLabel = applyTextTransform(label, s.textTransform);
+    std::string fontName = renderFontName(s);
     renderer.drawTextInRect(displayLabel, textRect, textColor,
-                            s.fontSize, s.textAlign, s.fontWeight);
+                            s.fontSize, s.textAlign, s.fontWeight, fontName);
+    renderTextDecoration(renderer, displayLabel, textRect, textColor, s);
 
     renderChildren(renderer);
 
@@ -1682,7 +1751,7 @@ void TextInput::update(const InputState& input) {
 }
 
 CursorType TextInput::cursorAt(Vec2 point) const {
-    if (!visible || computedStyle.display == Display::None || !bounds.contains(point)) {
+    if (!canHitTestWidget(this) || !bounds.contains(point)) {
         return CursorType::Default;
     }
     if (!value.empty() && clearButtonRect().contains(point)) {
@@ -1692,7 +1761,7 @@ CursorType TextInput::cursorAt(Vec2 point) const {
 }
 
 void TextInput::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
     renderBackground(renderer);
 
     auto& s = computedStyle;
@@ -1719,11 +1788,12 @@ void TextInput::render(Renderer& renderer) {
         std::max(0.0f, bounds.w - s.padding.horizontal() - clearSpace),
         bounds.h
     };
+    std::string fontName = renderFontName(s);
 
     if (value.empty()) {
         scrollX_ = 0;
     } else {
-        float caretX = renderer.measureText(value.substr(0, caretIndex_), s.fontSize).x;
+        float caretX = renderer.measureText(value.substr(0, caretIndex_), s.fontSize, fontName).x;
         float rightPadding = 10.0f;
         if (caretX - scrollX_ > clipRect.w - rightPadding) {
             scrollX_ = caretX - clipRect.w + rightPadding;
@@ -1738,8 +1808,8 @@ void TextInput::render(Renderer& renderer) {
     if (hasSelection() && !value.empty()) {
         size_t start = selectionStart();
         size_t end = selectionEnd();
-        float startX = renderer.measureText(value.substr(0, start), s.fontSize).x - scrollX_;
-        float width = renderer.measureText(value.substr(start, end - start), s.fontSize).x;
+        float startX = renderer.measureText(value.substr(0, start), s.fontSize, fontName).x - scrollX_;
+        float width = renderer.measureText(value.substr(start, end - start), s.fontSize, fontName).x;
         float selH = std::min(bounds.h - 10.0f, s.fontSize + 10.0f);
         Rect selectionRect = {
             clipRect.x + startX,
@@ -1756,15 +1826,16 @@ void TextInput::render(Renderer& renderer) {
     Rect textRect = {
         clipRect.x - scrollX_,
         bounds.y,
-        std::max(clipRect.w + scrollX_, renderer.measureText(displayText, s.fontSize).x + 8.0f),
+        std::max(clipRect.w + scrollX_, renderer.measureText(displayText, s.fontSize, fontName).x + 8.0f),
         bounds.h
     };
     renderer.drawTextInRect(displayText, textRect, textColor,
-                            s.fontSize, TextAlign::Left, s.fontWeight);
+                            s.fontSize, TextAlign::Left, s.fontWeight, fontName);
+    renderTextDecoration(renderer, displayText, textRect, textColor, s);
 
     // Cursor blink
     if (focused) {
-        float caretX = clipRect.x + renderer.measureText(value.substr(0, caretIndex_), s.fontSize).x - scrollX_;
+        float caretX = clipRect.x + renderer.measureText(value.substr(0, caretIndex_), s.fontSize, fontName).x - scrollX_;
         float cursorH = std::min(bounds.h - 12.0f, s.fontSize + 8.0f);
         float cursorY = bounds.y + (bounds.h - cursorH) * 0.5f;
         float blink = std::fmod(caretBlinkTime_, 1.0f);
@@ -1798,7 +1869,7 @@ void TextInput::render(Renderer& renderer) {
 // ============================================================
 
 void Icon::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
     renderBackground(renderer);
 
     Color c = computedStyle.color;
@@ -1952,7 +2023,7 @@ void Icon::render(Renderer& renderer) {
 // ============================================================
 
 void ProgressBar::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
     auto& s = computedStyle;
 
     // Background track
@@ -1974,7 +2045,7 @@ void ProgressBar::render(Renderer& renderer) {
 // ============================================================
 
 void StatCard::render(Renderer& renderer) {
-    if (!visible) return;
+    if (!canPaintWidget(this)) return;
 
     auto& s = computedStyle;
 
