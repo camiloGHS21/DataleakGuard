@@ -171,8 +171,19 @@ public:
     Panel* footer(const std::string& cls = "", size_t reserve = 0);
     Panel* main(const std::string& cls = "", size_t reserve = 0);
     Panel* nav(const std::string& cls = "", size_t reserve = 0);
+    Panel* body(const std::string& cls = "", size_t reserve = 0);
+    Panel* form(const std::string& cls = "", size_t reserve = 0);
+    Panel* blockquote(const std::string& cls = "", size_t reserve = 0);
+    Panel* ul(const std::string& cls = "", size_t reserve = 0);
+    Panel* ol(const std::string& cls = "", size_t reserve = 0);
+    Panel* li(const std::string& cls = "", size_t reserve = 0);
     Text* span(const std::string& content, const std::string& cls = "");
     Text* p(const std::string& content, const std::string& cls = "");
+    Text* strong(const std::string& content, const std::string& cls = "");
+    Text* b(const std::string& content, const std::string& cls = "");
+    Text* small(const std::string& content, const std::string& cls = "");
+    Text* code(const std::string& content, const std::string& cls = "");
+    Text* pre(const std::string& content, const std::string& cls = "");
     Text* h1(const std::string& content, const std::string& cls = "");
     Text* h2(const std::string& content, const std::string& cls = "");
     Text* h3(const std::string& content, const std::string& cls = "");
@@ -417,6 +428,42 @@ inline Panel* Widget::nav(const std::string& cls, size_t reserve) {
     return widget;
 }
 
+inline Panel* Widget::body(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "body";
+    return widget;
+}
+
+inline Panel* Widget::form(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "form";
+    return widget;
+}
+
+inline Panel* Widget::blockquote(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "blockquote";
+    return widget;
+}
+
+inline Panel* Widget::ul(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "ul";
+    return widget;
+}
+
+inline Panel* Widget::ol(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "ol";
+    return widget;
+}
+
+inline Panel* Widget::li(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "li";
+    return widget;
+}
+
 inline Text* Widget::span(const std::string& content, const std::string& cls) {
     auto* widget = text(content, cls);
     widget->type = "span";
@@ -426,6 +473,36 @@ inline Text* Widget::span(const std::string& content, const std::string& cls) {
 inline Text* Widget::p(const std::string& content, const std::string& cls) {
     auto* widget = text(content, cls);
     widget->type = "p";
+    return widget;
+}
+
+inline Text* Widget::strong(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "strong";
+    return widget;
+}
+
+inline Text* Widget::b(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "b";
+    return widget;
+}
+
+inline Text* Widget::small(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "small";
+    return widget;
+}
+
+inline Text* Widget::code(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "code";
+    return widget;
+}
+
+inline Text* Widget::pre(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "pre";
     return widget;
 }
 

@@ -180,6 +180,31 @@ static bool rectIntersects(const Rect& a, const Rect& b, float padding = 0.0f) {
            a.y <= b.y + b.h + padding;
 }
 
+static std::string applyTextTransform(const std::string& text, TextTransform transform) {
+    if (transform == TextTransform::None || text.empty()) return text;
+
+    std::string out = text;
+    if (transform == TextTransform::Uppercase) {
+        for (char& c : out) c = (char)std::toupper((unsigned char)c);
+    } else if (transform == TextTransform::Lowercase) {
+        for (char& c : out) c = (char)std::tolower((unsigned char)c);
+    } else if (transform == TextTransform::Capitalize) {
+        bool startWord = true;
+        for (char& c : out) {
+            unsigned char uc = (unsigned char)c;
+            if (std::isspace(uc)) {
+                startWord = true;
+            } else if (startWord) {
+                c = (char)std::toupper(uc);
+                startWord = false;
+            } else {
+                c = (char)std::tolower(uc);
+            }
+        }
+    }
+    return out;
+}
+
 static bool rectEqual(const Rect& a, const Rect& b) {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
@@ -1153,6 +1178,27 @@ void Widget::renderBackground(Renderer& renderer) {
         renderer.drawBorder(bounds, b, s.borderRadius);
     }
 
+    auto drawEdgeBorder = [&](const Border& border, const Rect& rect) {
+        if (border.width <= 0) return;
+        renderer.drawRoundedRect(rect, border.color, BorderRadius(0));
+    };
+    if (s.hasBorderTop) {
+        drawEdgeBorder(s.borderTop, {bounds.x, bounds.y, bounds.w, s.borderTop.width});
+    }
+    if (s.hasBorderRight) {
+        drawEdgeBorder(s.borderRight,
+                       {bounds.x + bounds.w - s.borderRight.width, bounds.y,
+                        s.borderRight.width, bounds.h});
+    }
+    if (s.hasBorderBottom) {
+        drawEdgeBorder(s.borderBottom,
+                       {bounds.x, bounds.y + bounds.h - s.borderBottom.width,
+                        bounds.w, s.borderBottom.width});
+    }
+    if (s.hasBorderLeft) {
+        drawEdgeBorder(s.borderLeft, {bounds.x, bounds.y, s.borderLeft.width, bounds.h});
+    }
+
     Border outline = s.outline;
     if (focused && s.hasFocusOutline) outline = s.focusOutline;
     if (pressed && s.hasActiveOutline) outline = s.activeOutline;
@@ -1299,7 +1345,8 @@ void Text::render(Renderer& renderer) {
         std::max(0.0f, bounds.h - computedStyle.padding.vertical())
     };
 
-    renderer.drawTextInRect(content, textRect, textColor,
+    std::string displayText = applyTextTransform(content, computedStyle.textTransform);
+    renderer.drawTextInRect(displayText, textRect, textColor,
                             computedStyle.fontSize, computedStyle.textAlign,
                             computedStyle.fontWeight);
     renderChildren(renderer);
@@ -1405,7 +1452,8 @@ void Button::render(Renderer& renderer) {
         std::max(0.0f, drawBounds.w - s.padding.horizontal()),
         std::max(0.0f, drawBounds.h - s.padding.vertical())
     };
-    renderer.drawTextInRect(label, textRect, textColor,
+    std::string displayLabel = applyTextTransform(label, s.textTransform);
+    renderer.drawTextInRect(displayLabel, textRect, textColor,
                             s.fontSize, s.textAlign, s.fontWeight);
 
     renderChildren(renderer);
@@ -1703,6 +1751,7 @@ void TextInput::render(Renderer& renderer) {
     }
 
     std::string displayText = value.empty() ? placeholder : value;
+    displayText = applyTextTransform(displayText, s.textTransform);
     Color textColor = value.empty() ? Color(0.81f, 0.84f, 0.87f, 0.56f) : s.color;
     Rect textRect = {
         clipRect.x - scrollX_,

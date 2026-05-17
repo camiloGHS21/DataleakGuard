@@ -1341,7 +1341,9 @@ static bool applyCSSWideProperty(Style& target,
         target.backgroundGradient = source.backgroundGradient;
     } else if (name == "border" || name == "border-top" ||
                name == "border-right" || name == "border-bottom" ||
-               name == "border-left" || name == "border-color" ||
+               name == "border-left" || name == "border-block-start" ||
+               name == "border-block-end" || name == "border-inline-start" ||
+               name == "border-inline-end" || name == "border-color" ||
                name == "border-width") {
         target.border = source.border;
     } else if (name == "outline" || name == "outline-color" ||
@@ -1366,20 +1368,23 @@ static bool applyCSSWideProperty(Style& target,
                name == "margin-block-end" || name == "margin-inline-start" ||
                name == "margin-inline-end") {
         target.margin = source.margin;
-    } else if (name == "width") {
+    } else if (name == "width" || name == "inline-size") {
         target.width = source.width;
-    } else if (name == "height") {
+    } else if (name == "height" || name == "block-size") {
         target.height = source.height;
-    } else if (name == "min-width") {
+    } else if (name == "min-width" || name == "min-inline-size") {
         target.minWidth = source.minWidth;
-    } else if (name == "min-height") {
+    } else if (name == "min-height" || name == "min-block-size") {
         target.minHeight = source.minHeight;
-    } else if (name == "max-width") {
+    } else if (name == "max-width" || name == "max-inline-size") {
         target.maxWidth = source.maxWidth;
-    } else if (name == "max-height") {
+    } else if (name == "max-height" || name == "max-block-size") {
         target.maxHeight = source.maxHeight;
     } else if (name == "inset" || name == "top" ||
-               name == "right" || name == "bottom" || name == "left") {
+               name == "right" || name == "bottom" || name == "left" ||
+               name == "inset-block" || name == "inset-inline" ||
+               name == "inset-block-start" || name == "inset-block-end" ||
+               name == "inset-inline-start" || name == "inset-inline-end") {
         target.top = source.top;
         target.right = source.right;
         target.bottom = source.bottom;
@@ -1520,6 +1525,49 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
     } else if (t == "p") {
         block();
         style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
+    } else if (t == "html") {
+        block();
+    } else if (t == "body") {
+        block();
+        style.margin = EdgeInsets(8.0f);
+    } else if (t == "blockquote") {
+        block();
+        style.margin = EdgeInsets(medium, 40.0f, medium, 40.0f);
+    } else if (t == "center") {
+        block();
+        style.textAlign = TextAlign::Center;
+        style.hasTextAlign = true;
+    } else if (t == "ul" || t == "ol" || t == "menu" || t == "dir") {
+        block();
+        style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
+        style.padding.left = 40.0f;
+    } else if (t == "li") {
+        block();
+    } else if (t == "strong" || t == "b") {
+        style.display = Display::InlineBlock;
+        style.fontWeight = FontWeight::Bold;
+        style.hasFontWeight = true;
+    } else if (t == "small") {
+        style.display = Display::InlineBlock;
+        style.fontSize = 13.333f;
+        style.hasFontSize = true;
+    } else if (t == "pre" || t == "xmp" || t == "plaintext" || t == "listing") {
+        block();
+        style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
+        style.fontFamily = "monospace";
+        style.hasFontFamily = true;
+        style.whiteSpace = WhiteSpace::Pre;
+        style.hasWhiteSpace = true;
+    } else if (t == "code" || t == "kbd" || t == "samp" || t == "tt") {
+        style.display = Display::InlineBlock;
+        style.fontFamily = "monospace";
+        style.hasFontFamily = true;
+    } else if (t == "nobr") {
+        style.display = Display::InlineBlock;
+        style.whiteSpace = WhiteSpace::NoWrap;
+        style.hasWhiteSpace = true;
+    } else if (t == "rp" || t == "noframes") {
+        style.display = Display::None;
     } else if (t == "div" || t == "article" || t == "aside" || t == "footer" ||
                t == "header" || t == "main" || t == "nav" || t == "section") {
         block();
@@ -1568,10 +1616,20 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         }
     } else if (name == "border-radius") {
         style.borderRadius = parseBorderRadius(value);
-    } else if (name == "border" || name == "border-top" ||
-               name == "border-right" || name == "border-bottom" ||
-               name == "border-left") {
+    } else if (name == "border") {
         style.border = parseBorder(value);
+    } else if (name == "border-top" || name == "border-block-start") {
+        style.borderTop = parseBorder(value);
+        style.hasBorderTop = true;
+    } else if (name == "border-right" || name == "border-inline-end") {
+        style.borderRight = parseBorder(value);
+        style.hasBorderRight = true;
+    } else if (name == "border-bottom" || name == "border-block-end") {
+        style.borderBottom = parseBorder(value);
+        style.hasBorderBottom = true;
+    } else if (name == "border-left" || name == "border-inline-start") {
+        style.borderLeft = parseBorder(value);
+        style.hasBorderLeft = true;
     } else if (name == "border-color") {
         style.border.color = parseColor(value);
     } else if (name == "border-width") {
@@ -1650,17 +1708,37 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.right = CSSValue::px(inset.right);
         style.bottom = CSSValue::px(inset.bottom);
         style.left = CSSValue::px(inset.left);
-    } else if (name == "width") {
+    } else if (name == "inset-block") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.top = parseCSSValue(first);
+        style.bottom = second.empty() ? style.top : parseCSSValue(second);
+    } else if (name == "inset-inline") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.left = parseCSSValue(first);
+        style.right = second.empty() ? style.left : parseCSSValue(second);
+    } else if (name == "inset-block-start") {
+        style.top = parseCSSValue(value);
+    } else if (name == "inset-block-end") {
+        style.bottom = parseCSSValue(value);
+    } else if (name == "inset-inline-start") {
+        style.left = parseCSSValue(value);
+    } else if (name == "inset-inline-end") {
+        style.right = parseCSSValue(value);
+    } else if (name == "width" || name == "inline-size") {
         style.width = parseCSSValue(value);
-    } else if (name == "height") {
+    } else if (name == "height" || name == "block-size") {
         style.height = parseCSSValue(value);
-    } else if (name == "min-width") {
+    } else if (name == "min-width" || name == "min-inline-size") {
         style.minWidth = parseCSSValue(value);
-    } else if (name == "min-height") {
+    } else if (name == "min-height" || name == "min-block-size") {
         style.minHeight = parseCSSValue(value);
-    } else if (name == "max-width") {
+    } else if (name == "max-width" || name == "max-inline-size") {
         style.maxWidth = parseCSSValue(value);
-    } else if (name == "max-height") {
+    } else if (name == "max-height" || name == "max-block-size") {
         style.maxHeight = parseCSSValue(value);
     } else if (name == "font-size") {
         style.fontSize = parseFontSizePixels(value, style.fontSize);
@@ -1945,18 +2023,6 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         else if (value == "break-word") style.wordBreak = WordBreak::BreakWord;
         else style.wordBreak = WordBreak::Normal;
         style.hasWordBreak = true;
-    } else if (name == "border-top") {
-        style.borderTop = parseBorder(value);
-        style.hasBorderTop = true;
-    } else if (name == "border-right") {
-        style.borderRight = parseBorder(value);
-        style.hasBorderRight = true;
-    } else if (name == "border-bottom") {
-        style.borderBottom = parseBorder(value);
-        style.hasBorderBottom = true;
-    } else if (name == "border-left") {
-        style.borderLeft = parseBorder(value);
-        style.hasBorderLeft = true;
     }
     // Hover states (custom extension: hover-background-color, hover-color)
     else if (name == "hover-background-color" || name == "--hover-bg") {
