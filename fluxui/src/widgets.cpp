@@ -195,6 +195,17 @@ static bool canHitTestWidget(const Widget* widget) {
            widget->computedStyle.pointerEvents != PointerEvents::None;
 }
 
+static bool clipsOverflow(Overflow overflow) {
+    return overflow == Overflow::Hidden || overflow == Overflow::Scroll ||
+           overflow == Overflow::Auto;
+}
+
+static bool scrollsOverflowY(Overflow overflow, float contentHeight, float boundsHeight) {
+    if (overflow == Overflow::Scroll) return contentHeight > boundsHeight + 1.0f;
+    if (overflow == Overflow::Auto) return contentHeight > boundsHeight + 1.0f;
+    return false;
+}
+
 static std::string renderFontName(const Style& style) {
     return style.fontFamily.empty() ? "default" : style.fontFamily;
 }
@@ -250,6 +261,36 @@ static void renderTextDecoration(Renderer& renderer,
     }
     renderer.drawRoundedRect({x, y, std::max(0.0f, textWidth), thickness},
                              lineColor, BorderRadius(thickness * 0.5f));
+}
+
+static std::string ellipsizeText(Renderer& renderer,
+                                 const std::string& text,
+                                 float maxWidth,
+                                 float fontSize,
+                                 const std::string& fontName) {
+    if (text.empty() || maxWidth <= 0.0f) return "";
+    if (renderer.measureText(text, fontSize, fontName).x <= maxWidth) return text;
+
+    constexpr const char* ellipsis = "...";
+    float ellipsisWidth = renderer.measureText(ellipsis, fontSize, fontName).x;
+    if (ellipsisWidth >= maxWidth) return "";
+
+    size_t lo = 0;
+    size_t hi = text.size();
+    size_t best = 0;
+    while (lo <= hi) {
+        size_t mid = clampToUtf8Boundary(text, (lo + hi) / 2);
+        std::string candidate = text.substr(0, mid) + ellipsis;
+        float width = renderer.measureText(candidate, fontSize, fontName).x;
+        if (width <= maxWidth) {
+            best = mid;
+            lo = mid + 1;
+        } else {
+            if (mid == 0) break;
+            hi = mid - 1;
+        }
+    }
+    return text.substr(0, clampToUtf8Boundary(text, best)) + ellipsis;
 }
 
 static bool rectEqual(const Rect& a, const Rect& b) {
@@ -715,7 +756,7 @@ void Widget::layoutFlexChildren() {
                 cursor += childW + cs.margin.horizontal() + nextGap;
             } else {
                 child->layout(childArea);
-                if (!cs.height.isSet() && cs.overflow != Overflow::Scroll &&
+                if (!cs.height.isSet() && !clipsOverflow(cs.overflow) &&
                     child->contentHeight > child->bounds.h) {
                     child->bounds.h = child->contentHeight;
                 }
@@ -770,8 +811,8 @@ void Widget::layoutFlexChildren() {
         for (auto& task : tasks) {
             futures.push_back(std::async(std::launch::async, [task]() {
                 task.widget->layout(task.area);
-                if (!task.widget->computedStyle.height.isSet() && 
-                    task.widget->computedStyle.overflow != Overflow::Scroll &&
+                if (!task.widget->computedStyle.height.isSet() &&
+                    !clipsOverflow(task.widget->computedStyle.overflow) &&
                     task.widget->contentHeight > task.widget->bounds.h) {
                     task.widget->bounds.h = task.widget->contentHeight;
                 }
@@ -865,7 +906,7 @@ float Widget::maxScrollY() const {
 
 bool Widget::getScrollBarRects(Rect& track, Rect& thumb) const {
     float maxScroll = maxScrollY();
-    if (computedStyle.overflow != Overflow::Scroll || maxScroll <= 1.0f) {
+    if (!scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h) || maxScroll <= 1.0f) {
         track = {};
         thumb = {};
         return false;
@@ -986,7 +1027,7 @@ void Widget::update(const InputState& input) {
     renderScale = currentScale;
 
     // Scroll handling
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         clampScroll();
 
         Rect track, thumb;
@@ -1073,7 +1114,7 @@ void Widget::update(const InputState& input) {
 
     // Pass input to children with adjusted mouse position
     InputState childInput = input;
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         if (scrollbarHovered || scrollbarDragging) {
             childInput.mouseClicked[0] = false;
             childInput.mouseReleased[0] = false;
@@ -1083,7 +1124,7 @@ void Widget::update(const InputState& input) {
     }
 
     Rect visibleContent = bounds;
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         visibleContent.y += scrollY;
     }
 
@@ -1091,7 +1132,8 @@ void Widget::update(const InputState& input) {
     size_t endIndex = children.size();
     
     const bool isColumn = (computedStyle.flexDirection == FlexDirection::Column);
-    if (children.size() > 256 && isColumn && computedStyle.overflow == Overflow::Scroll) {
+    if (children.size() > 256 && isColumn &&
+        scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         auto itStart = std::lower_bound(children.begin(), children.end(), visibleContent.y - 128.0f,
             [](const std::shared_ptr<Widget>& w, float y) {
                 return w->bounds.y + w->bounds.h < y;
@@ -1122,7 +1164,7 @@ void Widget::update(const InputState& input) {
             }
         }
 
-        if (computedStyle.overflow == Overflow::Scroll &&
+        if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h) &&
             !rectIntersects(child->bounds, visibleContent, 128.0f) &&
             !child->focused && !child->scrollbarDragging) {
             child->hovered = false;
@@ -1144,7 +1186,7 @@ CursorType Widget::cursorAt(Vec2 point) const {
         return CursorType::Default;
     }
 
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         Rect track, thumb;
         if (getScrollBarRects(track, thumb) &&
             (track.contains(point) || thumb.contains(point) || scrollbarDragging)) {
@@ -1153,7 +1195,7 @@ CursorType Widget::cursorAt(Vec2 point) const {
     }
 
     Vec2 childPoint = point;
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         childPoint.y += scrollY;
     }
 
@@ -1171,7 +1213,7 @@ Widget* Widget::hitTest(Vec2 point, bool interactiveOnly) {
     }
 
     Vec2 childPoint = point;
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h)) {
         childPoint.y += scrollY;
     }
 
@@ -1281,16 +1323,16 @@ void Widget::renderBackground(Renderer& renderer) {
 }
 
 void Widget::renderChildren(Renderer& renderer) {
-    bool clip = (computedStyle.overflow == Overflow::Hidden ||
-                 computedStyle.overflow == Overflow::Scroll);
+    bool scrollable = scrollsOverflowY(computedStyle.overflow, contentHeight, bounds.h);
+    bool clip = clipsOverflow(computedStyle.overflow);
     Rect visibleContent = bounds;
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollable) {
         visibleContent.y += scrollY;
     }
 
     if (clip) renderer.pushScissor(bounds);
 
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollable) {
         renderer.pushTranslation({0, -scrollY});
     }
 
@@ -1299,7 +1341,7 @@ void Widget::renderChildren(Renderer& renderer) {
     size_t endIndex = children.size();
     
     const bool isColumn = (computedStyle.flexDirection == FlexDirection::Column);
-    if (children.size() > 256 && isColumn && computedStyle.overflow == Overflow::Scroll) {
+    if (children.size() > 256 && isColumn && scrollable) {
         // Find first child that could be visible
         auto itStart = std::lower_bound(children.begin(), children.end(), visibleContent.y - 64.0f,
             [](const std::shared_ptr<Widget>& w, float y) {
@@ -1322,7 +1364,7 @@ void Widget::renderChildren(Renderer& renderer) {
         child->render(renderer);
     }
 
-    if (computedStyle.overflow == Overflow::Scroll) {
+    if (scrollable) {
         renderer.popTranslation();
 
         Rect track, thumb;
@@ -1412,6 +1454,10 @@ void Text::render(Renderer& renderer) {
 
     std::string displayText = applyTextTransform(content, computedStyle.textTransform);
     std::string fontName = renderFontName(computedStyle);
+    if (computedStyle.textOverflow == TextOverflow::Ellipsis) {
+        displayText = ellipsizeText(renderer, displayText, textRect.w,
+                                    computedStyle.fontSize, fontName);
+    }
     renderer.drawTextInRect(displayText, textRect, textColor,
                             computedStyle.fontSize, computedStyle.textAlign,
                             computedStyle.fontWeight, fontName);
@@ -1521,6 +1567,9 @@ void Button::render(Renderer& renderer) {
     };
     std::string displayLabel = applyTextTransform(label, s.textTransform);
     std::string fontName = renderFontName(s);
+    if (s.textOverflow == TextOverflow::Ellipsis) {
+        displayLabel = ellipsizeText(renderer, displayLabel, textRect.w, s.fontSize, fontName);
+    }
     renderer.drawTextInRect(displayLabel, textRect, textColor,
                             s.fontSize, s.textAlign, s.fontWeight, fontName);
     renderTextDecoration(renderer, displayLabel, textRect, textColor, s);
