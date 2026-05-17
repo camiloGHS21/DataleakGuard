@@ -2266,9 +2266,9 @@ void Application::run() {
 #ifdef _WIN32
             WaitMessage();
 #else
-            std::this_thread::sleep_for(std::chrono::milliseconds(16)); // Fallback
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
 #endif
-            lastTime = std::chrono::high_resolution_clock::now(); // Reset time to avoid massive delta
+            lastTime = std::chrono::high_resolution_clock::now();
             continue;
         }
 
@@ -2277,14 +2277,10 @@ void Application::run() {
         input_.deltaTime = std::clamp(elapsed.count(), 0.001f, 1.0f / 30.0f);
         lastTime = now;
 
-        RECT rect;
-#ifdef _WIN32
-        GetClientRect((HWND)window_, &rect);
-        int w = rect.right - rect.left;
-        int h = rect.bottom - rect.top;
-#else
-        int w = 800, h = 600; // Fallback
-#endif
+        // Cross-platform window size query — works on Win32, Linux, macOS, Android
+        int w = 0, h = 0;
+        Platform::getWindowSize(window_, w, h);
+
         if (w <= 0 || h <= 0) {
             if (root_) root_->resetTransientMotion();
             needsRedraw_ = false;
@@ -2331,12 +2327,12 @@ void Application::run() {
         if (onRender) onRender();
         renderer_.endFrame();
 
-#ifdef _WIN32
         if (firstFrame) {
+#ifdef _WIN32
             ShowWindow((HWND)window_, SW_SHOWMAXIMIZED);
+#endif
             firstFrame = false;
         }
-#endif
 
         constexpr float targetFrameSeconds = 1.0f / 120.0f;
         auto frameElapsed = std::chrono::duration<float>(
@@ -2352,9 +2348,11 @@ void Application::run() {
 
 void Application::shutdown() {
     renderer_.shutdown();
-#ifdef _WIN32
-    if (window_) DestroyWindow((HWND)window_);
-#endif
+    if (window_) {
+        Platform::destroyWindow(window_);
+        window_ = nullptr;
+    }
+    Platform::shutdown();
 }
 
 } // namespace FluxUI
