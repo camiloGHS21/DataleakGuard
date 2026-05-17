@@ -2255,6 +2255,9 @@ void Application::run() {
 
     while (running) {
         processEvents();
+        if (!running) {
+            break;
+        }
 
         bool hasAnimations = root_ && root_->hasActiveAnimations();
         
