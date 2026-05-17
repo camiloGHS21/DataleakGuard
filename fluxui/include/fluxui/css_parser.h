@@ -32,6 +32,18 @@ struct CSSSelectorNode {
     std::string type;
 };
 
+enum class CSSRuleBucket {
+    Universal,
+    Id,
+    Class,
+    Type
+};
+
+struct CSSRuleIndexKey {
+    CSSRuleBucket bucket = CSSRuleBucket::Universal;
+    std::string key;
+};
+
 // ============================================================
 //  CSS Stylesheet
 // ============================================================
@@ -61,9 +73,14 @@ public:
 private:
     std::unordered_map<std::string, std::string> variables_;
     mutable std::unordered_map<std::string, Style> resolvedCache_;
+    std::unordered_map<std::string, std::vector<size_t>> idRuleIndex_;
+    std::unordered_map<std::string, std::vector<size_t>> classRuleIndex_;
+    std::unordered_map<std::string, std::vector<size_t>> typeRuleIndex_;
+    std::vector<size_t> universalRuleIndex_;
     uint32_t nextPropertyOrder_ = 0;
 
     void parseRule(const std::string& selector, const std::string& body);
+    void indexRule(size_t ruleIndex);
     std::string resolveValue(const std::string& value) const;
     static std::string cacheKey(const std::string& className,
                                 const std::string& id,
@@ -83,9 +100,15 @@ private:
                                 const std::vector<CSSSelectorNode>& ancestors,
                                 std::string* pseudo = nullptr);
     static int selectorSpecificity(const std::string& selector);
+    static CSSRuleIndexKey selectorIndexKey(const std::string& selector);
+    static void appendClassTokens(const std::string& className, std::vector<std::string>& out);
     static std::vector<std::string> splitDeclarations(const std::string& body);
     static bool stripImportant(std::string& value);
     static void applyUserAgentDefaults(Style& style, const std::string& type);
+    void collectCandidateRules(const std::string& className,
+                               const std::string& id,
+                               const std::string& type,
+                               std::vector<size_t>& out) const;
     static void mergeHoverProperty(Style& style, const std::string& name, const std::string& value);
     static void mergeFocusProperty(Style& style, const std::string& name, const std::string& value);
     static void mergeActiveProperty(Style& style, const std::string& name, const std::string& value);

@@ -369,6 +369,14 @@ bool StyleSheet::selectorMatches(const std::string& selector,
     return true;
 }
 
+void StyleSheet::appendClassTokens(const std::string& className, std::vector<std::string>& out) {
+    std::istringstream classes(className);
+    std::string cls;
+    while (classes >> cls) {
+        out.push_back(cls);
+    }
+}
+
 int StyleSheet::selectorSpecificity(const std::string& selector) {
     std::string s = trim(selector);
     if (s.empty() || s == "*") return 0;
@@ -455,6 +463,74 @@ int StyleSheet::selectorSpecificity(const std::string& selector) {
     }
 
     return ids * 10000 + classes * 100 + types;
+}
+
+CSSRuleIndexKey StyleSheet::selectorIndexKey(const std::string& selector) {
+    std::string s = trim(selector);
+    auto colon = s.find(':');
+    if (colon != std::string::npos) {
+        s = trim(s.substr(0, colon));
+    }
+
+    std::vector<std::string> parts;
+    std::vector<char> combinators;
+    splitSelectorChain(s, parts, combinators);
+    if (parts.empty()) return {};
+
+    std::string rightmost = trim(parts.back());
+    if (rightmost.empty() || rightmost == "*") return {};
+
+    CSSRuleIndexKey key;
+
+    for (size_t i = 0; i < rightmost.size();) {
+        char c = rightmost[i];
+        if (c == '#') {
+            size_t start = ++i;
+            while (i < rightmost.size() &&
+                   (std::isalnum((unsigned char)rightmost[i]) ||
+                    rightmost[i] == '-' || rightmost[i] == '_')) {
+                i++;
+            }
+            key.bucket = CSSRuleBucket::Id;
+            key.key = rightmost.substr(start, i - start);
+            return key;
+        }
+        if (c == '.') {
+            size_t start = ++i;
+            while (i < rightmost.size() &&
+                   (std::isalnum((unsigned char)rightmost[i]) ||
+                    rightmost[i] == '-' || rightmost[i] == '_')) {
+                i++;
+            }
+            if (key.bucket != CSSRuleBucket::Class) {
+                key.bucket = CSSRuleBucket::Class;
+                key.key = rightmost.substr(start, i - start);
+            }
+            continue;
+        }
+        if (c == '[' || c == ':' || c == '+' || c == '~') {
+            break;
+        }
+        if (std::isalpha((unsigned char)c) || c == '_') {
+            size_t start = i;
+            while (i < rightmost.size() &&
+                   (std::isalnum((unsigned char)rightmost[i]) ||
+                    rightmost[i] == '-' || rightmost[i] == '_')) {
+                i++;
+            }
+            if (key.bucket == CSSRuleBucket::Universal) {
+                key.bucket = CSSRuleBucket::Type;
+                key.key = lowerAscii(rightmost.substr(start, i - start));
+            }
+            continue;
+        }
+        i++;
+    }
+
+    if (key.key.empty()) {
+        key.bucket = CSSRuleBucket::Universal;
+    }
+    return key;
 }
 
 bool StyleSheet::stripImportant(std::string& value) {
@@ -563,8 +639,40 @@ void StyleSheet::parseRule(const std::string& selector, const std::string& body)
                 rule.properties.push_back(prop);
             }
         }
-        if (!rule.properties.empty()) rules.push_back(rule);
+        if (!rule.properties.empty()) {
+            rules.push_back(std::move(rule));
+            indexRule(rules.size() - 1);
+        }
     }
+}
+
+void StyleSheet::indexRule(size_t ruleIndex) {
+    if (ruleIndex >= rules.size()) return;
+
+    CSSRuleIndexKey key = selectorIndexKey(rules[ruleIndex].selector);
+    switch (key.bucket) {
+        case CSSRuleBucket::Id:
+            if (!key.key.empty()) {
+                idRuleIndex_[key.key].push_back(ruleIndex);
+                return;
+            }
+            break;
+        case CSSRuleBucket::Class:
+            if (!key.key.empty()) {
+                classRuleIndex_[key.key].push_back(ruleIndex);
+                return;
+            }
+            break;
+        case CSSRuleBucket::Type:
+            if (!key.key.empty()) {
+                typeRuleIndex_[key.key].push_back(ruleIndex);
+                return;
+            }
+            break;
+        case CSSRuleBucket::Universal:
+            break;
+    }
+    universalRuleIndex_.push_back(ruleIndex);
 }
 
 std::string StyleSheet::resolveValue(const std::string& value) const {
@@ -645,8 +753,12 @@ Style StyleSheet::resolve(const std::string& className,
     std::vector<CascadedProperty> hoverProperties;
     std::vector<CascadedProperty> focusProperties;
     std::vector<CascadedProperty> activeProperties;
+    std::vector<size_t> candidateRules;
+    collectCandidateRules(className, id, type, candidateRules);
 
-    for (auto& rule : rules) {
+    for (size_t ruleIndex : candidateRules) {
+        if (ruleIndex >= rules.size()) continue;
+        const auto& rule = rules[ruleIndex];
         std::string pseudo;
         if (selectorMatches(rule.selector, className, id, type, ancestors, &pseudo)) {
             if (!pseudo.empty() && pseudo != "hover" &&
@@ -693,6 +805,41 @@ Style StyleSheet::resolve(const std::string& className,
 
     resolvedCache_[std::move(key)] = style;
     return style;
+}
+
+void StyleSheet::collectCandidateRules(const std::string& className,
+                                       const std::string& id,
+                                       const std::string& type,
+                                       std::vector<size_t>& out) const {
+    out.clear();
+    out.reserve(universalRuleIndex_.size() + 8);
+
+    auto append = [&out](const std::vector<size_t>& rulesForKey) {
+        out.insert(out.end(), rulesForKey.begin(), rulesForKey.end());
+    };
+
+    append(universalRuleIndex_);
+
+    if (!id.empty()) {
+        auto it = idRuleIndex_.find(id);
+        if (it != idRuleIndex_.end()) append(it->second);
+    }
+
+    std::vector<std::string> classes;
+    appendClassTokens(className, classes);
+    for (const auto& cls : classes) {
+        auto it = classRuleIndex_.find(cls);
+        if (it != classRuleIndex_.end()) append(it->second);
+    }
+
+    std::string lowerType = lowerAscii(type);
+    if (!lowerType.empty()) {
+        auto it = typeRuleIndex_.find(lowerType);
+        if (it != typeRuleIndex_.end()) append(it->second);
+    }
+
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
 }
 
 void StyleSheet::applyUserAgentDefaults(Style& style, const std::string& type) {

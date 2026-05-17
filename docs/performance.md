@@ -118,6 +118,15 @@ Class/id changes use subtree style invalidation, matching Blink's conservative
 approach: it may recalculate a little more than strictly necessary, but avoids
 stale descendant styles.
 
+Like Blink's `RuleSet`, parsed rules are now partitioned by the most useful
+simple selector in the right-most compound selector. A selector such as
+`.sidebar .nav-text` is stored in the class bucket for `nav-text`, while
+`#primary-action` is stored in the id bucket and `button.primary` in the class
+bucket for `primary`. During style resolution FluxUI gathers only universal,
+matching id, matching class, and matching type buckets before running the
+selector checker. This keeps cascade behavior the same while avoiding a full
+stylesheet scan for every widget.
+
 Basic user-agent defaults and inherited text properties are also modeled:
 `h1`/`h2`/`h3` get browser-like default sizes and weight, while `color`,
 `font-size`, `font-weight`, `font-family`, `line-height`, and `text-align`
