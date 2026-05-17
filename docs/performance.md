@@ -169,6 +169,23 @@ declaration instead of applying an accidental transparent/black value.
 CSS-wide keywords (`inherit`, `initial`, `unset`, plus `all`) are handled for
 the supported base properties, including inline `widget->css(...)` styles.
 
+`@media` rules now participate in style resolution against the active viewport:
+
+```css
+@media screen and (max-width: 900px) {
+  .sidebar { display: none; }
+}
+
+@media (min-width: 1200px) and (orientation: landscape) {
+  .dashboard-grid { gap: 18px; }
+}
+```
+
+FluxUI stores the media query on each parsed rule, evaluates it during
+resolution, and clears the style cache when the application viewport changes.
+The app marks the widget tree style-dirty on viewport changes so responsive
+rules are recomputed instead of reusing stale computed styles.
+
 Basic user-agent defaults and inherited text properties are also modeled:
 `h1`/`h2`/`h3` get browser-like default sizes and weight, while `color`,
 `font-size`, `font-weight`, `font-family`, `line-height`, and `text-align`

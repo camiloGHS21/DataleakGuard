@@ -23,6 +23,7 @@ struct CSSProperty {
 struct CSSRule {
     std::string selector; // e.g. ".sidebar", "#dashboard", "button"
     std::vector<CSSProperty> properties;
+    std::string mediaQuery;
     int specificity = 0;
 };
 
@@ -57,6 +58,7 @@ public:
 
     // Parse CSS string
     void parse(const std::string& css);
+    bool setViewportSize(float width, float height);
 
     // Get style for a specific class/id/type
     Style resolve(const std::string& className,
@@ -85,9 +87,12 @@ private:
     std::unordered_map<std::string, std::vector<size_t>> classRuleIndex_;
     std::unordered_map<std::string, std::vector<size_t>> typeRuleIndex_;
     std::vector<size_t> universalRuleIndex_;
+    float viewportWidth_ = 1920.0f;
+    float viewportHeight_ = 1080.0f;
     uint32_t nextPropertyOrder_ = 0;
 
-    void parseRule(const std::string& selector, const std::string& body);
+    void parseRules(const std::string& css, const std::string& mediaQuery);
+    void parseRule(const std::string& selector, const std::string& body, const std::string& mediaQuery = "");
     void indexRule(size_t ruleIndex);
     std::string resolveValueInternal(const std::string& value,
                                      const std::unordered_map<std::string, std::string>* customProperties,
@@ -120,6 +125,7 @@ private:
                                const std::string& id,
                                const std::string& type,
                                std::vector<size_t>& out) const;
+    bool mediaQueryMatches(const std::string& query) const;
     static void mergeHoverProperty(Style& style, const std::string& name, const std::string& value);
     static void mergeFocusProperty(Style& style, const std::string& name, const std::string& value);
     static void mergeActiveProperty(Style& style, const std::string& name, const std::string& value);

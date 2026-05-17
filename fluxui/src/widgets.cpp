@@ -2299,6 +2299,9 @@ void Application::run() {
         if (onUpdate) onUpdate(input_.deltaTime);
 
         // Resolve styles
+        if (stylesheet_.setViewportSize((float)w, (float)h)) {
+            root_->markStyleDirtyRecursive();
+        }
         root_->resolveStyles(stylesheet_);
 
         // Layout

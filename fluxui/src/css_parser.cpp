@@ -686,6 +686,19 @@ bool StyleSheet::loadFile(const std::string& path) {
     return true;
 }
 
+bool StyleSheet::setViewportSize(float width, float height) {
+    width = std::max(0.0f, width);
+    height = std::max(0.0f, height);
+    if (std::abs(width - viewportWidth_) < 0.5f &&
+        std::abs(height - viewportHeight_) < 0.5f) {
+        return false;
+    }
+    viewportWidth_ = width;
+    viewportHeight_ = height;
+    resolvedCache_.clear();
+    return true;
+}
+
 void StyleSheet::parse(const std::string& css) {
     resolvedCache_.clear();
 
@@ -708,34 +721,47 @@ void StyleSheet::parse(const std::string& css) {
         if (!inComment) cleaned += css[i];
     }
 
+    parseRules(cleaned, "");
+}
+
+void StyleSheet::parseRules(const std::string& css, const std::string& mediaQuery) {
     // Parse rules
     size_t pos = 0;
-    while (pos < cleaned.size()) {
+    while (pos < css.size()) {
         // Find selector
-        size_t braceOpen = cleaned.find('{', pos);
+        size_t braceOpen = css.find('{', pos);
         if (braceOpen == std::string::npos) break;
 
-        std::string selector = trim(cleaned.substr(pos, braceOpen - pos));
+        std::string selector = trim(css.substr(pos, braceOpen - pos));
 
         // Find matching close brace (handles nested)
         int depth = 1;
         size_t braceClose = braceOpen + 1;
-        while (braceClose < cleaned.size() && depth > 0) {
-            if (cleaned[braceClose] == '{') depth++;
-            if (cleaned[braceClose] == '}') depth--;
+        while (braceClose < css.size() && depth > 0) {
+            if (css[braceClose] == '{') depth++;
+            if (css[braceClose] == '}') depth--;
             if (depth > 0) braceClose++;
         }
 
-        if (braceClose < cleaned.size()) {
-            std::string body = cleaned.substr(braceOpen + 1, braceClose - braceOpen - 1);
-            parseRule(selector, body);
+        if (braceClose < css.size()) {
+            std::string body = css.substr(braceOpen + 1, braceClose - braceOpen - 1);
+            std::string lowerSelector = lowerAscii(selector);
+            if (lowerSelector.rfind("@media", 0) == 0) {
+                std::string query = trim(selector.substr(6));
+                std::string combinedQuery = mediaQuery.empty()
+                    ? query
+                    : mediaQuery + " and " + query;
+                parseRules(body, combinedQuery);
+            } else if (!selector.empty() && selector[0] != '@') {
+                parseRule(selector, body, mediaQuery);
+            }
         }
 
         pos = braceClose + 1;
     }
 }
 
-void StyleSheet::parseRule(const std::string& selector, const std::string& body) {
+void StyleSheet::parseRule(const std::string& selector, const std::string& body, const std::string& mediaQuery) {
     std::vector<CSSProperty> properties;
 
     // Parse properties
@@ -767,6 +793,7 @@ void StyleSheet::parseRule(const std::string& selector, const std::string& body)
 
         CSSRule rule;
         rule.selector = cleanSelector;
+        rule.mediaQuery = mediaQuery;
         rule.specificity = selectorSpecificity(cleanSelector);
         for (const auto& prop : properties) {
             rule.properties.push_back(prop);
@@ -990,6 +1017,7 @@ Style StyleSheet::resolve(const std::string& className,
     for (size_t ruleIndex : candidateRules) {
         if (ruleIndex >= rules.size()) continue;
         const auto& rule = rules[ruleIndex];
+        if (!mediaQueryMatches(rule.mediaQuery)) continue;
         std::string pseudo;
         if (selectorMatches(rule.selector, className, id, type, ancestors, &pseudo)) {
             if (!pseudo.empty() && pseudo != "hover" &&
@@ -1106,6 +1134,160 @@ void StyleSheet::collectCandidateRules(const std::string& className,
 
     std::sort(out.begin(), out.end());
     out.erase(std::unique(out.begin(), out.end()), out.end());
+}
+
+static std::vector<std::string> splitMediaAndClauses(const std::string& query) {
+    std::vector<std::string> clauses;
+    std::string current;
+    int depth = 0;
+    std::string lower = lowerAscii(query);
+
+    for (size_t i = 0; i < query.size();) {
+        char c = query[i];
+        if (c == '(') depth++;
+        else if (c == ')' && depth > 0) depth--;
+
+        bool isAnd = depth == 0 &&
+                     i + 5 <= query.size() &&
+                     lower.compare(i, 5, " and ") == 0;
+        if (isAnd) {
+            std::string item = trimLocal(current);
+            if (!item.empty()) clauses.push_back(item);
+            current.clear();
+            i += 5;
+            continue;
+        }
+
+        current += c;
+        ++i;
+    }
+
+    std::string item = trimLocal(current);
+    if (!item.empty()) clauses.push_back(item);
+    return clauses;
+}
+
+static bool parseMediaFeature(const std::string& clause,
+                              float viewportWidth,
+                              float viewportHeight) {
+    std::string c = trimLocal(lowerAscii(clause));
+    if (c.size() >= 2 && c.front() == '(' && c.back() == ')') {
+        c = trimLocal(c.substr(1, c.size() - 2));
+    }
+    if (c.empty()) return true;
+
+    auto colon = c.find(':');
+    if (colon != std::string::npos) {
+        std::string name = trimLocal(c.substr(0, colon));
+        std::string value = trimLocal(c.substr(colon + 1));
+        float numeric = parseNumberToken(value);
+        if (value.find("rem") != std::string::npos ||
+            value.find("em") != std::string::npos) {
+            numeric *= 16.0f;
+        }
+        if (name == "min-width") return viewportWidth >= numeric;
+        if (name == "max-width") return viewportWidth <= numeric;
+        if (name == "width") return std::abs(viewportWidth - numeric) < 0.5f;
+        if (name == "min-height") return viewportHeight >= numeric;
+        if (name == "max-height") return viewportHeight <= numeric;
+        if (name == "height") return std::abs(viewportHeight - numeric) < 0.5f;
+        if (name == "orientation") {
+            bool landscape = viewportWidth >= viewportHeight;
+            return (value == "landscape" && landscape) ||
+                   (value == "portrait" && !landscape);
+        }
+        if (name == "prefers-color-scheme") {
+            return value == "dark";
+        }
+        return false;
+    }
+
+    auto compare = [&](const std::string& op, bool leftWidth) -> bool {
+        auto pos = c.find(op);
+        if (pos == std::string::npos) return false;
+        std::string lhs = trimLocal(c.substr(0, pos));
+        std::string rhs = trimLocal(c.substr(pos + op.size()));
+        float viewport = leftWidth ? viewportWidth : viewportHeight;
+        if (lhs == "width" || lhs == "height") {
+            float value = parseNumberToken(rhs);
+            if (rhs.find("rem") != std::string::npos ||
+                rhs.find("em") != std::string::npos) {
+                value *= 16.0f;
+            }
+            if (op == "<") return viewport < value;
+            if (op == "<=") return viewport <= value;
+            if (op == ">") return viewport > value;
+            if (op == ">=") return viewport >= value;
+        }
+        if (rhs == "width" || rhs == "height") {
+            viewport = rhs == "width" ? viewportWidth : viewportHeight;
+            float value = parseNumberToken(lhs);
+            if (lhs.find("rem") != std::string::npos ||
+                lhs.find("em") != std::string::npos) {
+                value *= 16.0f;
+            }
+            if (op == "<") return value < viewport;
+            if (op == "<=") return value <= viewport;
+            if (op == ">") return value > viewport;
+            if (op == ">=") return value >= viewport;
+        }
+        return false;
+    };
+
+    if (c.find("width") != std::string::npos) {
+        if (compare("<=", true) || compare(">=", true) ||
+            compare("<", true) || compare(">", true)) {
+            return true;
+        }
+    }
+    if (c.find("height") != std::string::npos) {
+        if (compare("<=", false) || compare(">=", false) ||
+            compare("<", false) || compare(">", false)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool StyleSheet::mediaQueryMatches(const std::string& query) const {
+    std::string trimmed = trim(query);
+    if (trimmed.empty()) return true;
+
+    for (std::string alternative : splitTopLevel(trimmed, ',')) {
+        alternative = trimLocal(lowerAscii(alternative));
+        if (alternative.empty()) continue;
+
+        bool negate = false;
+        if (alternative.rfind("not ", 0) == 0) {
+            negate = true;
+            alternative = trimLocal(alternative.substr(4));
+        }
+        if (alternative.rfind("only ", 0) == 0) {
+            alternative = trimLocal(alternative.substr(5));
+        }
+
+        bool matches = true;
+        for (std::string clause : splitMediaAndClauses(alternative)) {
+            clause = trimLocal(clause);
+            if (clause == "all" || clause == "screen") {
+                continue;
+            }
+            if (clause == "print" || clause == "speech") {
+                matches = false;
+                break;
+            }
+            if (!parseMediaFeature(clause, viewportWidth_, viewportHeight_)) {
+                matches = false;
+                break;
+            }
+        }
+
+        if (negate) matches = !matches;
+        if (matches) return true;
+    }
+
+    return false;
 }
 
 static bool isInheritedCSSProperty(const std::string& name) {
