@@ -1354,11 +1354,17 @@ static bool applyCSSWideProperty(Style& target,
         target.boxShadow = source.boxShadow;
     } else if (name == "padding" || name == "padding-top" ||
                name == "padding-right" || name == "padding-bottom" ||
-               name == "padding-left") {
+               name == "padding-left" || name == "padding-block" ||
+               name == "padding-inline" || name == "padding-block-start" ||
+               name == "padding-block-end" || name == "padding-inline-start" ||
+               name == "padding-inline-end") {
         target.padding = source.padding;
     } else if (name == "margin" || name == "margin-top" ||
                name == "margin-right" || name == "margin-bottom" ||
-               name == "margin-left") {
+               name == "margin-left" || name == "margin-block" ||
+               name == "margin-inline" || name == "margin-block-start" ||
+               name == "margin-block-end" || name == "margin-inline-start" ||
+               name == "margin-inline-end") {
         target.margin = source.margin;
     } else if (name == "width") {
         target.width = source.width;
@@ -1588,6 +1594,26 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.padding.bottom = parseLengthPixels(value);
     } else if (name == "padding-left") {
         style.padding.left = parseLengthPixels(value);
+    } else if (name == "padding-block") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.padding.top = parseLengthPixels(first);
+        style.padding.bottom = second.empty() ? style.padding.top : parseLengthPixels(second);
+    } else if (name == "padding-inline") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.padding.left = parseLengthPixels(first);
+        style.padding.right = second.empty() ? style.padding.left : parseLengthPixels(second);
+    } else if (name == "padding-block-start") {
+        style.padding.top = parseLengthPixels(value);
+    } else if (name == "padding-block-end") {
+        style.padding.bottom = parseLengthPixels(value);
+    } else if (name == "padding-inline-start") {
+        style.padding.left = parseLengthPixels(value);
+    } else if (name == "padding-inline-end") {
+        style.padding.right = parseLengthPixels(value);
     } else if (name == "margin") {
         style.margin = parseEdgeInsets(value);
     } else if (name == "margin-top") {
@@ -1598,6 +1624,26 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.margin.bottom = parseLengthPixels(value);
     } else if (name == "margin-left") {
         style.margin.left = parseLengthPixels(value);
+    } else if (name == "margin-block") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.margin.top = parseLengthPixels(first);
+        style.margin.bottom = second.empty() ? style.margin.top : parseLengthPixels(second);
+    } else if (name == "margin-inline") {
+        std::istringstream ss(value);
+        std::string first, second;
+        ss >> first >> second;
+        style.margin.left = parseLengthPixels(first);
+        style.margin.right = second.empty() ? style.margin.left : parseLengthPixels(second);
+    } else if (name == "margin-block-start") {
+        style.margin.top = parseLengthPixels(value);
+    } else if (name == "margin-block-end") {
+        style.margin.bottom = parseLengthPixels(value);
+    } else if (name == "margin-inline-start") {
+        style.margin.left = parseLengthPixels(value);
+    } else if (name == "margin-inline-end") {
+        style.margin.right = parseLengthPixels(value);
     } else if (name == "inset") {
         EdgeInsets inset = parseEdgeInsets(value);
         style.top = CSSValue::px(inset.top);
@@ -1617,8 +1663,54 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
     } else if (name == "max-height") {
         style.maxHeight = parseCSSValue(value);
     } else if (name == "font-size") {
-        style.fontSize = parseLengthPixels(value);
+        style.fontSize = parseFontSizePixels(value, style.fontSize);
         style.hasFontSize = true;
+    } else if (name == "font") {
+        std::string lower = lowerAscii(value);
+        if (lower.find("-webkit-small-control") != std::string::npos) {
+            style.fontSize = 13.333f;
+            style.lineHeight = 1.2f;
+            style.fontWeight = FontWeight::Normal;
+            style.hasFontSize = true;
+            style.hasLineHeight = true;
+            style.hasFontWeight = true;
+        } else {
+            std::istringstream ss(value);
+            std::string token;
+            while (ss >> token) {
+                std::string part = token;
+                std::string linePart;
+                auto slash = part.find('/');
+                if (slash != std::string::npos) {
+                    linePart = part.substr(slash + 1);
+                    part = part.substr(0, slash);
+                }
+                std::string lowerPart = lowerAscii(part);
+                if (lowerPart == "bold" || parseFloat(lowerPart) >= 600.0f) {
+                    style.fontWeight = FontWeight::Bold;
+                    style.hasFontWeight = true;
+                } else if (lowerPart == "normal") {
+                    style.fontWeight = FontWeight::Normal;
+                    style.hasFontWeight = true;
+                }
+                if (lowerPart.find("px") != std::string::npos ||
+                    lowerPart.find("em") != std::string::npos ||
+                    lowerPart.find("rem") != std::string::npos ||
+                    lowerPart.find('%') != std::string::npos ||
+                    lowerPart == "xx-small" || lowerPart == "x-small" ||
+                    lowerPart == "small" || lowerPart == "medium" ||
+                    lowerPart == "large" || lowerPart == "x-large" ||
+                    lowerPart == "xx-large" || lowerPart == "xxx-large" ||
+                    lowerPart == "smaller" || lowerPart == "larger") {
+                    style.fontSize = parseFontSizePixels(lowerPart, style.fontSize);
+                    style.hasFontSize = true;
+                }
+                if (!linePart.empty()) {
+                    style.lineHeight = parseLineHeight(linePart, style.fontSize);
+                    style.hasLineHeight = true;
+                }
+            }
+        }
     } else if (name == "font-weight") {
         style.fontWeight = (value == "bold" || parseFloat(value) >= 600.0f) ?
             FontWeight::Bold : FontWeight::Normal;
@@ -2236,6 +2328,9 @@ float StyleSheet::parseLengthPixels(const std::string& val, float emBase) {
     std::string lower = lowerAscii(v);
     if (lower.empty() || lower == "auto") return 0.0f;
 
+    if (lower.find("__qem") != std::string::npos) {
+        return parseFloat(lower) * emBase;
+    }
     if (lower.size() > 3 && lower.substr(lower.size() - 3) == "rem") {
         return parseFloat(lower) * 16.0f;
     }
@@ -2246,6 +2341,21 @@ float StyleSheet::parseLengthPixels(const std::string& val, float emBase) {
         return parseFloat(lower) * emBase / 100.0f;
     }
     return parseFloat(lower);
+}
+
+float StyleSheet::parseFontSizePixels(const std::string& val, float currentSize) {
+    std::string lower = lowerAscii(trim(val));
+    if (lower == "xx-small") return 9.0f;
+    if (lower == "x-small") return 10.0f;
+    if (lower == "small") return 13.0f;
+    if (lower == "medium") return 16.0f;
+    if (lower == "large") return 18.0f;
+    if (lower == "x-large") return 24.0f;
+    if (lower == "xx-large") return 32.0f;
+    if (lower == "xxx-large") return 48.0f;
+    if (lower == "smaller") return std::max(1.0f, currentSize * 0.833f);
+    if (lower == "larger") return currentSize * 1.2f;
+    return parseLengthPixels(lower, currentSize);
 }
 
 float StyleSheet::parseLineHeight(const std::string& val, float fontSize) {
