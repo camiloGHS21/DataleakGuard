@@ -5,11 +5,15 @@
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
+#include <X11/Xresource.h>
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan_xlib.h>
 #include <dlfcn.h>
 #include <cstring>
 #include <iostream>
+#include <chrono>
+#include <thread>
+#include <string>
 
 namespace FluxUI {
 
@@ -18,6 +22,7 @@ static Window g_window = 0;
 static Atom g_wmDeleteMessage;
 static void* g_eventContext = nullptr;
 static PlatformEventCallback g_eventCallback = nullptr;
+static std::string g_clipboardText;
 
 void Platform::setEventCallback(void* context, PlatformEventCallback callback) {
     g_eventContext = context;
@@ -143,6 +148,37 @@ void Platform::processEvents(bool& running) {
         XNextEvent(g_display, &xev);
         
         switch (xev.type) {
+        case SelectionRequest: {
+            XSelectionRequestEvent* req = &xev.xselectionrequest;
+            XEvent respond;
+            respond.xselection.type = SelectionNotify;
+            respond.xselection.requestor = req->requestor;
+            respond.xselection.selection = req->selection;
+            respond.xselection.target = req->target;
+            respond.xselection.property = None; // Default to reject
+            respond.xselection.time = req->time;
+
+            Atom targets = XInternAtom(g_display, "TARGETS", False);
+            Atom utf8_string = XInternAtom(g_display, "UTF8_STRING", False);
+
+            if (req->target == targets) {
+                Atom supported[] = { targets, utf8_string, XA_STRING };
+                XChangeProperty(g_display, req->requestor, req->property, XA_ATOM, 32,
+                                PropModeReplace, (unsigned char*)supported, 3);
+                respond.xselection.property = req->property;
+            } else if (req->target == utf8_string || req->target == XA_STRING) {
+                XChangeProperty(g_display, req->requestor, req->property, req->target, 8,
+                                PropModeReplace, (unsigned char*)g_clipboardText.c_str(),
+                                g_clipboardText.length());
+                respond.xselection.property = req->property;
+            }
+
+            XSendEvent(g_display, req->requestor, True, NoEventMask, &respond);
+            XFlush(g_display);
+            break;
+        }
+        case SelectionClear:
+            break;
         case ClientMessage: {
             if ((Atom)xev.xclient.data.l[0] == g_wmDeleteMessage) {
                 running = false;
@@ -267,14 +303,68 @@ void Platform::processEvents(bool& running) {
 
 void Platform::setClipboardText(const char* text) {
     if (!g_display || !g_window) return;
-    // Claim clipboard ownership with XA_CLIPBOARD
+    g_clipboardText = text ? text : "";
     Atom clipboard = XInternAtom(g_display, "CLIPBOARD", False);
     XSetSelectionOwner(g_display, clipboard, g_window, CurrentTime);
-    // Note: Full clipboard requires handling SelectionRequest events
+    XFlush(g_display);
 }
 
 std::string Platform::getClipboardText() {
-    return "";
+    if (!g_display || !g_window) return "";
+
+    Atom clipboard = XInternAtom(g_display, "CLIPBOARD", False);
+    
+    // If we are already the owner of the selection, return our local cache
+    if (XGetSelectionOwner(g_display, clipboard) == g_window) {
+        return g_clipboardText;
+    }
+
+    Atom utf8_string = XInternAtom(g_display, "UTF8_STRING", False);
+    Atom prop = XInternAtom(g_display, "FLUXUI_CLIPBOARD", False);
+
+    // Clear any pending selection notify events on our window to avoid stale state
+    XEvent dummy;
+    while (XCheckTypedWindowEvent(g_display, g_window, SelectionNotify, &dummy)) {}
+
+    XConvertSelection(g_display, clipboard, utf8_string, prop, g_window, CurrentTime);
+    XFlush(g_display);
+
+    // Synchronously check for SelectionNotify with a 200ms timeout, leaving other events in the queue
+    auto startTime = std::chrono::steady_clock::now();
+    XEvent xev;
+    bool received = false;
+
+    while (true) {
+        if (XCheckTypedWindowEvent(g_display, g_window, SelectionNotify, &xev)) {
+            if (xev.xselection.property != None) {
+                received = true;
+            }
+            break;
+        }
+
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime).count() > 200) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    std::string result = "";
+    if (received) {
+        Atom actual_type;
+        int actual_format;
+        unsigned long nitems, bytes_after;
+        unsigned char* prop_data = nullptr;
+
+        if (XGetWindowProperty(g_display, g_window, prop, 0, 65536, True, AnyPropertyType,
+                               &actual_type, &actual_format, &nitems, &bytes_after, &prop_data) == Success) {
+            if (prop_data) {
+                result = (char*)prop_data;
+                XFree(prop_data);
+            }
+        }
+    }
+
+    return result;
 }
 
 NativeCursorHandle Platform::createSystemCursor(CursorType type) {
