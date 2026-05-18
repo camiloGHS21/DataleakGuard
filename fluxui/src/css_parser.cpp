@@ -2062,6 +2062,24 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         else if (lower == "scale-down") style.objectFit = ObjectFit::ScaleDown;
         else style.objectFit = ObjectFit::Fill;
         style.hasObjectFit = true;
+    } else if (name == "object-position") {
+        auto tokens = split(value, ' ');
+        auto parsePos = [](const std::string& val) {
+            if (val == "left" || val == "top") return 0.0f;
+            if (val == "center") return 0.5f;
+            if (val == "right" || val == "bottom") return 1.0f;
+            if (val.back() == '%') return std::stof(val) / 100.0f;
+            return std::stof(val);
+        };
+        if (tokens.size() == 2) {
+            style.objectPosition.x = parsePos(tokens[0]);
+            style.objectPosition.y = parsePos(tokens[1]);
+            style.hasObjectPosition = true;
+        } else if (tokens.size() == 1) {
+            float p = parsePos(tokens[0]);
+            style.objectPosition = {p, p};
+            style.hasObjectPosition = true;
+        }
     } else if (name == "row-gap") {
         style.rowGap = parseLengthPixels(value);
     } else if (name == "column-gap") {

@@ -2370,20 +2370,20 @@ void Image::render(Renderer& renderer) {
         }
         draw.w = natural.x * scale;
         draw.h = natural.y * scale;
-        draw.x = content.x + (content.w - draw.w) * 0.5f;
-        draw.y = content.y + (content.h - draw.h) * 0.5f;
+        draw.x = content.x + (content.w - draw.w) * computedStyle.objectPosition.x;
+        draw.y = content.y + (content.h - draw.h) * computedStyle.objectPosition.y;
     } else if (computedStyle.objectFit == ObjectFit::Cover) {
         float scale = std::max(scaleX, scaleY);
         draw.w = natural.x * scale;
         draw.h = natural.y * scale;
-        draw.x = content.x + (content.w - draw.w) * 0.5f;
-        draw.y = content.y + (content.h - draw.h) * 0.5f;
+        draw.x = content.x + (content.w - draw.w) * computedStyle.objectPosition.x;
+        draw.y = content.y + (content.h - draw.h) * computedStyle.objectPosition.y;
         renderer.pushScissor(content);
     } else if (computedStyle.objectFit == ObjectFit::None) {
         draw.w = natural.x;
         draw.h = natural.y;
-        draw.x = content.x + (content.w - draw.w) * 0.5f;
-        draw.y = content.y + (content.h - draw.h) * 0.5f;
+        draw.x = content.x + (content.w - draw.w) * computedStyle.objectPosition.x;
+        draw.y = content.y + (content.h - draw.h) * computedStyle.objectPosition.y;
         renderer.pushScissor(content);
     }
 

@@ -307,6 +307,8 @@ struct Style {
     float aspectRatio = 0;  // 0 means auto
     ObjectFit objectFit = ObjectFit::Fill;
     bool hasObjectFit = false;
+    Vec2 objectPosition = {0.5f, 0.5f};
+    bool hasObjectPosition = false;
 
     // Dimensions
     CSSValue width, height;
