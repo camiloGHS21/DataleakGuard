@@ -329,16 +329,53 @@ public:
 
 // ============================================================
 //  Image - PNG/JPG/GIF/BMP/HDR/SVG image widget
+//  Architecture mirrors: blink::LayoutImage + blink::HTMLImageElement
 // ============================================================
+
+// Loading states (mirrors blink::ResourceStatus)
+enum class ImageWidgetState {
+    Idle,       // No load started
+    Loading,    // Data being fetched/decoded
+    Complete,   // Decoded and ready to paint
+    Error       // Failed to load or decode
+};
 
 class Image : public Widget {
 public:
-    std::string source;
-    Vec2 naturalSize = {0, 0};
+    // --- Core properties (mirrors HTMLImageElement attributes) ---
+    std::string source;                     // src attribute
+    std::string alt;                        // alt text for accessibility
+    std::string crossOrigin;                // crossorigin attribute
+    Vec2 naturalSize = {0, 0};              // intrinsic dimensions
+
+    // --- Blink-aligned state ---
+    ImageWidgetState loadState = ImageWidgetState::Idle;
+    float devicePixelRatio = 1.0f;          // mirrors LayoutImage::image_device_pixel_ratio_
+    bool isGeneratedContent = false;        // mirrors LayoutImage::is_generated_content_
+    bool lazyLoad = false;                  // loading="lazy" support
+    bool decoding_async = false;            // decoding="async" attribute
+
+    // --- Callbacks (mirrors ImageLoader events) ---
+    std::function<void()> onLoad;           // Fired when image is fully decoded
+    std::function<void()> onError;          // Fired on load/decode failure
 
     Image() { type = "img"; }
     Image(const std::string& src, const std::string& cls = "")
         : source(src) { type = "img"; className = cls; }
+
+    // Set source and trigger reload (mirrors HTMLImageElement::SetSrc)
+    void setSrc(const std::string& newSource) {
+        if (source != newSource) {
+            source = newSource;
+            naturalSize = {0, 0};
+            loadState = ImageWidgetState::Idle;
+        }
+    }
+
+    // Query natural dimensions without full decode
+    Vec2 getNaturalSize() const { return naturalSize; }
+    bool isLoaded() const { return loadState == ImageWidgetState::Complete; }
+    bool hasError() const { return loadState == ImageWidgetState::Error; }
 
     void layout(const Rect& parentBounds) override;
     void render(Renderer& renderer) override;

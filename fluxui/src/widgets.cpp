@@ -2276,19 +2276,42 @@ void Image::render(Renderer& renderer) {
         return;
     }
 
+    // --- Blink-aligned load state tracking (mirrors ImageLoader) ---
+    if (loadState == ImageWidgetState::Idle) {
+        loadState = ImageWidgetState::Loading;
+    }
+
     Vec2 natural = naturalSize;
     if (natural.x <= 0.0f || natural.y <= 0.0f) {
         natural = renderer.imageSize(source);
         if (natural.x > 0.0f && natural.y > 0.0f) {
             naturalSize = natural;
+            // Transition: Loading → Complete (mirrors blink::ImageResource::Finish)
+            if (loadState == ImageWidgetState::Loading) {
+                loadState = ImageWidgetState::Complete;
+                if (onLoad) onLoad();
+            }
         } else {
+            // Transition: Loading → Error
+            if (loadState == ImageWidgetState::Loading) {
+                loadState = ImageWidgetState::Error;
+                if (onError) onError();
+            }
             natural = {content.w, content.h};
         }
     }
 
+    // --- object-fit geometry (mirrors Blink ReplacedContentTransform) ---
     Rect draw = content;
     float scaleX = natural.x > 0.0f ? content.w / natural.x : 1.0f;
     float scaleY = natural.y > 0.0f ? content.h / natural.y : 1.0f;
+
+    // Apply devicePixelRatio for HiDPI (mirrors LayoutImage::image_device_pixel_ratio_)
+    if (devicePixelRatio > 0.0f && devicePixelRatio != 1.0f) {
+        scaleX /= devicePixelRatio;
+        scaleY /= devicePixelRatio;
+    }
+
     if (computedStyle.objectFit == ObjectFit::Contain ||
         computedStyle.objectFit == ObjectFit::ScaleDown) {
         float scale = std::min(scaleX, scaleY);
