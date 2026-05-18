@@ -460,6 +460,11 @@ RenderBackendType chooseAutoBackend() {
         }
     }
 
+    const auto vkInfo = Renderer::getBackendInfo(RenderBackendType::Vulkan);
+    if (vkInfo.compiled && vkInfo.selectable) {
+        return RenderBackendType::Vulkan;
+    }
+
     return RenderBackendType::Compatibility;
 }
 
@@ -469,6 +474,10 @@ RenderBackendType chooseBackend(RenderBackendType preference) {
     }
 
     if (preference == RenderBackendType::Compatibility) {
+        const auto vkInfo = Renderer::getBackendInfo(RenderBackendType::Vulkan);
+        if (vkInfo.compiled && vkInfo.selectable) {
+            return RenderBackendType::Vulkan;
+        }
         return RenderBackendType::Compatibility;
     }
 
@@ -477,12 +486,21 @@ RenderBackendType chooseBackend(RenderBackendType preference) {
         return preference;
     }
 
+    const auto vkInfo = Renderer::getBackendInfo(RenderBackendType::Vulkan);
+    const bool fallbackToVulkan = vkInfo.compiled && vkInfo.selectable;
+
     if (!info.compiled) {
         std::cerr << "FluxUI: " << info.name
-                  << " backend was requested but is not compiled in this build. Using compatibility renderer." << std::endl;
+                  << " backend was requested but is not compiled in this build. Using "
+                  << (fallbackToVulkan ? "Vulkan" : "compatibility") << " renderer." << std::endl;
     } else {
         std::cerr << "FluxUI: " << info.name
-                  << " backend is staged but not selectable yet. Using compatibility renderer." << std::endl;
+                  << " backend is staged but not selectable yet. Using "
+                  << (fallbackToVulkan ? "Vulkan" : "compatibility") << " renderer." << std::endl;
+    }
+
+    if (fallbackToVulkan) {
+        return RenderBackendType::Vulkan;
     }
 
     return RenderBackendType::Compatibility;
@@ -4015,6 +4033,16 @@ void Renderer::drawVulkanImage(const std::string& key,
 
 bool Renderer::init(void* windowHandle) {
     window_ = windowHandle;
+
+    // Handle Compatibility fallback to Vulkan
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        const auto vkInfo = getBackendInfo(RenderBackendType::Vulkan);
+        if (vkInfo.compiled && vkInfo.selectable) {
+            std::cerr << "FluxUI: Compatibility (OpenGL) backend requires SDL2 (currently removed) or native WGL/GLX implementation. "
+                      << "Falling back to native Vulkan backend." << std::endl;
+            activeBackend_ = RenderBackendType::Vulkan;
+        }
+    }
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
         return initVulkan(windowHandle);
