@@ -2235,16 +2235,65 @@ void Icon::render(Renderer& renderer) {
 //  Image Widget
 // ============================================================
 
+void Image::updateCurrentSrc() {
+    currentSrc = source;
+    intrinsicDensity = 1.0f;
+    
+    if (srcset.empty()) return;
+    
+    // Very basic srcset parser mirroring blink logic (e.g. "image-1x.png 1x, image-2x.png 2x")
+    std::istringstream stream(srcset);
+    std::string token;
+    
+    float bestDensityDiff = 999.0f;
+    std::string bestSrc = currentSrc;
+    float bestDensity = 1.0f;
+    
+    while (std::getline(stream, token, ',')) {
+        size_t start = 0;
+        while (start < token.size() && std::isspace((unsigned char)token[start])) ++start;
+        if (start >= token.size()) continue;
+        
+        size_t space = token.find(' ', start);
+        std::string url = token.substr(start, space == std::string::npos ? std::string::npos : space - start);
+        float density = 1.0f;
+        
+        if (space != std::string::npos) {
+            size_t descStart = space + 1;
+            while (descStart < token.size() && std::isspace((unsigned char)token[descStart])) ++descStart;
+            size_t descEnd = token.size();
+            while (descEnd > descStart && std::isspace((unsigned char)token[descEnd - 1])) --descEnd;
+            if (descEnd > descStart && token[descEnd - 1] == 'x') {
+                try {
+                    density = std::stof(token.substr(descStart, descEnd - descStart - 1));
+                } catch (...) {}
+            }
+        }
+        
+        float diff = std::abs(density - devicePixelRatio);
+        if (diff < bestDensityDiff) {
+            bestDensityDiff = diff;
+            bestSrc = url;
+            bestDensity = density;
+        }
+    }
+    
+    currentSrc = bestSrc;
+    intrinsicDensity = bestDensity > 0.0f ? bestDensity : 1.0f;
+    naturalSize = {0, 0};
+    loadState = ImageWidgetState::Idle;
+}
+
 void Image::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
 
     auto& s = computedStyle;
-    if ((naturalSize.x <= 0.0f || naturalSize.y <= 0.0f) && !source.empty()) {
-        naturalSize = probeImageNaturalSize(source);
+    if ((naturalSize.x <= 0.0f || naturalSize.y <= 0.0f) && !currentSrc.empty()) {
+        naturalSize = probeImageNaturalSize(currentSrc);
     }
 
-    float naturalW = naturalSize.x > 0.0f ? naturalSize.x : 300.0f;
-    float naturalH = naturalSize.y > 0.0f ? naturalSize.y : 150.0f;
+    float naturalW = naturalSize.x > 0.0f ? (naturalSize.x / intrinsicDensity) : 300.0f;
+    float naturalH = naturalSize.y > 0.0f ? (naturalSize.y / intrinsicDensity) : 150.0f;
     float ratio = naturalH > 0.0f ? naturalW / naturalH : 1.0f;
 
     bool hasW = s.width.isSet();
@@ -2271,7 +2320,7 @@ void Image::render(Renderer& renderer) {
         std::max(0.0f, bounds.w - computedStyle.padding.horizontal()),
         std::max(0.0f, bounds.h - computedStyle.padding.vertical())
     };
-    if (content.w <= 0.0f || content.h <= 0.0f || source.empty()) {
+    if (content.w <= 0.0f || content.h <= 0.0f || currentSrc.empty()) {
         renderChildren(renderer);
         return;
     }
@@ -2281,11 +2330,12 @@ void Image::render(Renderer& renderer) {
         loadState = ImageWidgetState::Loading;
     }
 
-    Vec2 natural = naturalSize;
+    Vec2 natural = { naturalSize.x / intrinsicDensity, naturalSize.y / intrinsicDensity };
     if (natural.x <= 0.0f || natural.y <= 0.0f) {
-        natural = renderer.imageSize(source);
-        if (natural.x > 0.0f && natural.y > 0.0f) {
-            naturalSize = natural;
+        Vec2 rawSize = renderer.imageSize(currentSrc);
+        natural = { rawSize.x / intrinsicDensity, rawSize.y / intrinsicDensity };
+        if (rawSize.x > 0.0f && rawSize.y > 0.0f) {
+            naturalSize = rawSize;
             // Transition: Loading → Complete (mirrors blink::ImageResource::Finish)
             if (loadState == ImageWidgetState::Loading) {
                 loadState = ImageWidgetState::Complete;
@@ -2337,7 +2387,22 @@ void Image::render(Renderer& renderer) {
         renderer.pushScissor(content);
     }
 
-    renderer.drawImage(source, draw, computedStyle.opacity);
+    if (loadState == ImageWidgetState::Error && !alt.empty()) {
+        // Fallback: draw alt text like Blink does for broken images
+        renderer.pushScissor(content);
+        Rect altDraw = content;
+        // Basic centering for alt text
+        float fontSize = computedStyle.fontSize > 0.0f ? computedStyle.fontSize : 14.0f;
+        std::string fontName = computedStyle.fontFamily.empty() ? "sans-serif" : computedStyle.fontFamily;
+        altDraw.y += (content.h - fontSize) * 0.5f;
+        altDraw.x += 4.0f; // slight padding
+        renderer.drawText(alt, altDraw, fontName, fontSize, Color(0.5f, 0.5f, 0.5f, 1.0f));
+        renderer.popScissor();
+        renderChildren(renderer);
+        return;
+    }
+
+    renderer.drawImage(currentSrc, draw, computedStyle.opacity);
     if (computedStyle.objectFit == ObjectFit::Cover ||
         computedStyle.objectFit == ObjectFit::None) {
         renderer.popScissor();

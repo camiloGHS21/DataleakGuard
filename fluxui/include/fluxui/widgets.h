@@ -344,6 +344,9 @@ class Image : public Widget {
 public:
     // --- Core properties (mirrors HTMLImageElement attributes) ---
     std::string source;                     // src attribute
+    std::string srcset;                     // srcset attribute for responsive images
+    std::string sizes;                      // sizes attribute
+    std::string currentSrc;                 // actually resolved source URL
     std::string alt;                        // alt text for accessibility
     std::string crossOrigin;                // crossorigin attribute
     Vec2 naturalSize = {0, 0};              // intrinsic dimensions
@@ -351,6 +354,7 @@ public:
     // --- Blink-aligned state ---
     ImageWidgetState loadState = ImageWidgetState::Idle;
     float devicePixelRatio = 1.0f;          // mirrors LayoutImage::image_device_pixel_ratio_
+    float intrinsicDensity = 1.0f;          // Density determined by srcset (e.g. 2x = 2.0)
     bool isGeneratedContent = false;        // mirrors LayoutImage::is_generated_content_
     bool lazyLoad = false;                  // loading="lazy" support
     bool decoding_async = false;            // decoding="async" attribute
@@ -361,19 +365,29 @@ public:
 
     Image() { type = "img"; }
     Image(const std::string& src, const std::string& cls = "")
-        : source(src) { type = "img"; className = cls; }
+        : source(src), currentSrc(src) { type = "img"; className = cls; }
 
     // Set source and trigger reload (mirrors HTMLImageElement::SetSrc)
     void setSrc(const std::string& newSource) {
         if (source != newSource) {
             source = newSource;
-            naturalSize = {0, 0};
-            loadState = ImageWidgetState::Idle;
+            updateCurrentSrc();
         }
     }
 
-    // Query natural dimensions without full decode
-    Vec2 getNaturalSize() const { return naturalSize; }
+    void setSrcset(const std::string& newSrcset) {
+        if (srcset != newSrcset) {
+            srcset = newSrcset;
+            updateCurrentSrc();
+        }
+    }
+
+    void updateCurrentSrc();
+
+    // Query natural dimensions without full decode (scaled by density)
+    Vec2 getNaturalSize() const { 
+        return { naturalSize.x / intrinsicDensity, naturalSize.y / intrinsicDensity }; 
+    }
     bool isLoaded() const { return loadState == ImageWidgetState::Complete; }
     bool hasError() const { return loadState == ImageWidgetState::Error; }
 
