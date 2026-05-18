@@ -2396,7 +2396,7 @@ void Image::render(Renderer& renderer) {
         std::string fontName = computedStyle.fontFamily.empty() ? "sans-serif" : computedStyle.fontFamily;
         altDraw.y += (content.h - fontSize) * 0.5f;
         altDraw.x += 4.0f; // slight padding
-        renderer.drawText(alt, altDraw, fontName, fontSize, Color(0.5f, 0.5f, 0.5f, 1.0f));
+        renderer.drawText(alt, {altDraw.x, altDraw.y}, Color(0.5f, 0.5f, 0.5f, 1.0f), fontSize, FontWeight::Normal, fontName);
         renderer.popScissor();
         renderChildren(renderer);
         return;

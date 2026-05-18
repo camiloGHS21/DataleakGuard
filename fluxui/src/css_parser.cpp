@@ -2063,7 +2063,10 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         else style.objectFit = ObjectFit::Fill;
         style.hasObjectFit = true;
     } else if (name == "object-position") {
-        auto tokens = split(value, ' ');
+        std::istringstream ss(value);
+        std::string t;
+        std::vector<std::string> tokens;
+        while (ss >> t) tokens.push_back(t);
         auto parsePos = [](const std::string& val) {
             if (val == "left" || val == "top") return 0.0f;
             if (val == "center") return 0.5f;
