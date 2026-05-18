@@ -1472,6 +1472,9 @@ static bool applyCSSWideProperty(Style& target,
         target.hasZIndex = source.hasZIndex;
     } else if (name == "aspect-ratio") {
         target.aspectRatio = source.aspectRatio;
+    } else if (name == "object-fit") {
+        target.objectFit = source.objectFit;
+        target.hasObjectFit = source.hasObjectFit;
     } else if (name == "word-break") {
         target.wordBreak = source.wordBreak;
     } else {
@@ -1567,6 +1570,10 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.display = Display::InlineBlock;
         style.whiteSpace = WhiteSpace::NoWrap;
         style.hasWhiteSpace = true;
+    } else if (t == "img" || t == "svg" || t == "picture") {
+        style.display = Display::InlineBlock;
+        style.objectFit = ObjectFit::Fill;
+        style.hasObjectFit = true;
     } else if (t == "rp" || t == "noframes") {
         style.display = Display::None;
     } else if (t == "div" || t == "article" || t == "aside" || t == "footer" ||
@@ -2046,6 +2053,15 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
                 style.aspectRatio = parseFloat(value);
             }
         }
+    } else if (name == "object-fit") {
+        std::string lower = value;
+        for (char& c : lower) c = (char)std::tolower((unsigned char)c);
+        if (lower == "contain") style.objectFit = ObjectFit::Contain;
+        else if (lower == "cover") style.objectFit = ObjectFit::Cover;
+        else if (lower == "none") style.objectFit = ObjectFit::None;
+        else if (lower == "scale-down") style.objectFit = ObjectFit::ScaleDown;
+        else style.objectFit = ObjectFit::Fill;
+        style.hasObjectFit = true;
     } else if (name == "row-gap") {
         style.rowGap = parseLengthPixels(value);
     } else if (name == "column-gap") {

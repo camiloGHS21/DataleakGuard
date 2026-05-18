@@ -72,6 +72,7 @@ class Text;
 class Button;
 class TextInput;
 class Icon;
+class Image;
 class ProgressBar;
 
 // ============================================================
@@ -160,6 +161,8 @@ public:
                          const std::string& cls = "");
     Icon* addIcon(const std::string& glyph, const std::string& cls = "");
     Icon* icon(const std::string& glyph, const std::string& cls = "");
+    Image* image(const std::string& source, const std::string& cls = "");
+    Image* img(const std::string& source, const std::string& cls = "");
     ProgressBar* progress(float value,
                           const std::string& cls = "",
                           const Color& color = Color(0.42f, 0.36f, 0.91f, 1.0f));
@@ -325,6 +328,23 @@ public:
 };
 
 // ============================================================
+//  Image - PNG/JPG/GIF/BMP/HDR/SVG image widget
+// ============================================================
+
+class Image : public Widget {
+public:
+    std::string source;
+    Vec2 naturalSize = {0, 0};
+
+    Image() { type = "img"; }
+    Image(const std::string& src, const std::string& cls = "")
+        : source(src) { type = "img"; className = cls; }
+
+    void layout(const Rect& parentBounds) override;
+    void render(Renderer& renderer) override;
+};
+
+// ============================================================
 //  ProgressBar
 // ============================================================
 
@@ -370,6 +390,14 @@ inline Icon* Widget::addIcon(const std::string& glyph, const std::string& cls) {
 
 inline Icon* Widget::icon(const std::string& glyph, const std::string& cls) {
     return addIcon(glyph, cls);
+}
+
+inline Image* Widget::image(const std::string& source, const std::string& cls) {
+    return add<Image>(source, cls);
+}
+
+inline Image* Widget::img(const std::string& source, const std::string& cls) {
+    return image(source, cls);
 }
 
 inline ProgressBar* Widget::progress(float value,

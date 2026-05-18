@@ -7,6 +7,11 @@
 #include <thread>
 #include <future>
 #include <atomic>
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+
+#include <stb_image.h>
 
 #include "fluxui/platform.h"
 
@@ -131,6 +136,85 @@ static float approximateTextWidth(const std::string& text, float fontSize) {
         i = nextCodepoint(text, i);
     }
     return width;
+}
+
+static std::string trimAsciiLocal(std::string value) {
+    auto isWs = [](unsigned char c) { return std::isspace(c) != 0; };
+    while (!value.empty() && isWs((unsigned char)value.front())) value.erase(value.begin());
+    while (!value.empty() && isWs((unsigned char)value.back())) value.pop_back();
+    return value;
+}
+
+static float parseSvgLengthLocal(const std::string& value, float fallback = 0.0f) {
+    std::string s = trimAsciiLocal(value);
+    if (s.empty()) return fallback;
+    char* end = nullptr;
+    float number = std::strtof(s.c_str(), &end);
+    if (end == s.c_str()) return fallback;
+    return number;
+}
+
+static std::string attrFromTagLocal(const std::string& tag, const std::string& name) {
+    size_t pos = tag.find(name);
+    while (pos != std::string::npos) {
+        bool leftOk = pos == 0 || std::isspace((unsigned char)tag[pos - 1]) || tag[pos - 1] == '<';
+        size_t after = pos + name.size();
+        bool rightOk = after < tag.size() && (std::isspace((unsigned char)tag[after]) || tag[after] == '=');
+        if (leftOk && rightOk) break;
+        pos = tag.find(name, pos + 1);
+    }
+    if (pos == std::string::npos) return {};
+    size_t eq = tag.find('=', pos + name.size());
+    if (eq == std::string::npos) return {};
+    size_t start = eq + 1;
+    while (start < tag.size() && std::isspace((unsigned char)tag[start])) ++start;
+    if (start >= tag.size()) return {};
+    char quote = tag[start];
+    if (quote == '"' || quote == '\'') {
+        size_t end = tag.find(quote, start + 1);
+        if (end == std::string::npos) return {};
+        return tag.substr(start + 1, end - start - 1);
+    }
+    size_t end = start;
+    while (end < tag.size() && !std::isspace((unsigned char)tag[end]) && tag[end] != '>') ++end;
+    return tag.substr(start, end - start);
+}
+
+static Vec2 probeImageNaturalSize(const std::string& source) {
+    if (source.empty()) return {0, 0};
+    std::ifstream file(source, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return {0, 0};
+    std::streamsize fileSize = file.tellg();
+    if (fileSize <= 0 || fileSize > 32 * 1024 * 1024) return {0, 0};
+    file.seekg(0, std::ios::beg);
+    std::vector<unsigned char> bytes((size_t)fileSize);
+    if (!file.read(reinterpret_cast<char*>(bytes.data()), fileSize).good()) return {0, 0};
+
+    std::string head(reinterpret_cast<const char*>(bytes.data()),
+                     std::min<size_t>(bytes.size(), 4096));
+    size_t svgPos = head.find("<svg");
+    if (svgPos != std::string::npos) {
+        size_t end = head.find('>', svgPos);
+        std::string tag = end == std::string::npos ? head.substr(svgPos) : head.substr(svgPos, end - svgPos + 1);
+        float width = parseSvgLengthLocal(attrFromTagLocal(tag, "width"), 0.0f);
+        float height = parseSvgLengthLocal(attrFromTagLocal(tag, "height"), 0.0f);
+        if ((width <= 0.0f || height <= 0.0f)) {
+            std::istringstream viewBox(attrFromTagLocal(tag, "viewBox"));
+            float x = 0, y = 0, w = 0, h = 0;
+            if (viewBox >> x >> y >> w >> h) {
+                if (width <= 0.0f) width = w;
+                if (height <= 0.0f) height = h;
+            }
+        }
+        if (width > 0.0f && height > 0.0f) return {width, height};
+        return {300.0f, 150.0f};
+    }
+
+    int w = 0, h = 0, comp = 0;
+    if (stbi_info_from_memory(bytes.data(), (int)bytes.size(), &w, &h, &comp) && w > 0 && h > 0) {
+        return {(float)w, (float)h};
+    }
+    return {0, 0};
 }
 
 static bool parentUsesRowFlex(const Widget* widget) {
@@ -378,6 +462,7 @@ static size_t layoutStyleSignature(const Style& s) {
     hashFloat(seed, s.rowGap);
     hashFloat(seed, s.columnGap);
     hashFloat(seed, s.aspectRatio);
+    hashCombine(seed, std::hash<int>{}((int)s.objectFit));
     hashCSSValue(seed, s.width);
     hashCSSValue(seed, s.height);
     hashCSSValue(seed, s.minWidth);
@@ -484,6 +569,10 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         if (style.rowGap > 0) computedStyle.rowGap = style.rowGap;
         if (style.columnGap > 0) computedStyle.columnGap = style.columnGap;
         if (style.aspectRatio > 0) computedStyle.aspectRatio = style.aspectRatio;
+        if (style.hasObjectFit) {
+            computedStyle.objectFit = style.objectFit;
+            computedStyle.hasObjectFit = true;
+        }
         if (style.hasBoxSizing || style.boxSizing != BoxSizing::ContentBox) {
             computedStyle.boxSizing = style.boxSizing;
             computedStyle.hasBoxSizing = true;
@@ -2139,6 +2228,97 @@ void Icon::render(Renderer& renderer) {
         rect(0.25f, 0.25f, 0.50f, 0.50f, 8);
     }
 
+    renderChildren(renderer);
+}
+
+// ============================================================
+//  Image Widget
+// ============================================================
+
+void Image::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+
+    auto& s = computedStyle;
+    if ((naturalSize.x <= 0.0f || naturalSize.y <= 0.0f) && !source.empty()) {
+        naturalSize = probeImageNaturalSize(source);
+    }
+
+    float naturalW = naturalSize.x > 0.0f ? naturalSize.x : 300.0f;
+    float naturalH = naturalSize.y > 0.0f ? naturalSize.y : 150.0f;
+    float ratio = naturalH > 0.0f ? naturalW / naturalH : 1.0f;
+
+    bool hasW = s.width.isSet();
+    bool hasH = s.height.isSet();
+    if (!hasW && !hasH) {
+        bounds.w = naturalW + s.padding.horizontal();
+        bounds.h = naturalH + s.padding.vertical();
+    } else if (hasW && !hasH) {
+        float contentW = std::max(0.0f, bounds.w - s.padding.horizontal());
+        bounds.h = contentW / std::max(0.001f, ratio) + s.padding.vertical();
+    } else if (!hasW && hasH) {
+        float contentH = std::max(0.0f, bounds.h - s.padding.vertical());
+        bounds.w = contentH * ratio + s.padding.horizontal();
+    }
+}
+
+void Image::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    renderBackground(renderer);
+
+    Rect content = {
+        bounds.x + computedStyle.padding.left,
+        bounds.y + computedStyle.padding.top,
+        std::max(0.0f, bounds.w - computedStyle.padding.horizontal()),
+        std::max(0.0f, bounds.h - computedStyle.padding.vertical())
+    };
+    if (content.w <= 0.0f || content.h <= 0.0f || source.empty()) {
+        renderChildren(renderer);
+        return;
+    }
+
+    Vec2 natural = naturalSize;
+    if (natural.x <= 0.0f || natural.y <= 0.0f) {
+        natural = renderer.imageSize(source);
+        if (natural.x > 0.0f && natural.y > 0.0f) {
+            naturalSize = natural;
+        } else {
+            natural = {content.w, content.h};
+        }
+    }
+
+    Rect draw = content;
+    float scaleX = natural.x > 0.0f ? content.w / natural.x : 1.0f;
+    float scaleY = natural.y > 0.0f ? content.h / natural.y : 1.0f;
+    if (computedStyle.objectFit == ObjectFit::Contain ||
+        computedStyle.objectFit == ObjectFit::ScaleDown) {
+        float scale = std::min(scaleX, scaleY);
+        if (computedStyle.objectFit == ObjectFit::ScaleDown) {
+            scale = std::min(1.0f, scale);
+        }
+        draw.w = natural.x * scale;
+        draw.h = natural.y * scale;
+        draw.x = content.x + (content.w - draw.w) * 0.5f;
+        draw.y = content.y + (content.h - draw.h) * 0.5f;
+    } else if (computedStyle.objectFit == ObjectFit::Cover) {
+        float scale = std::max(scaleX, scaleY);
+        draw.w = natural.x * scale;
+        draw.h = natural.y * scale;
+        draw.x = content.x + (content.w - draw.w) * 0.5f;
+        draw.y = content.y + (content.h - draw.h) * 0.5f;
+        renderer.pushScissor(content);
+    } else if (computedStyle.objectFit == ObjectFit::None) {
+        draw.w = natural.x;
+        draw.h = natural.y;
+        draw.x = content.x + (content.w - draw.w) * 0.5f;
+        draw.y = content.y + (content.h - draw.h) * 0.5f;
+        renderer.pushScissor(content);
+    }
+
+    renderer.drawImage(source, draw, computedStyle.opacity);
+    if (computedStyle.objectFit == ObjectFit::Cover ||
+        computedStyle.objectFit == ObjectFit::None) {
+        renderer.popScissor();
+    }
     renderChildren(renderer);
 }
 

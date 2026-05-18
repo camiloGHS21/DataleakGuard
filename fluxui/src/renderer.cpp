@@ -36,6 +36,12 @@
 #include <set>
 #include <cstddef>
 #include <cstdlib>
+#include <sstream>
+#include <cctype>
+
+#define STBI_NO_STDIO
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #ifndef FLUXUI_ENABLE_MSAA
 #define FLUXUI_ENABLE_MSAA 1
@@ -176,10 +182,12 @@ struct VulkanRendererState {
     VkDescriptorSetLayout textDescriptorSetLayout = VK_NULL_HANDLE;
     VkPipelineLayout textPipelineLayout = VK_NULL_HANDLE;
     VkPipeline textPipeline = VK_NULL_HANDLE;
+    VkPipeline imagePipeline = VK_NULL_HANDLE;
     VkPipelineCache pipelineCache = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkSampler fontSampler = VK_NULL_HANDLE;
     std::unordered_map<std::string, FontTexture> fontTextures;
+    std::unordered_map<std::string, FontTexture> imageTextures;
 
     size_t roundedBatchOffsetBytes = 0;
     size_t roundedBatchPageIndex = 0;
@@ -480,6 +488,593 @@ RenderBackendType chooseBackend(RenderBackendType preference) {
     return RenderBackendType::Compatibility;
 }
 
+std::string trimSvgString(std::string value) {
+    auto isWs = [](unsigned char c) { return std::isspace(c) != 0; };
+    while (!value.empty() && isWs((unsigned char)value.front())) value.erase(value.begin());
+    while (!value.empty() && isWs((unsigned char)value.back())) value.pop_back();
+    return value;
+}
+
+std::string lowerSvgString(std::string value) {
+    for (char& c : value) c = (char)std::tolower((unsigned char)c);
+    return value;
+}
+
+bool hasSvgSignature(const unsigned char* data, int dataSize) {
+    if (!data || dataSize <= 0) return false;
+    int n = std::min(dataSize, 1024);
+    std::string head(reinterpret_cast<const char*>(data), reinterpret_cast<const char*>(data) + n);
+    return lowerSvgString(head).find("<svg") != std::string::npos;
+}
+
+float parseSvgFloat(const std::string& value, float fallback = 0.0f) {
+    std::string s = trimSvgString(value);
+    if (s.empty()) return fallback;
+    char* end = nullptr;
+    float number = std::strtof(s.c_str(), &end);
+    if (end == s.c_str()) return fallback;
+    return number;
+}
+
+std::vector<float> parseSvgNumberList(const std::string& value) {
+    std::vector<float> numbers;
+    const char* p = value.c_str();
+    char* end = nullptr;
+    while (*p) {
+        while (*p && (std::isspace((unsigned char)*p) || *p == ',')) ++p;
+        if (!*p) break;
+        float v = std::strtof(p, &end);
+        if (end == p) {
+            ++p;
+            continue;
+        }
+        numbers.push_back(v);
+        p = end;
+    }
+    return numbers;
+}
+
+using SvgAttrs = std::unordered_map<std::string, std::string>;
+
+SvgAttrs parseSvgAttrs(const std::string& tag) {
+    SvgAttrs attrs;
+    size_t i = 0;
+    while (i < tag.size() && tag[i] != '<') ++i;
+    if (i < tag.size()) ++i;
+    while (i < tag.size() && !std::isspace((unsigned char)tag[i]) && tag[i] != '>' && tag[i] != '/') ++i;
+
+    while (i < tag.size()) {
+        while (i < tag.size() && (std::isspace((unsigned char)tag[i]) || tag[i] == '/')) ++i;
+        if (i >= tag.size() || tag[i] == '>') break;
+        size_t nameStart = i;
+        while (i < tag.size() &&
+               (std::isalnum((unsigned char)tag[i]) || tag[i] == '-' || tag[i] == '_' || tag[i] == ':')) {
+            ++i;
+        }
+        std::string name = lowerSvgString(tag.substr(nameStart, i - nameStart));
+        while (i < tag.size() && std::isspace((unsigned char)tag[i])) ++i;
+        if (i >= tag.size() || tag[i] != '=') {
+            attrs[name] = "";
+            continue;
+        }
+        ++i;
+        while (i < tag.size() && std::isspace((unsigned char)tag[i])) ++i;
+        if (i >= tag.size()) break;
+        std::string value;
+        char quote = tag[i];
+        if (quote == '"' || quote == '\'') {
+            ++i;
+            size_t valueStart = i;
+            while (i < tag.size() && tag[i] != quote) ++i;
+            value = tag.substr(valueStart, i - valueStart);
+            if (i < tag.size()) ++i;
+        } else {
+            size_t valueStart = i;
+            while (i < tag.size() && !std::isspace((unsigned char)tag[i]) && tag[i] != '>') ++i;
+            value = tag.substr(valueStart, i - valueStart);
+        }
+        if (!name.empty()) attrs[name] = trimSvgString(value);
+    }
+
+    auto styleIt = attrs.find("style");
+    if (styleIt != attrs.end()) {
+        std::istringstream ss(styleIt->second);
+        std::string item;
+        while (std::getline(ss, item, ';')) {
+            size_t colon = item.find(':');
+            if (colon == std::string::npos) continue;
+            std::string key = lowerSvgString(trimSvgString(item.substr(0, colon)));
+            std::string val = trimSvgString(item.substr(colon + 1));
+            if (!key.empty()) attrs[key] = val;
+        }
+    }
+
+    return attrs;
+}
+
+std::string svgAttr(const SvgAttrs& attrs, const std::string& name, const std::string& fallback = "") {
+    auto it = attrs.find(name);
+    return it == attrs.end() ? fallback : it->second;
+}
+
+Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr) {
+    if (none) *none = false;
+    std::string value = lowerSvgString(trimSvgString(raw));
+    if (value.empty()) return fallback;
+    if (value == "none") {
+        if (none) *none = true;
+        return fallback.withAlpha(0.0f);
+    }
+    if (value == "transparent") return Color(0, 0, 0, 0);
+    if (value == "currentcolor") return fallback;
+    if (!value.empty() && value[0] == '#') return Color::fromHex(value);
+    if (value.rfind("rgb(", 0) == 0 || value.rfind("rgba(", 0) == 0) {
+        auto start = value.find('(');
+        auto end = value.find(')', start);
+        if (start != std::string::npos && end != std::string::npos) {
+            std::vector<float> nums = parseSvgNumberList(value.substr(start + 1, end - start - 1));
+            if (nums.size() >= 3) {
+                float a = nums.size() >= 4 ? nums[3] : 1.0f;
+                return Color(nums[0] / 255.0f, nums[1] / 255.0f, nums[2] / 255.0f, a);
+            }
+        }
+    }
+
+    struct Named { const char* name; Color color; };
+    static const Named named[] = {
+        {"black", Color(0, 0, 0, 1)}, {"white", Color(1, 1, 1, 1)},
+        {"red", Color(1, 0, 0, 1)}, {"green", Color(0, 0.5f, 0, 1)},
+        {"blue", Color(0, 0, 1, 1)}, {"yellow", Color(1, 1, 0, 1)},
+        {"cyan", Color(0, 1, 1, 1)}, {"magenta", Color(1, 0, 1, 1)},
+        {"gray", Color(0.5f, 0.5f, 0.5f, 1)}, {"grey", Color(0.5f, 0.5f, 0.5f, 1)}
+    };
+    for (const auto& item : named) {
+        if (value == item.name) return item.color;
+    }
+    return fallback;
+}
+
+struct SvgCanvas {
+    std::vector<unsigned char>* pixels = nullptr;
+    int width = 0;
+    int height = 0;
+    float viewX = 0.0f;
+    float viewY = 0.0f;
+    float scaleX = 1.0f;
+    float scaleY = 1.0f;
+};
+
+Vec2 svgMapPoint(const SvgCanvas& canvas, float x, float y) {
+    return {(x - canvas.viewX) * canvas.scaleX,
+            (y - canvas.viewY) * canvas.scaleY};
+}
+
+void svgBlendPixel(SvgCanvas& canvas, int x, int y, Color color, float coverage = 1.0f) {
+    if (!canvas.pixels || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return;
+    float srcA = std::clamp(color.a * coverage, 0.0f, 1.0f);
+    if (srcA <= 0.0f) return;
+    size_t index = ((size_t)y * (size_t)canvas.width + (size_t)x) * 4;
+    float dstR = (*canvas.pixels)[index + 0] / 255.0f;
+    float dstG = (*canvas.pixels)[index + 1] / 255.0f;
+    float dstB = (*canvas.pixels)[index + 2] / 255.0f;
+    float dstA = (*canvas.pixels)[index + 3] / 255.0f;
+    float outA = srcA + dstA * (1.0f - srcA);
+    if (outA <= 0.0f) return;
+    float outR = (color.r * srcA + dstR * dstA * (1.0f - srcA)) / outA;
+    float outG = (color.g * srcA + dstG * dstA * (1.0f - srcA)) / outA;
+    float outB = (color.b * srcA + dstB * dstA * (1.0f - srcA)) / outA;
+    (*canvas.pixels)[index + 0] = (unsigned char)std::round(std::clamp(outR, 0.0f, 1.0f) * 255.0f);
+    (*canvas.pixels)[index + 1] = (unsigned char)std::round(std::clamp(outG, 0.0f, 1.0f) * 255.0f);
+    (*canvas.pixels)[index + 2] = (unsigned char)std::round(std::clamp(outB, 0.0f, 1.0f) * 255.0f);
+    (*canvas.pixels)[index + 3] = (unsigned char)std::round(std::clamp(outA, 0.0f, 1.0f) * 255.0f);
+}
+
+float pointSegmentDistance(float px, float py, Vec2 a, Vec2 b) {
+    float vx = b.x - a.x;
+    float vy = b.y - a.y;
+    float wx = px - a.x;
+    float wy = py - a.y;
+    float len2 = vx * vx + vy * vy;
+    float t = len2 > 0.0f ? std::clamp((wx * vx + wy * vy) / len2, 0.0f, 1.0f) : 0.0f;
+    float dx = px - (a.x + vx * t);
+    float dy = py - (a.y + vy * t);
+    return std::sqrt(dx * dx + dy * dy);
+}
+
+void strokePolyline(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color, float strokeWidth, bool close) {
+    if (points.size() < 2 || color.a <= 0.0f || strokeWidth <= 0.0f) return;
+    float half = std::max(0.5f, strokeWidth * 0.5f);
+    for (size_t i = 1; i < points.size() + (close ? 1 : 0); ++i) {
+        Vec2 a = points[i - 1];
+        Vec2 b = points[i % points.size()];
+        int minX = (int)std::floor(std::min(a.x, b.x) - half - 1.0f);
+        int maxX = (int)std::ceil(std::max(a.x, b.x) + half + 1.0f);
+        int minY = (int)std::floor(std::min(a.y, b.y) - half - 1.0f);
+        int maxY = (int)std::ceil(std::max(a.y, b.y) + half + 1.0f);
+        for (int y = minY; y <= maxY; ++y) {
+            for (int x = minX; x <= maxX; ++x) {
+                float d = pointSegmentDistance(x + 0.5f, y + 0.5f, a, b);
+                if (d <= half + 0.75f) {
+                    float coverage = std::clamp(half + 0.75f - d, 0.0f, 1.0f);
+                    svgBlendPixel(canvas, x, y, color, coverage);
+                }
+            }
+        }
+    }
+}
+
+bool pointInPolygon(float x, float y, const std::vector<Vec2>& points) {
+    bool inside = false;
+    if (points.size() < 3) return false;
+    for (size_t i = 0, j = points.size() - 1; i < points.size(); j = i++) {
+        const Vec2& pi = points[i];
+        const Vec2& pj = points[j];
+        bool crosses = ((pi.y > y) != (pj.y > y)) &&
+                       (x < (pj.x - pi.x) * (y - pi.y) / ((pj.y - pi.y) + 0.000001f) + pi.x);
+        if (crosses) inside = !inside;
+    }
+    return inside;
+}
+
+void fillPolygon(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color) {
+    if (points.size() < 3 || color.a <= 0.0f) return;
+    float minX = points[0].x, maxX = points[0].x, minY = points[0].y, maxY = points[0].y;
+    for (const Vec2& p : points) {
+        minX = std::min(minX, p.x);
+        maxX = std::max(maxX, p.x);
+        minY = std::min(minY, p.y);
+        maxY = std::max(maxY, p.y);
+    }
+    for (int y = (int)std::floor(minY); y <= (int)std::ceil(maxY); ++y) {
+        for (int x = (int)std::floor(minX); x <= (int)std::ceil(maxX); ++x) {
+            if (pointInPolygon(x + 0.5f, y + 0.5f, points)) {
+                svgBlendPixel(canvas, x, y, color);
+            }
+        }
+    }
+}
+
+void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
+                 float rx, float ry, Color fill, Color stroke, float strokeWidth) {
+    if (w <= 0.0f || h <= 0.0f) return;
+    Vec2 p0 = svgMapPoint(canvas, x, y);
+    Vec2 p1 = svgMapPoint(canvas, x + w, y + h);
+    float left = std::min(p0.x, p1.x);
+    float right = std::max(p0.x, p1.x);
+    float top = std::min(p0.y, p1.y);
+    float bottom = std::max(p0.y, p1.y);
+    float rr = std::max(rx * canvas.scaleX, ry * canvas.scaleY);
+    for (int py = (int)std::floor(top); py <= (int)std::ceil(bottom); ++py) {
+        for (int px = (int)std::floor(left); px <= (int)std::ceil(right); ++px) {
+            float cx = px + 0.5f;
+            float cy = py + 0.5f;
+            bool inside = cx >= left && cx <= right && cy >= top && cy <= bottom;
+            if (inside && rr > 0.0f) {
+                float qx = std::max(std::max(left + rr - cx, 0.0f), cx - (right - rr));
+                float qy = std::max(std::max(top + rr - cy, 0.0f), cy - (bottom - rr));
+                inside = qx * qx + qy * qy <= rr * rr;
+            }
+            if (inside && fill.a > 0.0f) svgBlendPixel(canvas, px, py, fill);
+        }
+    }
+    if (stroke.a > 0.0f && strokeWidth > 0.0f) {
+        std::vector<Vec2> points = {{left, top}, {right, top}, {right, bottom}, {left, bottom}};
+        strokePolyline(canvas, points, stroke, strokeWidth, true);
+    }
+}
+
+void drawSvgEllipse(SvgCanvas& canvas, float cx, float cy, float rx, float ry,
+                    Color fill, Color stroke, float strokeWidth) {
+    if (rx <= 0.0f || ry <= 0.0f) return;
+    Vec2 c = svgMapPoint(canvas, cx, cy);
+    float prx = std::abs(rx * canvas.scaleX);
+    float pry = std::abs(ry * canvas.scaleY);
+    int minX = (int)std::floor(c.x - prx - strokeWidth - 1.0f);
+    int maxX = (int)std::ceil(c.x + prx + strokeWidth + 1.0f);
+    int minY = (int)std::floor(c.y - pry - strokeWidth - 1.0f);
+    int maxY = (int)std::ceil(c.y + pry + strokeWidth + 1.0f);
+    float strokeNorm = strokeWidth > 0.0f ? strokeWidth / std::max(1.0f, std::min(prx, pry)) : 0.0f;
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            float nx = (x + 0.5f - c.x) / std::max(1.0f, prx);
+            float ny = (y + 0.5f - c.y) / std::max(1.0f, pry);
+            float d = std::sqrt(nx * nx + ny * ny);
+            if (d <= 1.0f && fill.a > 0.0f) svgBlendPixel(canvas, x, y, fill, std::clamp(1.5f - d, 0.0f, 1.0f));
+            if (stroke.a > 0.0f && strokeNorm > 0.0f && std::abs(d - 1.0f) <= strokeNorm + 0.02f) {
+                svgBlendPixel(canvas, x, y, stroke);
+            }
+        }
+    }
+}
+
+std::vector<Vec2> parseSvgPoints(const std::string& value, const SvgCanvas& canvas) {
+    std::vector<Vec2> points;
+    std::vector<float> nums = parseSvgNumberList(value);
+    for (size_t i = 1; i < nums.size(); i += 2) {
+        points.push_back(svgMapPoint(canvas, nums[i - 1], nums[i]));
+    }
+    return points;
+}
+
+struct SvgPathParser {
+    const std::string& d;
+    size_t pos = 0;
+    char command = 0;
+
+    void skip() {
+        while (pos < d.size() && (std::isspace((unsigned char)d[pos]) || d[pos] == ',')) ++pos;
+    }
+
+    bool hasNumber() {
+        skip();
+        return pos < d.size() && (d[pos] == '-' || d[pos] == '+' || d[pos] == '.' ||
+                                  std::isdigit((unsigned char)d[pos]));
+    }
+
+    bool readNumber(float& value) {
+        skip();
+        if (pos >= d.size()) return false;
+        char* end = nullptr;
+        value = std::strtof(d.c_str() + pos, &end);
+        if (end == d.c_str() + pos) return false;
+        pos = (size_t)(end - d.c_str());
+        return true;
+    }
+
+    bool readCommand() {
+        skip();
+        if (pos < d.size() && std::isalpha((unsigned char)d[pos])) {
+            command = d[pos++];
+            return true;
+        }
+        return command != 0;
+    }
+};
+
+void appendCubic(std::vector<Vec2>& out, Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3) {
+    for (int i = 1; i <= 16; ++i) {
+        float t = i / 16.0f;
+        float it = 1.0f - t;
+        out.push_back({
+            it * it * it * p0.x + 3 * it * it * t * p1.x + 3 * it * t * t * p2.x + t * t * t * p3.x,
+            it * it * it * p0.y + 3 * it * it * t * p1.y + 3 * it * t * t * p2.y + t * t * t * p3.y
+        });
+    }
+}
+
+void appendQuad(std::vector<Vec2>& out, Vec2 p0, Vec2 p1, Vec2 p2) {
+    for (int i = 1; i <= 12; ++i) {
+        float t = i / 12.0f;
+        float it = 1.0f - t;
+        out.push_back({
+            it * it * p0.x + 2 * it * t * p1.x + t * t * p2.x,
+            it * it * p0.y + 2 * it * t * p1.y + t * t * p2.y
+        });
+    }
+}
+
+void drawSvgPath(SvgCanvas& canvas, const std::string& d, Color fill, Color stroke, float strokeWidth) {
+    SvgPathParser parser{d};
+    std::vector<std::vector<Vec2>> subpaths;
+    std::vector<Vec2> currentPath;
+    Vec2 current = {0, 0};
+    Vec2 start = {0, 0};
+    bool closed = false;
+
+    auto flushPath = [&]() {
+        if (!currentPath.empty()) {
+            subpaths.push_back(currentPath);
+            currentPath.clear();
+        }
+    };
+
+    while (parser.pos < d.size() && parser.readCommand()) {
+        char cmd = parser.command;
+        bool rel = std::islower((unsigned char)cmd) != 0;
+        char upper = (char)std::toupper((unsigned char)cmd);
+        if (upper == 'Z') {
+            if (!currentPath.empty()) currentPath.push_back(start);
+            current = start;
+            closed = true;
+            parser.command = 0;
+            continue;
+        }
+
+        auto map = [&](float x, float y) {
+            return rel ? Vec2(current.x + x, current.y + y) : Vec2(x, y);
+        };
+
+        if (upper == 'M') {
+            float x = 0, y = 0;
+            if (!parser.readNumber(x) || !parser.readNumber(y)) break;
+            flushPath();
+            current = map(x, y);
+            start = current;
+            currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            parser.command = rel ? 'l' : 'L';
+            closed = false;
+        } else if (upper == 'L') {
+            while (parser.hasNumber()) {
+                float x = 0, y = 0;
+                if (!parser.readNumber(x) || !parser.readNumber(y)) break;
+                current = map(x, y);
+                currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            }
+        } else if (upper == 'H') {
+            while (parser.hasNumber()) {
+                float x = 0;
+                if (!parser.readNumber(x)) break;
+                current.x = rel ? current.x + x : x;
+                currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            }
+        } else if (upper == 'V') {
+            while (parser.hasNumber()) {
+                float y = 0;
+                if (!parser.readNumber(y)) break;
+                current.y = rel ? current.y + y : y;
+                currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            }
+        } else if (upper == 'C') {
+            while (parser.hasNumber()) {
+                float x1, y1, x2, y2, x, y;
+                if (!parser.readNumber(x1) || !parser.readNumber(y1) ||
+                    !parser.readNumber(x2) || !parser.readNumber(y2) ||
+                    !parser.readNumber(x) || !parser.readNumber(y)) break;
+                Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
+                Vec2 c1 = rel ? svgMapPoint(canvas, current.x + x1, current.y + y1) : svgMapPoint(canvas, x1, y1);
+                Vec2 c2 = rel ? svgMapPoint(canvas, current.x + x2, current.y + y2) : svgMapPoint(canvas, x2, y2);
+                current = map(x, y);
+                Vec2 p3 = svgMapPoint(canvas, current.x, current.y);
+                appendCubic(currentPath, p0, c1, c2, p3);
+            }
+        } else if (upper == 'Q') {
+            while (parser.hasNumber()) {
+                float x1, y1, x, y;
+                if (!parser.readNumber(x1) || !parser.readNumber(y1) ||
+                    !parser.readNumber(x) || !parser.readNumber(y)) break;
+                Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
+                Vec2 c1 = rel ? svgMapPoint(canvas, current.x + x1, current.y + y1) : svgMapPoint(canvas, x1, y1);
+                current = map(x, y);
+                Vec2 p2 = svgMapPoint(canvas, current.x, current.y);
+                appendQuad(currentPath, p0, c1, p2);
+            }
+        } else if (upper == 'A') {
+            while (parser.hasNumber()) {
+                float rx, ry, rot, largeArc, sweep, x, y;
+                if (!parser.readNumber(rx) || !parser.readNumber(ry) || !parser.readNumber(rot) ||
+                    !parser.readNumber(largeArc) || !parser.readNumber(sweep) ||
+                    !parser.readNumber(x) || !parser.readNumber(y)) break;
+                (void)rx; (void)ry; (void)rot; (void)largeArc; (void)sweep;
+                current = map(x, y);
+                currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            }
+        } else {
+            parser.command = 0;
+            ++parser.pos;
+        }
+    }
+    flushPath();
+
+    for (const auto& path : subpaths) {
+        if (fill.a > 0.0f && path.size() >= 3) fillPolygon(canvas, path, fill);
+    }
+    for (const auto& path : subpaths) {
+        if (stroke.a > 0.0f) strokePolyline(canvas, path, stroke, strokeWidth, closed);
+    }
+}
+
+bool rasterizeSvgToRgba(const unsigned char* data, int dataSize, ImageData& image) {
+    if (!hasSvgSignature(data, dataSize)) return false;
+    std::string svg(reinterpret_cast<const char*>(data), reinterpret_cast<const char*>(data) + dataSize);
+    size_t rootPos = lowerSvgString(svg.substr(0, std::min<size_t>(svg.size(), 4096))).find("<svg");
+    if (rootPos == std::string::npos) return false;
+    size_t rootEnd = svg.find('>', rootPos);
+    std::string rootTag = rootEnd == std::string::npos ? svg.substr(rootPos) : svg.substr(rootPos, rootEnd - rootPos + 1);
+    SvgAttrs root = parseSvgAttrs(rootTag);
+
+    std::vector<float> vb = parseSvgNumberList(svgAttr(root, "viewbox"));
+    float viewX = vb.size() >= 4 ? vb[0] : 0.0f;
+    float viewY = vb.size() >= 4 ? vb[1] : 0.0f;
+    float viewW = vb.size() >= 4 ? vb[2] : 0.0f;
+    float viewH = vb.size() >= 4 ? vb[3] : 0.0f;
+    float width = parseSvgFloat(svgAttr(root, "width"), viewW > 0.0f ? viewW : 300.0f);
+    float height = parseSvgFloat(svgAttr(root, "height"), viewH > 0.0f ? viewH : 150.0f);
+    if (viewW <= 0.0f) viewW = width;
+    if (viewH <= 0.0f) viewH = height;
+    int outW = std::clamp((int)std::round(width), 1, 4096);
+    int outH = std::clamp((int)std::round(height), 1, 4096);
+    if ((size_t)outW * (size_t)outH > 16u * 1024u * 1024u) return false;
+
+    image.width = outW;
+    image.height = outH;
+    image.svg = true;
+    image.textureId = 0;
+    image.loaded = true;
+    image.pixels.assign((size_t)outW * (size_t)outH * 4u, 0);
+
+    SvgCanvas canvas;
+    canvas.pixels = &image.pixels;
+    canvas.width = outW;
+    canvas.height = outH;
+    canvas.viewX = viewX;
+    canvas.viewY = viewY;
+    canvas.scaleX = outW / std::max(1.0f, viewW);
+    canvas.scaleY = outH / std::max(1.0f, viewH);
+    std::string inheritedFill = svgAttr(root, "fill", "black");
+    std::string inheritedStroke = svgAttr(root, "stroke", "none");
+    std::string inheritedOpacity = svgAttr(root, "opacity", "1");
+    std::string inheritedFillOpacity = svgAttr(root, "fill-opacity", "1");
+    std::string inheritedStrokeOpacity = svgAttr(root, "stroke-opacity", "1");
+    std::string inheritedStrokeWidth = svgAttr(root, "stroke-width", "1");
+
+    size_t pos = 0;
+    while ((pos = svg.find('<', pos)) != std::string::npos) {
+        if (pos + 1 >= svg.size() || svg[pos + 1] == '/' || svg[pos + 1] == '!' || svg[pos + 1] == '?') {
+            ++pos;
+            continue;
+        }
+        size_t end = svg.find('>', pos);
+        if (end == std::string::npos) break;
+        std::string tag = svg.substr(pos, end - pos + 1);
+        std::string lower = lowerSvgString(tag.substr(1, std::min<size_t>(tag.size(), 16)));
+        SvgAttrs attrs = parseSvgAttrs(tag);
+        float opacity = parseSvgFloat(svgAttr(attrs, "opacity", inheritedOpacity), 1.0f);
+        bool noFill = false;
+        bool noStroke = false;
+        Color currentColor = parseSvgColor(svgAttr(attrs, "color", svgAttr(root, "color", "black")),
+                                           Color(0, 0, 0, 1));
+        Color fill = parseSvgColor(svgAttr(attrs, "fill", inheritedFill), currentColor, &noFill);
+        Color stroke = parseSvgColor(svgAttr(attrs, "stroke", inheritedStroke), currentColor, &noStroke);
+        fill.a *= parseSvgFloat(svgAttr(attrs, "fill-opacity", inheritedFillOpacity), 1.0f) * opacity;
+        stroke.a *= parseSvgFloat(svgAttr(attrs, "stroke-opacity", inheritedStrokeOpacity), 1.0f) * opacity;
+        if (noFill) fill.a = 0.0f;
+        if (noStroke) stroke.a = 0.0f;
+        float strokeWidth = parseSvgFloat(svgAttr(attrs, "stroke-width", inheritedStrokeWidth), 1.0f) *
+                            (std::abs(canvas.scaleX) + std::abs(canvas.scaleY)) * 0.5f;
+
+        if (lower.rfind("rect", 0) == 0) {
+            drawSvgRect(canvas,
+                        parseSvgFloat(svgAttr(attrs, "x")),
+                        parseSvgFloat(svgAttr(attrs, "y")),
+                        parseSvgFloat(svgAttr(attrs, "width")),
+                        parseSvgFloat(svgAttr(attrs, "height")),
+                        parseSvgFloat(svgAttr(attrs, "rx")),
+                        parseSvgFloat(svgAttr(attrs, "ry")),
+                        fill,
+                        stroke,
+                        strokeWidth);
+        } else if (lower.rfind("circle", 0) == 0) {
+            float r = parseSvgFloat(svgAttr(attrs, "r"));
+            drawSvgEllipse(canvas, parseSvgFloat(svgAttr(attrs, "cx")),
+                           parseSvgFloat(svgAttr(attrs, "cy")), r, r, fill, stroke, strokeWidth);
+        } else if (lower.rfind("ellipse", 0) == 0) {
+            drawSvgEllipse(canvas, parseSvgFloat(svgAttr(attrs, "cx")),
+                           parseSvgFloat(svgAttr(attrs, "cy")),
+                           parseSvgFloat(svgAttr(attrs, "rx")),
+                           parseSvgFloat(svgAttr(attrs, "ry")),
+                           fill, stroke, strokeWidth);
+        } else if (lower.rfind("line", 0) == 0) {
+            std::vector<Vec2> points = {
+                svgMapPoint(canvas, parseSvgFloat(svgAttr(attrs, "x1")), parseSvgFloat(svgAttr(attrs, "y1"))),
+                svgMapPoint(canvas, parseSvgFloat(svgAttr(attrs, "x2")), parseSvgFloat(svgAttr(attrs, "y2")))
+            };
+            strokePolyline(canvas, points, stroke.a > 0.0f ? stroke : fill, std::max(1.0f, strokeWidth), false);
+        } else if (lower.rfind("polyline", 0) == 0) {
+            auto points = parseSvgPoints(svgAttr(attrs, "points"), canvas);
+            strokePolyline(canvas, points, stroke.a > 0.0f ? stroke : fill, std::max(1.0f, strokeWidth), false);
+        } else if (lower.rfind("polygon", 0) == 0) {
+            auto points = parseSvgPoints(svgAttr(attrs, "points"), canvas);
+            fillPolygon(canvas, points, fill);
+            strokePolyline(canvas, points, stroke, strokeWidth, true);
+        } else if (lower.rfind("path", 0) == 0) {
+            drawSvgPath(canvas, svgAttr(attrs, "d"), fill, stroke, std::max(1.0f, strokeWidth));
+        }
+        pos = end + 1;
+    }
+
+    return true;
+}
+
 } // namespace
 
 // ============================================================
@@ -605,6 +1200,18 @@ uniform sampler2D uTexture;
 void main() {
     float a = texture(uTexture, vTexCoord).r;
     FragColor = vec4(vColor.rgb, vColor.a * a);
+}
+)";
+
+static const char* IMAGE_FRAG = R"(
+#version 330 core
+in vec2 vTexCoord;
+in vec4 vColor;
+out vec4 FragColor;
+uniform sampler2D uTexture;
+void main() {
+    vec4 tex = texture(uTexture, vTexCoord);
+    FragColor = vec4(tex.rgb * vColor.rgb, tex.a * vColor.a);
 }
 )";
 
@@ -1493,6 +2100,7 @@ bool createVulkanPipelines(VulkanRendererState& state) {
     VkShaderModule roundedFragModule = createVulkanShaderModule(state.device, spv_vulkan_rounded_fragment, sizeof(spv_vulkan_rounded_fragment), "rounded fragment module");
     VkShaderModule textVertModule = createVulkanShaderModule(state.device, spv_vulkan_text_vertex, sizeof(spv_vulkan_text_vertex), "text vertex module");
     VkShaderModule textFragModule = createVulkanShaderModule(state.device, spv_vulkan_text_fragment, sizeof(spv_vulkan_text_fragment), "text fragment module");
+    VkShaderModule imageFragModule = createVulkanShaderModule(state.device, spv_vulkan_image_fragment, sizeof(spv_vulkan_image_fragment), "image fragment module");
 
     // Create pipeline cache from embedded data for faster pipeline creation
     if (state.pipelineCache == VK_NULL_HANDLE) {
@@ -1509,11 +2117,12 @@ bool createVulkanPipelines(VulkanRendererState& state) {
             vkCreatePipelineCache(state.device, &cacheInfo, nullptr, &state.pipelineCache);
         }
     }
-    if (!roundedVertModule || !roundedFragModule || !textVertModule || !textFragModule) {
+    if (!roundedVertModule || !roundedFragModule || !textVertModule || !textFragModule || !imageFragModule) {
         if (roundedVertModule) vkDestroyShaderModule(state.device, roundedVertModule, nullptr);
         if (roundedFragModule) vkDestroyShaderModule(state.device, roundedFragModule, nullptr);
         if (textVertModule) vkDestroyShaderModule(state.device, textVertModule, nullptr);
         if (textFragModule) vkDestroyShaderModule(state.device, textFragModule, nullptr);
+        if (imageFragModule) vkDestroyShaderModule(state.device, imageFragModule, nullptr);
         return false;
     }
 
@@ -1751,14 +2360,32 @@ bool createVulkanPipelines(VulkanRendererState& state) {
         return false;
     }
 
+    VkPipelineShaderStageCreateInfo imageStages[] = {
+        makeStage(VK_SHADER_STAGE_VERTEX_BIT, textVertModule),
+        makeStage(VK_SHADER_STAGE_FRAGMENT_BIT, imageFragModule)
+    };
+    pipelineInfo.pStages = imageStages;
+    pipelineInfo.pVertexInputState = &textVertexInput;
+    pipelineInfo.layout = state.textPipelineLayout;
+    result = vkCreateGraphicsPipelines(state.device,
+                                       state.pipelineCache,
+                                       1,
+                                       &pipelineInfo,
+                                       nullptr,
+                                       &state.imagePipeline);
+    if (result != VK_SUCCESS) {
+        std::cerr << vkResultMessage("vkCreateGraphicsPipelines(image)", result) << std::endl;
+        return false;
+    }
+
     VkDescriptorPoolSize poolSize = {};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = 64;
+    poolSize.descriptorCount = 256;
 
     VkDescriptorPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = 64;
+    poolInfo.maxSets = 256;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     result = vkCreateDescriptorPool(state.device, &poolInfo, nullptr, &state.descriptorPool);
@@ -1787,6 +2414,7 @@ bool createVulkanPipelines(VulkanRendererState& state) {
     vkDestroyShaderModule(state.device, roundedFragModule, nullptr);
     vkDestroyShaderModule(state.device, textVertModule, nullptr);
     vkDestroyShaderModule(state.device, textFragModule, nullptr);
+    vkDestroyShaderModule(state.device, imageFragModule, nullptr);
     return true;
 }
 
@@ -1812,6 +2440,14 @@ void destroyVulkanPipelines(VulkanRendererState& state) {
         }
     }
     state.fontTextures.clear();
+    for (auto& item : state.imageTextures) {
+        auto& texture = item.second;
+        if (texture.view) vkDestroyImageView(state.device, texture.view, nullptr);
+        if (texture.image && texture.allocation && state.allocator) {
+            vmaDestroyImage(state.allocator, texture.image, texture.allocation);
+        }
+    }
+    state.imageTextures.clear();
 
     if (state.fontSampler) {
         vkDestroySampler(state.device, state.fontSampler, nullptr);
@@ -1828,6 +2464,10 @@ void destroyVulkanPipelines(VulkanRendererState& state) {
     if (state.textPipeline) {
         vkDestroyPipeline(state.device, state.textPipeline, nullptr);
         state.textPipeline = VK_NULL_HANDLE;
+    }
+    if (state.imagePipeline) {
+        vkDestroyPipeline(state.device, state.imagePipeline, nullptr);
+        state.imagePipeline = VK_NULL_HANDLE;
     }
     if (state.roundedPipelineLayout) {
         vkDestroyPipelineLayout(state.device, state.roundedPipelineLayout, nullptr);
@@ -2128,6 +2768,157 @@ bool ensureVulkanFontTexture(VulkanRendererState& state,
     return true;
 }
 
+bool ensureVulkanImageTexture(VulkanRendererState& state,
+                              const std::string& key,
+                              ImageData& image) {
+    auto existing = state.imageTextures.find(key);
+    if (existing != state.imageTextures.end()) {
+        return existing->second.descriptorSet != VK_NULL_HANDLE;
+    }
+    if (!image.loaded || image.pixels.empty() || image.width <= 0 || image.height <= 0) {
+        return false;
+    }
+
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(image.pixels.size());
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VmaAllocation stagingAllocation = VK_NULL_HANDLE;
+    if (!createVulkanBuffer(state,
+                            imageSize,
+                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                            stagingBuffer,
+                            stagingAllocation,
+                            "image staging")) {
+        return false;
+    }
+
+    auto destroyStaging = [&]() {
+        if (stagingBuffer && stagingAllocation) {
+            vmaDestroyBuffer(state.allocator, stagingBuffer, stagingAllocation);
+            stagingBuffer = VK_NULL_HANDLE;
+            stagingAllocation = VK_NULL_HANDLE;
+        }
+    };
+
+    void* mapped = nullptr;
+    VkResult result = vmaMapMemory(state.allocator, stagingAllocation, &mapped);
+    if (result != VK_SUCCESS) {
+        std::cerr << vkResultMessage("vmaMapMemory(image staging)", result) << std::endl;
+        destroyStaging();
+        return false;
+    }
+    std::memcpy(mapped, image.pixels.data(), image.pixels.size());
+    vmaUnmapMemory(state.allocator, stagingAllocation);
+
+    VulkanRendererState::FontTexture texture;
+    texture.width = image.width;
+    texture.height = image.height;
+
+    VkImageCreateInfo imageInfo = {};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {
+        static_cast<uint32_t>(image.width),
+        static_cast<uint32_t>(image.height),
+        1
+    };
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (!createVulkanImage(state,
+                           imageInfo,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                           texture.image,
+                           texture.allocation,
+                           "image texture")) {
+        destroyStaging();
+        return false;
+    }
+
+    auto destroyTexture = [&]() {
+        if (texture.view) {
+            vkDestroyImageView(state.device, texture.view, nullptr);
+            texture.view = VK_NULL_HANDLE;
+        }
+        if (texture.image && texture.allocation) {
+            vmaDestroyImage(state.allocator, texture.image, texture.allocation);
+            texture.image = VK_NULL_HANDLE;
+            texture.allocation = VK_NULL_HANDLE;
+        }
+    };
+
+    transitionVulkanImage(state,
+                          texture.image,
+                          VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copyVulkanBufferToImage(state,
+                            stagingBuffer,
+                            texture.image,
+                            static_cast<uint32_t>(image.width),
+                            static_cast<uint32_t>(image.height));
+    transitionVulkanImage(state,
+                          texture.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    destroyStaging();
+
+    VkImageViewCreateInfo viewInfo = {};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = texture.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    result = vkCreateImageView(state.device, &viewInfo, nullptr, &texture.view);
+    if (result != VK_SUCCESS) {
+        std::cerr << vkResultMessage("vkCreateImageView(image)", result) << std::endl;
+        destroyTexture();
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo descriptorInfo = {};
+    descriptorInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptorInfo.descriptorPool = state.descriptorPool;
+    descriptorInfo.descriptorSetCount = 1;
+    descriptorInfo.pSetLayouts = &state.textDescriptorSetLayout;
+    result = vkAllocateDescriptorSets(state.device, &descriptorInfo, &texture.descriptorSet);
+    if (result != VK_SUCCESS) {
+        std::cerr << vkResultMessage("vkAllocateDescriptorSets(image)", result) << std::endl;
+        destroyTexture();
+        return false;
+    }
+
+    VkDescriptorImageInfo imageDescriptor = {};
+    imageDescriptor.sampler = state.fontSampler;
+    imageDescriptor.imageView = texture.view;
+    imageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkWriteDescriptorSet write = {};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = texture.descriptorSet;
+    write.dstBinding = 0;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &imageDescriptor;
+    vkUpdateDescriptorSets(state.device, 1, &write, 0, nullptr);
+
+    state.imageTextures.emplace(key, texture);
+    image.pixels.clear();
+    image.pixels.shrink_to_fit();
+    return true;
+}
+
 void setVulkanScissor(VulkanRendererState& state,
                       const std::vector<Rect>& scissorStack,
                       float dpiScale) {
@@ -2396,6 +3187,8 @@ void Renderer::cacheUniformLocations() {
 
     textUniforms_.projection = loc(textShader_, "uProjection");
     textUniforms_.texture = loc(textShader_, "uTexture");
+    imageUniforms_.projection = loc(imageShader_, "uProjection");
+    imageUniforms_.texture = loc(imageShader_, "uTexture");
 }
 
 void Renderer::useShader(uint32_t shader) {
@@ -3117,6 +3910,105 @@ void Renderer::drawVulkanText(const std::string& text,
 #endif
 }
 
+void Renderer::drawVulkanImage(const std::string& key,
+                               ImageData& image,
+                               const Rect& rect,
+                               const Color& tint,
+                               float opacity) {
+#if FLUXUI_HAS_VULKAN_SDK
+    if (!vulkan_ || !vulkan_->frameActive || !vulkan_->imagePipeline ||
+        !image.loaded || opacity <= 0.0f || tint.a <= 0.0f ||
+        rect.w <= 0.0f || rect.h <= 0.0f) {
+        return;
+    }
+
+    auto& state = *vulkan_;
+    if (!ensureVulkanImageTexture(state, key, image)) {
+        return;
+    }
+    auto textureIt = state.imageTextures.find(key);
+    if (textureIt == state.imageTextures.end()) {
+        return;
+    }
+
+    Rect drawRect = {
+        rect.x + translation_.x,
+        rect.y + translation_.y,
+        rect.w,
+        rect.h
+    };
+    if (scale_ != 1.0f) {
+        Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+        drawRect.x = pivot.x + (drawRect.x - pivot.x) * scale_;
+        drawRect.y = pivot.y + (drawRect.y - pivot.y) * scale_;
+        drawRect.w *= scale_;
+        drawRect.h *= scale_;
+    }
+
+    auto snapPx = [](float value) { return std::floor(value + 0.5f); };
+    float x = snapPx(drawRect.x * dpiScale_);
+    float y = snapPx(drawRect.y * dpiScale_);
+    float w = std::max(1.0f, snapPx(drawRect.w * dpiScale_));
+    float h = std::max(1.0f, snapPx(drawRect.h * dpiScale_));
+    float a = tint.a * opacity;
+    float data[] = {
+        x,     y,     0.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        x + w, y,     1.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        x + w, y + h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        x,     y,     0.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        x + w, y + h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        x,     y + h, 0.0f, 1.0f, tint.r, tint.g, tint.b, a,
+    };
+
+    flushVulkanBatches(state, scissorStack_, dpiScale_);
+    auto& frame = state.frames[state.currentFrame % state.frames.size()];
+    VulkanDynamicAllocation allocation;
+    if (!allocateVulkanDynamicBytes(state,
+                                    frame.textVertices,
+                                    sizeof(data),
+                                    alignof(VulkanTextVertex),
+                                    512 * 1024,
+                                    "vmaMapMemory(image dynamic page)",
+                                    allocation)) {
+        return;
+    }
+    std::memcpy(allocation.mapped, data, sizeof(data));
+
+    VkDeviceSize offset = static_cast<VkDeviceSize>(allocation.offset);
+    VulkanTextPush push = {};
+    push.framebufferSize[0] = static_cast<float>(state.swapchainExtent.width);
+    push.framebufferSize[1] = static_cast<float>(state.swapchainExtent.height);
+
+    setVulkanScissor(state, scissorStack_, dpiScale_);
+    vkCmdBindPipeline(frame.commandBuffer,
+                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      state.imagePipeline);
+    VkDescriptorSet descriptorSet = textureIt->second.descriptorSet;
+    vkCmdBindDescriptorSets(frame.commandBuffer,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            state.textPipelineLayout,
+                            0,
+                            1,
+                            &descriptorSet,
+                            0,
+                            nullptr);
+    vkCmdBindVertexBuffers(frame.commandBuffer, 0, 1, &frame.textVertices.pages[allocation.pageIndex].buffer, &offset);
+    vkCmdPushConstants(frame.commandBuffer,
+                       state.textPipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT,
+                       0,
+                       sizeof(push),
+                       &push);
+    vkCmdDraw(frame.commandBuffer, 6, 1, 0, 0);
+#else
+    (void)key;
+    (void)image;
+    (void)rect;
+    (void)tint;
+    (void)opacity;
+#endif
+}
+
 bool Renderer::init(void* windowHandle) {
     window_ = windowHandle;
 
@@ -3155,6 +4047,7 @@ void Renderer::shutdown() {
     if (roundedRectShader_) glDeleteProgram(roundedRectShader_);
     if (shadowShader_) glDeleteProgram(shadowShader_);
     if (textShader_) glDeleteProgram(textShader_);
+    if (imageShader_) glDeleteProgram(imageShader_);
     if (quadVAO_) glDeleteVertexArrays(1, &quadVAO_);
     if (quadVBO_) glDeleteBuffers(1, &quadVBO_);
     if (instanceVBO_) glDeleteBuffers(1, &instanceVBO_);
@@ -3162,6 +4055,9 @@ void Renderer::shutdown() {
     if (textVBO_) glDeleteBuffers(1, &textVBO_);
     for (auto& [name, font] : fonts_) {
         if (font.textureId) glDeleteTextures(1, &font.textureId);
+    }
+    for (auto& [name, image] : images_) {
+        if (image.textureId) glDeleteTextures(1, &image.textureId);
     }
     // glContext_ (SDL_GLContext) removed
     glContext_ = nullptr;
@@ -3319,6 +4215,98 @@ bool Renderer::loadFontFromMemory(const unsigned char* data, int dataSize, float
     return true;
 }
 
+bool Renderer::decodeImageBytes(const unsigned char* data, int dataSize,
+                                ImageData& image, bool forceSvg) {
+    if (!data || dataSize <= 0) return false;
+
+    if (forceSvg || hasSvgSignature(data, dataSize)) {
+        return rasterizeSvgToRgba(data, dataSize, image);
+    }
+
+    int w = 0, h = 0, comp = 0;
+    if (!stbi_info_from_memory(data, dataSize, &w, &h, &comp) ||
+        w <= 0 || h <= 0 ||
+        w > 16384 || h > 16384 ||
+        (size_t)w * (size_t)h > 64u * 1024u * 1024u) {
+        return false;
+    }
+
+    int channels = 0;
+    stbi_uc* decoded = stbi_load_from_memory(data, dataSize, &w, &h, &channels, 4);
+    if (!decoded) return false;
+
+    image.width = w;
+    image.height = h;
+    image.textureId = 0;
+    image.loaded = true;
+    image.svg = false;
+    image.pixels.assign(decoded, decoded + (size_t)w * (size_t)h * 4u);
+    stbi_image_free(decoded);
+    return true;
+}
+
+bool Renderer::loadImage(const std::string& path, const std::string& name) {
+    std::string key = name.empty() ? path : name;
+    auto existing = images_.find(key);
+    if (existing != images_.end() && existing->second.loaded) {
+        return true;
+    }
+
+    std::vector<unsigned char> data;
+    if (!readFontFile(path, data)) return false;
+
+    std::string lowerPath = lowerSvgString(path);
+    bool forceSvg = lowerPath.size() >= 4 &&
+                    lowerPath.substr(lowerPath.size() - 4) == ".svg";
+
+    ImageData image;
+    if (!decodeImageBytes(data.data(), (int)data.size(), image, forceSvg)) {
+        return false;
+    }
+
+    auto [it, inserted] = images_.insert_or_assign(key, std::move(image));
+    (void)inserted;
+    if (activeBackend_ == RenderBackendType::Vulkan && vulkan_ && vulkan_->device) {
+#if FLUXUI_HAS_VULKAN_SDK
+        ensureVulkanImageTexture(*vulkan_, key, it->second);
+#endif
+    } else if (backendInitialized_) {
+        ensureImageTexture(key, it->second);
+    }
+    return true;
+}
+
+bool Renderer::loadImageFromMemory(const unsigned char* data, int dataSize,
+                                   const std::string& name, bool svg) {
+    if (name.empty()) return false;
+    ImageData image;
+    if (!decodeImageBytes(data, dataSize, image, svg)) {
+        return false;
+    }
+    auto [it, inserted] = images_.insert_or_assign(name, std::move(image));
+    (void)inserted;
+    if (activeBackend_ == RenderBackendType::Vulkan && vulkan_ && vulkan_->device) {
+#if FLUXUI_HAS_VULKAN_SDK
+        ensureVulkanImageTexture(*vulkan_, name, it->second);
+#endif
+    } else if (backendInitialized_) {
+        ensureImageTexture(name, it->second);
+    }
+    return true;
+}
+
+Vec2 Renderer::imageSize(const std::string& nameOrPath) {
+    auto it = images_.find(nameOrPath);
+    if (it == images_.end() || !it->second.loaded) {
+        loadImage(nameOrPath);
+        it = images_.find(nameOrPath);
+    }
+    if (it == images_.end() || !it->second.loaded) {
+        return {0, 0};
+    }
+    return {(float)it->second.width, (float)it->second.height};
+}
+
 void Renderer::warmFontCache(const std::vector<float>& sizes, const std::string& name) {
     std::string resolvedNames[] = {
         name,
@@ -3359,6 +4347,33 @@ void Renderer::releaseFontSources() {
             font.sourceData.shrink_to_fit();
         }
     }
+}
+
+bool Renderer::ensureImageTexture(const std::string& key, ImageData& image) {
+    if (!image.loaded) return false;
+    if (activeBackend_ == RenderBackendType::Vulkan) {
+#if FLUXUI_HAS_VULKAN_SDK
+        return vulkan_ && vulkan_->device && ensureVulkanImageTexture(*vulkan_, key, image);
+#else
+        (void)key;
+        return false;
+#endif
+    }
+
+    if (image.textureId != 0) return true;
+    if (image.pixels.empty() || image.width <= 0 || image.height <= 0) return false;
+    glGenTextures(1, &image.textureId);
+    glBindTexture(GL_TEXTURE_2D, image.textureId);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width, image.height,
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    image.pixels.clear();
+    image.pixels.shrink_to_fit();
+    return image.textureId != 0;
 }
 
 // Platform-specific FreeType hinting to match Chromium/Blink perfectly
@@ -3948,6 +4963,71 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
     glUniform1i(textUniforms_.texture, 0);
 
     glDrawArrays(GL_TRIANGLES, 0, (int)(vertices.size() / 8));
+}
+
+void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
+                         float opacity, const Color& tint) {
+    if (nameOrPath.empty() || rect.w <= 0.0f || rect.h <= 0.0f ||
+        opacity <= 0.0f || tint.a <= 0.0f) {
+        return;
+    }
+
+    auto it = images_.find(nameOrPath);
+    if (it == images_.end() || !it->second.loaded) {
+        if (!loadImage(nameOrPath)) return;
+        it = images_.find(nameOrPath);
+        if (it == images_.end() || !it->second.loaded) return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Vulkan) {
+        drawVulkanImage(nameOrPath, it->second, rect, tint, opacity);
+        return;
+    }
+
+    if (!ensureImageTexture(nameOrPath, it->second) || it->second.textureId == 0) {
+        return;
+    }
+
+    Rect drawRect = {
+        rect.x + translation_.x,
+        rect.y + translation_.y,
+        rect.w,
+        rect.h
+    };
+    if (scale_ != 1.0f) {
+        Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+        drawRect.x = pivot.x + (drawRect.x - pivot.x) * scale_;
+        drawRect.y = pivot.y + (drawRect.y - pivot.y) * scale_;
+        drawRect.w *= scale_;
+        drawRect.h *= scale_;
+    }
+
+    float a = tint.a * opacity;
+    float vertices[] = {
+        drawRect.x,              drawRect.y,              0.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y,              1.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y,              0.0f, 0.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y + drawRect.h, 0.0f, 1.0f, tint.r, tint.g, tint.b, a,
+    };
+
+    flushRectBatch();
+    useShader(imageShader_);
+    Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+    setProjection(imageUniforms_.projection, windowWidth_, windowHeight_, scale_, pivot);
+
+    glBindVertexArray(textVAO_);
+    glBindBuffer(GL_ARRAY_BUFFER, textVBO_);
+    if (48 > textVBOCapacity_) {
+        textVBOCapacity_ = 48;
+        glBufferData(GL_ARRAY_BUFFER, textVBOCapacity_ * sizeof(float), nullptr, GL_STREAM_DRAW);
+    }
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, it->second.textureId);
+    glUniform1i(imageUniforms_.texture, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
 void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const Color& color,

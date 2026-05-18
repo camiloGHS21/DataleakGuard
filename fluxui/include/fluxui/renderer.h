@@ -122,6 +122,15 @@ struct RenderCommand {
     uint32_t textureId = 0;
 };
 
+struct ImageData {
+    int width = 0;
+    int height = 0;
+    uint32_t textureId = 0;
+    bool loaded = false;
+    bool svg = false;
+    std::vector<unsigned char> pixels; // RGBA8 until the active backend uploads it.
+};
+
 // ============================================================
 //  Renderer
 // ============================================================
@@ -157,6 +166,12 @@ public:
     void warmFontCache(const std::vector<float>& sizes, const std::string& name = "default");
     void releaseFontSources();
 
+    // Image loading. Raster formats use stb_image; SVG is rasterized by FluxUI.
+    bool loadImage(const std::string& path, const std::string& name = "");
+    bool loadImageFromMemory(const unsigned char* data, int dataSize,
+                             const std::string& name, bool svg = false);
+    Vec2 imageSize(const std::string& nameOrPath);
+
     // Drawing primitives
     void drawRoundedRect(const Rect& rect, const Color& color, const BorderRadius& radius,
                          float opacity = 1.0f);
@@ -171,6 +186,9 @@ public:
                         float fontSize = 14.0f, TextAlign align = TextAlign::Left,
                         FontWeight weight = FontWeight::Normal,
                         const std::string& fontName = "default");
+    void drawImage(const std::string& nameOrPath, const Rect& rect,
+                   float opacity = 1.0f,
+                   const Color& tint = Color(1, 1, 1, 1));
 
     // Clipping
     void pushScissor(const Rect& rect);
@@ -203,6 +221,7 @@ private:
     // Shader programs
     uint32_t roundedRectShader_ = 0;
     uint32_t textShader_ = 0;
+    uint32_t imageShader_ = 0;
     uint32_t shadowShader_ = 0;
     uint32_t activeShader_ = 0;
 
@@ -262,10 +281,16 @@ private:
         int texture = -1;
     } textUniforms_;
 
+    struct ImageUniforms {
+        int projection = -1;
+        int texture = -1;
+    } imageUniforms_;
+
     // Font data
     std::unordered_map<std::string, FontData> fonts_;
     mutable std::unordered_map<std::string, Vec2> textMeasureCache_;
     FontData* currentFont_ = nullptr;
+    std::unordered_map<std::string, ImageData> images_;
 
     // Scissor stack
     std::vector<Rect> scissorStack_;
@@ -281,6 +306,9 @@ private:
 
     // Internal methods
     uint32_t compileShader(const char* vertSrc, const char* fragSrc);
+    bool decodeImageBytes(const unsigned char* data, int dataSize,
+                          ImageData& image, bool forceSvg = false);
+    bool ensureImageTexture(const std::string& key, ImageData& image);
     void setupQuad();
     void setupTextBuffer();
     void cacheUniformLocations();
@@ -303,6 +331,8 @@ private:
                              const BorderRadius& radius);
     void drawVulkanText(const std::string& text, const Vec2& pos, const Color& color,
                         float fontSize, FontWeight weight, const std::string& fontName);
+    void drawVulkanImage(const std::string& key, ImageData& image,
+                         const Rect& rect, const Color& tint, float opacity);
 
     std::unique_ptr<VulkanRendererState> vulkan_;
 };

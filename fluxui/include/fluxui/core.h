@@ -211,6 +211,7 @@ enum class TextDecoration { None, Underline, LineThrough, Overline };
 enum class TextTransform { None, Uppercase, Lowercase, Capitalize };
 enum class PointerEvents { Auto, None };
 enum class WordBreak { Normal, BreakAll, KeepAll, BreakWord };
+enum class ObjectFit { Fill, Contain, Cover, None, ScaleDown };
 
 // ============================================================
 //  CSS Value (supports px, %, auto)
@@ -304,6 +305,8 @@ struct Style {
     int zIndex = 0;
     bool hasZIndex = false;
     float aspectRatio = 0;  // 0 means auto
+    ObjectFit objectFit = ObjectFit::Fill;
+    bool hasObjectFit = false;
 
     // Dimensions
     CSSValue width, height;
