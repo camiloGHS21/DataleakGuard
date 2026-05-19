@@ -1500,6 +1500,9 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
     auto block = [&]() {
         style.display = Display::Block;
     };
+    auto inlineBox = [&]() {
+        style.display = Display::InlineBlock;
+    };
     auto heading = [&](float size, float marginEm, bool setFontSize = true) {
         block();
         if (setFontSize) {
@@ -1511,7 +1514,10 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.hasFontWeight = true;
     };
 
-    if (t == "h1") {
+    if (t == "head" || t == "meta" || t == "title" || t == "link" ||
+        t == "style" || t == "script" || t == "param" || t == "datalist") {
+        style.display = Display::None;
+    } else if (t == "h1") {
         int sectionDepth = 0;
         for (const auto& ancestor : ancestors) {
             if (isSectioning(ancestor.type)) ++sectionDepth;
@@ -1541,10 +1547,28 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
     } else if (t == "blockquote") {
         block();
         style.margin = EdgeInsets(medium, 40.0f, medium, 40.0f);
+    } else if (t == "figure") {
+        block();
+        style.margin = EdgeInsets(medium, 40.0f, medium, 40.0f);
+    } else if (t == "figcaption" || t == "address" || t == "dt" || t == "form") {
+        block();
+    } else if (t == "dl") {
+        block();
+        style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
+    } else if (t == "dd") {
+        block();
+        style.margin.left = 40.0f;
     } else if (t == "center") {
         block();
         style.textAlign = TextAlign::Center;
         style.hasTextAlign = true;
+    } else if (t == "hr") {
+        block();
+        style.overflow = Overflow::Hidden;
+        style.overflowX = Overflow::Hidden;
+        style.overflowY = Overflow::Hidden;
+        style.margin = EdgeInsets(0.5f * medium, 0.0f, 0.5f * medium, 0.0f);
+        style.border = Border(1.0f, Color(0.5f, 0.5f, 0.5f, 1.0f));
     } else if (t == "ul" || t == "ol" || t == "menu" || t == "dir") {
         block();
         style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
@@ -1555,8 +1579,28 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.display = Display::InlineBlock;
         style.fontWeight = FontWeight::Bold;
         style.hasFontWeight = true;
+    } else if (t == "a") {
+        inlineBox();
+        style.color = Color(0.0f, 0.0f, 0.933f, 1.0f);
+        style.hasColor = true;
+        style.textDecoration = TextDecoration::Underline;
+        style.hasTextDecoration = true;
+        style.cursor = CursorType::Pointer;
+    } else if (t == "u" || t == "ins") {
+        inlineBox();
+        style.textDecoration = TextDecoration::Underline;
+        style.hasTextDecoration = true;
+    } else if (t == "s" || t == "strike" || t == "del") {
+        inlineBox();
+        style.textDecoration = TextDecoration::LineThrough;
+        style.hasTextDecoration = true;
+    } else if (t == "mark") {
+        inlineBox();
+        style.backgroundColor = Color(1.0f, 1.0f, 0.0f, 1.0f);
+        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
+        style.hasColor = true;
     } else if (t == "small") {
-        style.display = Display::InlineBlock;
+        inlineBox();
         style.fontSize = 13.333f;
         style.hasFontSize = true;
     } else if (t == "pre" || t == "xmp" || t == "plaintext" || t == "listing") {
@@ -1567,16 +1611,20 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.whiteSpace = WhiteSpace::Pre;
         style.hasWhiteSpace = true;
     } else if (t == "code" || t == "kbd" || t == "samp" || t == "tt") {
-        style.display = Display::InlineBlock;
+        inlineBox();
         style.fontFamily = "monospace";
         style.hasFontFamily = true;
     } else if (t == "nobr") {
-        style.display = Display::InlineBlock;
+        inlineBox();
         style.whiteSpace = WhiteSpace::NoWrap;
         style.hasWhiteSpace = true;
     } else if (t == "img" || t == "svg" || t == "picture") {
-        style.display = Display::InlineBlock;
+        inlineBox();
         style.objectFit = ObjectFit::Fill;
+        style.hasObjectFit = true;
+    } else if (t == "video") {
+        inlineBox();
+        style.objectFit = ObjectFit::Contain;
         style.hasObjectFit = true;
     } else if (t == "rp" || t == "noframes") {
         style.display = Display::None;
@@ -1584,7 +1632,7 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
                t == "header" || t == "main" || t == "nav" || t == "section") {
         block();
     } else if (t == "span") {
-        style.display = Display::InlineBlock;
+        inlineBox();
     } else if (t == "button") {
         style.cursor = CursorType::Default;
         style.display = Display::Flex;
