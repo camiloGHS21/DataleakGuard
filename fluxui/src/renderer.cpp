@@ -652,6 +652,47 @@ Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr
     return fallback;
 }
 
+struct SvgAffine {
+    float a = 1.0f, b = 0.0f, c = 0.0f, d = 1.0f, e = 0.0f, f = 0.0f;
+
+    static SvgAffine identity() { return {}; }
+    static SvgAffine translate(float tx, float ty) { return {1.0f, 0.0f, 0.0f, 1.0f, tx, ty}; }
+    static SvgAffine scale(float sx, float sy) { return {sx, 0.0f, 0.0f, sy, 0.0f, 0.0f}; }
+    static SvgAffine rotate(float degrees) {
+        float radians = degrees * 3.14159265358979323846f / 180.0f;
+        float cs = std::cos(radians);
+        float sn = std::sin(radians);
+        return {cs, sn, -sn, cs, 0.0f, 0.0f};
+    }
+    static SvgAffine skewX(float degrees) {
+        float radians = degrees * 3.14159265358979323846f / 180.0f;
+        return {1.0f, 0.0f, std::tan(radians), 1.0f, 0.0f, 0.0f};
+    }
+    static SvgAffine skewY(float degrees) {
+        float radians = degrees * 3.14159265358979323846f / 180.0f;
+        return {1.0f, std::tan(radians), 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+
+    Vec2 apply(float x, float y) const {
+        return {a * x + c * y + e, b * x + d * y + f};
+    }
+
+    SvgAffine multiply(const SvgAffine& other) const {
+        return {
+            a * other.a + c * other.b,
+            b * other.a + d * other.b,
+            a * other.c + c * other.d,
+            b * other.c + d * other.d,
+            a * other.e + c * other.f + e,
+            b * other.e + d * other.f + f
+        };
+    }
+
+    bool axisAligned() const {
+        return std::abs(b) < 0.0001f && std::abs(c) < 0.0001f;
+    }
+};
+
 struct SvgCanvas {
     std::vector<unsigned char>* pixels = nullptr;
     int width = 0;
@@ -662,11 +703,13 @@ struct SvgCanvas {
     float scaleY = 1.0f;
     float offsetX = 0.0f;
     float offsetY = 0.0f;
+    SvgAffine transform;
 };
 
 Vec2 svgMapPoint(const SvgCanvas& canvas, float x, float y) {
-    return {canvas.offsetX + (x - canvas.viewX) * canvas.scaleX,
-            canvas.offsetY + (y - canvas.viewY) * canvas.scaleY};
+    Vec2 transformed = canvas.transform.apply(x, y);
+    return {canvas.offsetX + (transformed.x - canvas.viewX) * canvas.scaleX,
+            canvas.offsetY + (transformed.y - canvas.viewY) * canvas.scaleY};
 }
 
 struct SvgAspectRatio {
@@ -708,6 +751,53 @@ SvgAspectRatio parseSvgPreserveAspectRatio(const std::string& rawValue) {
         else if (token.find("ymid") != std::string::npos) result.alignY = 0.5f;
     }
     return result;
+}
+
+SvgAffine parseSvgTransformList(const std::string& rawValue) {
+    SvgAffine combined = SvgAffine::identity();
+    std::string value = trimSvgString(rawValue);
+    size_t pos = 0;
+    while (pos < value.size()) {
+        while (pos < value.size() && (std::isspace((unsigned char)value[pos]) || value[pos] == ',')) ++pos;
+        size_t nameStart = pos;
+        while (pos < value.size() && (std::isalpha((unsigned char)value[pos]) || value[pos] == '-')) ++pos;
+        if (nameStart == pos) break;
+        std::string name = lowerSvgString(value.substr(nameStart, pos - nameStart));
+        while (pos < value.size() && std::isspace((unsigned char)value[pos])) ++pos;
+        if (pos >= value.size() || value[pos] != '(') break;
+        size_t argsStart = ++pos;
+        int depth = 1;
+        while (pos < value.size() && depth > 0) {
+            if (value[pos] == '(') ++depth;
+            else if (value[pos] == ')') --depth;
+            if (depth > 0) ++pos;
+        }
+        if (depth != 0) break;
+        std::vector<float> args = parseSvgNumberList(value.substr(argsStart, pos - argsStart));
+        if (pos < value.size() && value[pos] == ')') ++pos;
+
+        SvgAffine next = SvgAffine::identity();
+        if (name == "matrix" && args.size() >= 6) {
+            next = {args[0], args[1], args[2], args[3], args[4], args[5]};
+        } else if (name == "translate" && !args.empty()) {
+            next = SvgAffine::translate(args[0], args.size() >= 2 ? args[1] : 0.0f);
+        } else if (name == "scale" && !args.empty()) {
+            next = SvgAffine::scale(args[0], args.size() >= 2 ? args[1] : args[0]);
+        } else if (name == "rotate" && !args.empty()) {
+            next = SvgAffine::rotate(args[0]);
+            if (args.size() >= 3) {
+                next = SvgAffine::translate(args[1], args[2])
+                    .multiply(next)
+                    .multiply(SvgAffine::translate(-args[1], -args[2]));
+            }
+        } else if (name == "skewx" && !args.empty()) {
+            next = SvgAffine::skewX(args[0]);
+        } else if (name == "skewy" && !args.empty()) {
+            next = SvgAffine::skewY(args[0]);
+        }
+        combined = combined.multiply(next);
+    }
+    return combined;
 }
 
 void svgBlendPixel(SvgCanvas& canvas, int x, int y, Color color, float coverage = 1.0f) {
@@ -798,6 +888,19 @@ void fillPolygon(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color
 void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
                  float rx, float ry, Color fill, Color stroke, float strokeWidth) {
     if (w <= 0.0f || h <= 0.0f) return;
+    if (!canvas.transform.axisAligned()) {
+        std::vector<Vec2> points = {
+            svgMapPoint(canvas, x, y),
+            svgMapPoint(canvas, x + w, y),
+            svgMapPoint(canvas, x + w, y + h),
+            svgMapPoint(canvas, x, y + h)
+        };
+        if (fill.a > 0.0f) fillPolygon(canvas, points, fill);
+        if (stroke.a > 0.0f && strokeWidth > 0.0f) {
+            strokePolyline(canvas, points, stroke, strokeWidth, true);
+        }
+        return;
+    }
     Vec2 p0 = svgMapPoint(canvas, x, y);
     Vec2 p1 = svgMapPoint(canvas, x + w, y + h);
     float left = std::min(p0.x, p1.x);
@@ -1081,9 +1184,28 @@ bool rasterizeSvgToRgba(const unsigned char* data, int dataSize, ImageData& imag
     std::string inheritedStrokeOpacity = svgAttr(root, "stroke-opacity", "1");
     std::string inheritedStrokeWidth = svgAttr(root, "stroke-width", "1");
 
+    std::vector<SvgAffine> transformStack;
+    transformStack.push_back(SvgAffine::identity());
+
     size_t pos = 0;
     while ((pos = svg.find('<', pos)) != std::string::npos) {
-        if (pos + 1 >= svg.size() || svg[pos + 1] == '/' || svg[pos + 1] == '!' || svg[pos + 1] == '?') {
+        if (pos + 1 >= svg.size()) break;
+        if (svg[pos + 1] == '/') {
+            size_t closeEnd = svg.find('>', pos);
+            if (closeEnd == std::string::npos) break;
+            size_t nameStart = pos + 2;
+            while (nameStart < closeEnd && std::isspace((unsigned char)svg[nameStart])) ++nameStart;
+            size_t nameEnd = nameStart;
+            while (nameEnd < closeEnd && (std::isalnum((unsigned char)svg[nameEnd]) ||
+                   svg[nameEnd] == '-' || svg[nameEnd] == '_' || svg[nameEnd] == ':')) ++nameEnd;
+            std::string closeName = lowerSvgString(svg.substr(nameStart, nameEnd - nameStart));
+            if ((closeName == "g" || closeName == "svg") && transformStack.size() > 1) {
+                transformStack.pop_back();
+            }
+            pos = closeEnd + 1;
+            continue;
+        }
+        if (svg[pos + 1] == '!' || svg[pos + 1] == '?') {
             ++pos;
             continue;
         }
@@ -1092,6 +1214,23 @@ bool rasterizeSvgToRgba(const unsigned char* data, int dataSize, ImageData& imag
         std::string tag = svg.substr(pos, end - pos + 1);
         std::string lower = lowerSvgString(tag.substr(1, std::min<size_t>(tag.size(), 16)));
         SvgAttrs attrs = parseSvgAttrs(tag);
+        bool selfClosing = false;
+        for (size_t i = tag.size(); i > 0; --i) {
+            char c = tag[i - 1];
+            if (std::isspace((unsigned char)c) || c == '>') continue;
+            selfClosing = c == '/';
+            break;
+        }
+        SvgAffine elementTransform = transformStack.back().multiply(
+            parseSvgTransformList(svgAttr(attrs, "transform")));
+        if (lower.rfind("g", 0) == 0 || lower.rfind("svg", 0) == 0) {
+            if (!selfClosing) transformStack.push_back(elementTransform);
+            pos = end + 1;
+            continue;
+        }
+
+        SvgAffine previousTransform = canvas.transform;
+        canvas.transform = elementTransform;
         float opacity = parseSvgFloat(svgAttr(attrs, "opacity", inheritedOpacity), 1.0f);
         bool noFill = false;
         bool noStroke = false;
@@ -1143,6 +1282,7 @@ bool rasterizeSvgToRgba(const unsigned char* data, int dataSize, ImageData& imag
         } else if (lower.rfind("path", 0) == 0) {
             drawSvgPath(canvas, svgAttr(attrs, "d"), fill, stroke, std::max(1.0f, strokeWidth));
         }
+        canvas.transform = previousTransform;
         pos = end + 1;
     }
 
