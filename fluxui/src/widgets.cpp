@@ -501,6 +501,7 @@ static size_t layoutStyleSignature(const Style& s) {
     hashFloat(seed, s.fontSize);
     hashFloat(seed, s.lineHeight);
     hashCombine(seed, std::hash<int>{}((int)s.fontWeight));
+    hashCombine(seed, std::hash<int>{}((int)s.fontStyle));
     hashCombine(seed, std::hash<int>{}((int)s.textAlign));
     return seed;
 }
@@ -558,6 +559,7 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
             if (!computedStyle.hasColor) computedStyle.color = inherited.color;
             if (!computedStyle.hasFontSize) computedStyle.fontSize = inherited.fontSize;
             if (!computedStyle.hasFontWeight) computedStyle.fontWeight = inherited.fontWeight;
+            if (!computedStyle.hasFontStyle) computedStyle.fontStyle = inherited.fontStyle;
             if (!computedStyle.hasTextAlign) computedStyle.textAlign = inherited.textAlign;
             if (!computedStyle.hasLineHeight) computedStyle.lineHeight = inherited.lineHeight;
             if (!computedStyle.hasFontFamily) computedStyle.fontFamily = inherited.fontFamily;
@@ -576,6 +578,10 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         if (style.left.isSet()) computedStyle.left = style.left;
         if (style.position != Position::Static) computedStyle.position = style.position;
         if (style.fontSize > 0 && style.fontSize != 14.0f) computedStyle.fontSize = style.fontSize;
+        if (style.hasFontStyle) {
+            computedStyle.fontStyle = style.fontStyle;
+            computedStyle.hasFontStyle = true;
+        }
         if (style.padding.top > 0 || style.padding.right > 0 ||
             style.padding.bottom > 0 || style.padding.left > 0)
             computedStyle.padding = style.padding;
@@ -638,7 +644,8 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
             if (lowerValue == "inherit" || lowerValue == "initial" || lowerValue == "unset") {
                 Style initialStyle;
                 bool inherited = prop.name == "color" || prop.name == "font-size" ||
-                                 prop.name == "font-weight" || prop.name == "font-family" ||
+                                 prop.name == "font-weight" || prop.name == "font-style" ||
+                                 prop.name == "font-family" ||
                                  prop.name == "line-height" || prop.name == "text-align";
                 const Style& source = (parent && (lowerValue == "inherit" ||
                                       (lowerValue == "unset" && inherited)))
@@ -653,6 +660,7 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
                 if (prop.name == "color") { computedStyle.color = source.color; computedStyle.hasColor = true; continue; }
                 if (prop.name == "font-size") { computedStyle.fontSize = source.fontSize; computedStyle.hasFontSize = true; continue; }
                 if (prop.name == "font-weight") { computedStyle.fontWeight = source.fontWeight; computedStyle.hasFontWeight = true; continue; }
+                if (prop.name == "font-style") { computedStyle.fontStyle = source.fontStyle; computedStyle.hasFontStyle = true; continue; }
                 if (prop.name == "font-family") { computedStyle.fontFamily = source.fontFamily; computedStyle.hasFontFamily = true; continue; }
                 if (prop.name == "line-height") { computedStyle.lineHeight = source.lineHeight; computedStyle.hasLineHeight = true; continue; }
                 if (prop.name == "text-align") { computedStyle.textAlign = source.textAlign; computedStyle.hasTextAlign = true; continue; }
@@ -1657,7 +1665,8 @@ void Text::render(Renderer& renderer) {
     }
     renderer.drawTextInRect(displayText, textRect, textColor,
                             computedStyle.fontSize, computedStyle.textAlign,
-                            computedStyle.fontWeight, fontName);
+                            computedStyle.fontWeight, fontName,
+                            computedStyle.fontStyle);
     renderTextDecoration(renderer, displayText, textRect, textColor, computedStyle);
     renderChildren(renderer);
 }

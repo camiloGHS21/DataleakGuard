@@ -202,6 +202,7 @@ enum class Position { Static, Relative, Absolute, Fixed, Sticky };
 enum class Overflow { Visible, Hidden, Scroll, Auto, Clip };
 enum class TextAlign { Left, Center, Right, Justify };
 enum class FontWeight { Normal, Bold };
+enum class FontStyle { Normal, Italic, Oblique };
 enum class CursorType { Default, Pointer, Text, Grab, Grabbing, NotAllowed, Crosshair };
 enum class BoxSizing { ContentBox, BorderBox };
 enum class Visibility { Visible, Hidden, Collapse };
@@ -340,6 +341,7 @@ struct Style {
     // Typography (matching Blink inherited properties)
     float fontSize = 14.0f;
     FontWeight fontWeight = FontWeight::Normal;
+    FontStyle fontStyle = FontStyle::Normal;
     TextAlign textAlign = TextAlign::Left;
     float lineHeight = 1.4f;
     std::string fontFamily;
@@ -355,6 +357,7 @@ struct Style {
     bool hasColor = false;
     bool hasFontSize = false;
     bool hasFontWeight = false;
+    bool hasFontStyle = false;
     bool hasTextAlign = false;
     bool hasLineHeight = false;
     bool hasFontFamily = false;

@@ -181,11 +181,13 @@ public:
     void drawBoxShadow(const Rect& rect, const BoxShadow& shadow, const BorderRadius& radius);
     void drawText(const std::string& text, const Vec2& pos, const Color& color,
                   float fontSize = 14.0f, FontWeight weight = FontWeight::Normal,
-                  const std::string& fontName = "default");
+                  const std::string& fontName = "default",
+                  FontStyle style = FontStyle::Normal);
     void drawTextInRect(const std::string& text, const Rect& rect, const Color& color,
                         float fontSize = 14.0f, TextAlign align = TextAlign::Left,
                         FontWeight weight = FontWeight::Normal,
-                        const std::string& fontName = "default");
+                        const std::string& fontName = "default",
+                        FontStyle style = FontStyle::Normal);
     void drawImage(const std::string& nameOrPath, const Rect& rect,
                    float opacity = 1.0f,
                    const Color& tint = Color(1, 1, 1, 1));
@@ -335,7 +337,8 @@ private:
     void drawVulkanBoxShadow(const Rect& rect, const BoxShadow& shadow,
                              const BorderRadius& radius);
     void drawVulkanText(const std::string& text, const Vec2& pos, const Color& color,
-                        float fontSize, FontWeight weight, const std::string& fontName);
+                        float fontSize, FontWeight weight, const std::string& fontName,
+                        FontStyle style);
     void drawVulkanImage(const std::string& key, ImageData& image,
                          const Rect& rect, const Rect& sourceUv,
                          const Color& tint, float opacity);

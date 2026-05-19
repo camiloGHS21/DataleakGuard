@@ -3837,7 +3837,8 @@ void Renderer::drawVulkanText(const std::string& text,
                               const Color& color,
                               float fontSize,
                               FontWeight weight,
-                              const std::string& fontName) {
+                              const std::string& fontName,
+                              FontStyle style) {
 #if FLUXUI_HAS_VULKAN_SDK
     if (!vulkan_ || !vulkan_->frameActive || !vulkan_->textPipeline || text.empty()) {
         return;
@@ -3884,17 +3885,19 @@ void Renderer::drawVulkanText(const std::string& text,
     float boldOffset = (weight == FontWeight::Bold && resolvedFontName == fontName)
         ? std::max(0.35f, fontSize * 0.018f)
         : 0.0f;
+    float italicSkew = style == FontStyle::Normal ? 0.0f : fontSize * 0.18f;
 
     auto appendGlyph = [&](float x, float y, float w, float h, const GlyphInfo& g) {
+        float topSkew = italicSkew * dpiScale_;
         float xp = x * dpiScale_;
         float yp = y * dpiScale_;
         float wp = w * dpiScale_;
         float hp = h * dpiScale_;
         float data[] = {
-            xp,    yp,    g.x0, g.y0, color.r, color.g, color.b, color.a,
-            xp+wp, yp,    g.x1, g.y0, color.r, color.g, color.b, color.a,
-            xp+wp, yp+hp, g.x1, g.y1, color.r, color.g, color.b, color.a,
-            xp,    yp,    g.x0, g.y0, color.r, color.g, color.b, color.a,
+            xp+topSkew,    yp,    g.x0, g.y0, color.r, color.g, color.b, color.a,
+            xp+wp+topSkew, yp,    g.x1, g.y0, color.r, color.g, color.b, color.a,
+            xp+wp,         yp+hp, g.x1, g.y1, color.r, color.g, color.b, color.a,
+            xp+topSkew,    yp,    g.x0, g.y0, color.r, color.g, color.b, color.a,
             xp+wp, yp+hp, g.x1, g.y1, color.r, color.g, color.b, color.a,
             xp,    yp+hp, g.x0, g.y1, color.r, color.g, color.b, color.a,
         };
@@ -3985,6 +3988,7 @@ void Renderer::drawVulkanText(const std::string& text,
     (void)fontSize;
     (void)weight;
     (void)fontName;
+    (void)style;
 #endif
 }
 
@@ -4946,9 +4950,10 @@ void Renderer::drawBoxShadow(const Rect& rect, const BoxShadow& shadow,
 // ============================================================
 
 void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& color,
-                         float fontSize, FontWeight weight, const std::string& fontName) {
+                         float fontSize, FontWeight weight, const std::string& fontName,
+                         FontStyle style) {
     if (activeBackend_ == RenderBackendType::Vulkan) {
-        drawVulkanText(text, pos, color, fontSize, weight, fontName);
+        drawVulkanText(text, pos, color, fontSize, weight, fontName, style);
         return;
     }
 
@@ -4983,6 +4988,7 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
     float boldOffset = (weight == FontWeight::Bold && resolvedFontName == fontName)
         ? std::max(0.35f, fontSize * 0.018f)
         : 0.0f;
+    float italicSkew = style == FontStyle::Normal ? 0.0f : fontSize * 0.18f;
 
     // Simple UTF-8 decoder
     auto getNextCodepoint = [](const std::string& s, size_t& i) -> uint32_t {
@@ -5015,12 +5021,13 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
         if (w > 0 && h > 0) {
             float x = snap(cursorX + g.xoff * scale);
             float y = snap(baselineY + g.yoff * scale);
+            float topSkew = snap(italicSkew);
 
             float data[] = {
-                x,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
-                x+w, y,   g.x1, g.y0, color.r, color.g, color.b, color.a,
-                x+w, y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
-                x,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
+                x+topSkew,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
+                x+w+topSkew, y,   g.x1, g.y0, color.r, color.g, color.b, color.a,
+                x+w,         y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
+                x+topSkew,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
                 x+w, y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
                 x,   y+h, g.x0, g.y1, color.r, color.g, color.b, color.a,
             };
@@ -5029,10 +5036,10 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
             if (boldOffset > 0.0f) {
                 float xb = snap(x + boldOffset);
                 float boldData[] = {
-                    xb,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
-                    xb+w, y,   g.x1, g.y0, color.r, color.g, color.b, color.a,
-                    xb+w, y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
-                    xb,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
+                    xb+topSkew,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
+                    xb+w+topSkew, y,   g.x1, g.y0, color.r, color.g, color.b, color.a,
+                    xb+w,         y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
+                    xb+topSkew,   y,   g.x0, g.y0, color.r, color.g, color.b, color.a,
                     xb+w, y+h, g.x1, g.y1, color.r, color.g, color.b, color.a,
                     xb,   y+h, g.x0, g.y1, color.r, color.g, color.b, color.a,
                 };
@@ -5136,7 +5143,8 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
 
 void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const Color& color,
                                float fontSize, TextAlign align, FontWeight weight,
-                               const std::string& fontName) {
+                               const std::string& fontName,
+                               FontStyle style) {
     std::string resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontForRect = getFontForSize(resolvedFontName, fontSize);
 
@@ -5158,7 +5166,7 @@ void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const C
         textH = asc + desc;
     }
     float y = rect.y + (rect.h - textH) / 2;
-    drawText(text, {x, y}, color, fontSize, weight, fontName);
+    drawText(text, {x, y}, color, fontSize, weight, fontName, style);
 }
 
 Vec2 Renderer::measureText(const std::string& text, float fontSize,

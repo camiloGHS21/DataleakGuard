@@ -968,6 +968,7 @@ Style StyleSheet::resolve(const std::string& className,
         appendColor(parentStyle->color);
         appendFloat(parentStyle->fontSize);
         key += std::to_string((int)parentStyle->fontWeight) + ",";
+        key += std::to_string((int)parentStyle->fontStyle) + ",";
         key += std::to_string((int)parentStyle->textAlign) + ",";
         appendFloat(parentStyle->lineHeight);
         key += parentStyle->fontFamily;
@@ -1292,7 +1293,8 @@ bool StyleSheet::mediaQueryMatches(const std::string& query) const {
 
 static bool isInheritedCSSProperty(const std::string& name) {
     return name == "color" || name == "font-size" ||
-           name == "font-weight" || name == "font-family" ||
+           name == "font-weight" || name == "font-style" ||
+           name == "font-family" ||
            name == "line-height" || name == "text-align" ||
            name == "visibility" || name == "cursor" ||
            name == "letter-spacing" || name == "word-spacing" ||
@@ -1395,6 +1397,9 @@ static bool applyCSSWideProperty(Style& target,
     } else if (name == "font-weight") {
         target.fontWeight = source.fontWeight;
         target.hasFontWeight = true;
+    } else if (name == "font-style") {
+        target.fontStyle = source.fontStyle;
+        target.hasFontStyle = true;
     } else if (name == "font-family") {
         target.fontFamily = source.fontFamily;
         target.hasFontFamily = true;
@@ -1550,8 +1555,12 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
     } else if (t == "figure") {
         block();
         style.margin = EdgeInsets(medium, 40.0f, medium, 40.0f);
-    } else if (t == "figcaption" || t == "address" || t == "dt" || t == "form") {
+    } else if (t == "figcaption" || t == "dt" || t == "form") {
         block();
+    } else if (t == "address") {
+        block();
+        style.fontStyle = FontStyle::Italic;
+        style.hasFontStyle = true;
     } else if (t == "dl") {
         block();
         style.margin = EdgeInsets(medium, 0.0f, medium, 0.0f);
@@ -1599,6 +1608,11 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.backgroundColor = Color(1.0f, 1.0f, 0.0f, 1.0f);
         style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
         style.hasColor = true;
+    } else if (t == "i" || t == "cite" || t == "em" ||
+               t == "var" || t == "dfn") {
+        inlineBox();
+        style.fontStyle = FontStyle::Italic;
+        style.hasFontStyle = true;
     } else if (t == "small") {
         inlineBox();
         style.fontSize = 13.333f;
@@ -1977,9 +1991,11 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
             style.fontSize = 13.333f;
             style.lineHeight = 1.2f;
             style.fontWeight = FontWeight::Normal;
+            style.fontStyle = FontStyle::Normal;
             style.hasFontSize = true;
             style.hasLineHeight = true;
             style.hasFontWeight = true;
+            style.hasFontStyle = true;
         } else {
             std::istringstream ss(value);
             std::string token;
@@ -1997,7 +2013,15 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
                     style.hasFontWeight = true;
                 } else if (lowerPart == "normal") {
                     style.fontWeight = FontWeight::Normal;
+                    style.fontStyle = FontStyle::Normal;
                     style.hasFontWeight = true;
+                    style.hasFontStyle = true;
+                } else if (lowerPart == "italic") {
+                    style.fontStyle = FontStyle::Italic;
+                    style.hasFontStyle = true;
+                } else if (lowerPart == "oblique") {
+                    style.fontStyle = FontStyle::Oblique;
+                    style.hasFontStyle = true;
                 }
                 if (lowerPart.find("px") != std::string::npos ||
                     lowerPart.find("em") != std::string::npos ||
@@ -2021,6 +2045,16 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.fontWeight = (value == "bold" || parseFloat(value) >= 600.0f) ?
             FontWeight::Bold : FontWeight::Normal;
         style.hasFontWeight = true;
+    } else if (name == "font-style") {
+        std::string lower = lowerAscii(value);
+        if (lower.find("italic") != std::string::npos) {
+            style.fontStyle = FontStyle::Italic;
+        } else if (lower.find("oblique") != std::string::npos) {
+            style.fontStyle = FontStyle::Oblique;
+        } else {
+            style.fontStyle = FontStyle::Normal;
+        }
+        style.hasFontStyle = true;
     } else if (name == "text-align") {
         if (value == "center") style.textAlign = TextAlign::Center;
         else if (value == "right") style.textAlign = TextAlign::Right;
