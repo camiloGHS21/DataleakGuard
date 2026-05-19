@@ -1,0 +1,344 @@
+{
+  "nav": {
+    "core_engine": "Core Engine",
+    "intro": "Introduction & Architecture",
+    "setup": "Setup & Compilation",
+    "language_bindings": "Language Bindings",
+    "ffi": "FFI C-ABI Specification",
+    "styling": "Blink-Style CSS & Cascade",
+    "api_ref": "API & Widget Reference",
+    "tutorials": "Multi-Language Guide",
+    "deep_dive": "Deep Dive & Roadmap",
+    "performance": "Performance Work Landed",
+    "roadmap": "Roadmap & Future Backends"
+  },
+  "header": {
+    "search_placeholder": "Search documentation (e.g. Vulkan, FFI)...",
+    "search_results": "Search Results",
+    "keywords": "Keywords"
+  },
+  "footer": {
+    "copyright": "© {{year}} FluxUI. High-performance GPU layout and UI engine.",
+    "github": "GitHub"
+  },
+  "common": {
+    "on_this_page": "On this page"
+  },
+  "docs": {
+    "intro": {
+      "title": "Architecture Deep-Dive & Threading Model",
+      "keywords": "vulkan gpu core layers architecture swapchain spv spir-v blink GPUI zed design pipeline threads double-buffering queue fence"
+    },
+    "setup": {
+      "title": "Setup, Compilers & Toolchains",
+      "keywords": "cmake install compilation msbuild build_bindings build powershell scripts toolchain release vcpkg"
+    },
+    "ffi": {
+      "title": "FFI C-ABI Specification",
+      "keywords": "ffi c-abi bindings handles headers lifetime text-input pointers strings memory opaque widget"
+    },
+    "styling": {
+      "title": "Blink-Style Cascade & Specificity Rules",
+      "keywords": "css selectors stylesheet specificity media rules pseudo function specificity is not where ancestor parent cascade"
+    },
+    "api-ref": {
+      "title": "Native API & Widget Reference",
+      "keywords": "api reference cpp rust zig panels buttons text progressbar textinput canvas signatures methods"
+    },
+    "tutorials": {
+      "title": "Multi-Language Guide",
+      "keywords": "rust cpp zig tutorial source minimal examples bindings"
+    },
+    "performance": {
+      "title": "Performance Architecture & Benchmarks",
+      "keywords": "caching font uniform buffer vertex shadow lists table prebuild warming warmFontCache invalidation dirty"
+    },
+    "roadmap": {
+      "title": "Staging Roadmap & Core Parity",
+      "keywords": "roadmap metal d3d12 directx12 wasm animations transforms metal d3d12 fallback"
+    }
+  },
+  "toc": {
+    "intro": {
+      "overview": "1. Technical Overview",
+      "threading": "2. Threading & Frame Pacing",
+      "pipeline": "3. Vulkan Draw-Call Batching",
+      "comparison": "4. Parity Comparison Table"
+    },
+    "setup": {
+      "quick": "1. Quick Start",
+      "build-steps": "2. CMake Toolchains",
+      "preprocessor": "3. Preprocessor Config"
+    },
+    "ffi": {
+      "handles": "1. Opaque C-Handles",
+      "event-bus": "2. Event Registration",
+      "rules": "3. ABI Safety Rules"
+    },
+    "styling": {
+      "cascade": "1. Cascade Specificity",
+      "combinators": "2. Sibling & Ancestral Walks",
+      "live-sandbox": "3. Interactive Flexbox",
+      "pseudos": "4. Selector Pseudo-Classes",
+      "media": "5. Dynamic Viewports"
+    },
+    "api-ref": {
+      "app-api": "1. Application Class",
+      "panel-api": "2. Panel Class",
+      "button-api": "3. Button Class",
+      "text-api": "4. Text Class",
+      "input-api": "5. TextInput Class",
+      "progress-api": "6. ProgressBar Class"
+    },
+    "tutorials": {
+      "rust-binder": "1. Rust Bindings",
+      "cpp-native": "2. C++ Production",
+      "zig-native": "3. Zig Modules"
+    },
+    "performance": {
+      "allocators": "1. Arena Allocators",
+      "caching-opt": "2. Style & Layout Caching",
+      "font-warm": "3. Font Atlas Warm Cache"
+    },
+    "roadmap": {
+      "staging-order": "1. Fallback Staging",
+      "milestones": "2. Future Milestones"
+    }
+  },
+  "sections": {
+    "intro": {
+      "overview": {
+        "title": "Architecture Deep-Dive & Threading Model",
+        "description": "FluxUI is a high-performance, GPU-first desktop application shell and styling toolkit built in C++ with native bindings for Rust and Zig.",
+        "p1": "Historically, desktop UI frameworks have relied either on bulky HTML/CSS browser runtimes (like Electron) or legacy immediate-mode rasterization structures that execute repeated CPU-side painting algorithms every frame. FluxUI departs from this legacy by implementing a **GPUI-like architecture** (similar to the engine powering Zed).",
+        "p2": "The core philosophy is simple: **application logic defines a retained DOM-like tree of widgets, but the actual compilation of coordinates, styling cascades, and rendering draw lists is deferred to a specialized hardware-accelerated pipeline.**"
+      },
+      "terminal": {
+        "filename": "fluxui_terminal.ps1",
+        "executing": "Executing command...",
+        "probe": "--probe-vulkan",
+        "test_run": "--backend=vulkan --frames=3",
+        "build_all": "build_bindings.ps1",
+        "help": "--help"
+      },
+      "threading": {
+        "title": "🔄 1. Threading Model & Frame Pacing",
+        "p1": "FluxUI separates the user-interface application logic from the underlying OS-level event loop and GPU draw submissions using a **two-tier asynchronous threading model**:",
+        "app_thread": "<strong>The Application Thread (Main Loop)</strong>: Coordinates user events, performs route navigations, builds layout trees, and runs CSS specificity cascades. It does not block waiting for GPU fences.",
+        "render_thread": "<strong>The Render Pipeline Thread</strong>: Receives serialized widget draw lists (rectangles, borders, box-shadows, and text glyph vertices). It structures these arrays inside double-buffered Vulkan instance pages and submits the buffers to the GPU asynchronously.",
+        "p2": "This separation ensures that heavy style re-calculations or network routes never cause stuttering or frame drops. The GPU maintains a solid, vertical-synced 60+ FPS presentation loop under heavy loads."
+      },
+      "pipeline": {
+        "title": "⚡ 2. Vulkan Core: Instanced Draw-Call Batching",
+        "p1": "Rather than issuing individual draw commands to the graphics API for every button, header, and canvas node, the FluxUI Vulkan backend pools resources inside a unified shader pipeline.",
+        "p2": "rounded-rectangle properties (dimensions, rounded corners, border sizes, colors, and shadow blurs) are written to a single **instance page buffer**. A specialized shader parses these bounds and draws the entire interface layout in a **single instanced draw call**.",
+        "p3": "Text strings are batched using a high-fidelity **Font Atlas Descriptor Set**. Glyphs are mapped into a texture atlas, and their corresponding vertex grids are compiled and pushed to a shared vertex queue, triggering draw flushes only when changing scissor dimensions or texture pages."
+      },
+      "comparison": {
+        "title": "📊 3. Engine Comparison: Parity Matrix",
+        "p1": "To understand how FluxUI compares to other popular UI frameworks, review our technical execution matrix below:",
+        "table": {
+          "metric": "Metric / Feature",
+          "chromium": "Chromium (Blink / Electron)",
+          "flutter": "Flutter (Impeller / Skia)",
+          "fluxui": "FluxUI Engine (C++ / Vulkan)",
+          "memory": "Memory Footprint",
+          "memory_val": "<strong>Low (12MB - 18MB)</strong>",
+          "pipeline": "Rendering Pipeline",
+          "pipeline_val": "<strong>Vulkan Command Buffers & Instanced Batching</strong>",
+          "layout": "Layout Resolution",
+          "layout_val": "<strong>Retained-Tree Blink Specificity Cascades</strong>",
+          "bindings": "Language Bindings",
+          "bindings_val": "<strong>Native C++, Rust, and Zig (Zero ABI Penalty)</strong>",
+          "overhead": "Executable Overhead",
+          "overhead_val": "<strong>Sleek (&lt; 2.8MB DLL Core)</strong>"
+        }
+      }
+    },
+    "setup": {
+      "quick": {
+        "title": "Setup & Compilation Toolchain",
+        "p1": "FluxUI is engineered to compile out of the box using modern CMake configurations, with no external package managers needed other than a local compiler and a Vulkan runtime loader.",
+        "callout_title": "Automated Binding Builder",
+        "callout_desc": "At the root of your workspace, we provide `build_bindings.ps1`, which automates calling CMake configurations, compiles C++ libraries, generates the Rust static `.rlib` bindings, and prepares the Zig module structure.",
+        "pre_comment": "# Run compilation of C++ Core, Rust FFI, and Zig targets"
+      },
+      "build_steps": {
+        "title": "🛠️ 1. Step-by-Step Manual Toolchains",
+        "cpp_title": "A. Compiling the C++ Core DLL",
+        "cpp_p1": "First, configure the project with CMake, targeting standard C++17 compilers (MSVC on Windows, GCC/Clang on Linux):",
+        "cpp_output": "This outputs:",
+        "cpp_list_1": "`build/Release/fluxui_shared.dll` (Core DLL containing C-ABI entry points)",
+        "cpp_list_2": "`build/Release/fluxui_shared.lib` (Link library for C++)",
+        "rust_rlib_title": "B. Building the Reusable Rust `.rlib` Crate",
+        "rust_rlib_p1": "Compile the FFI bindings file into a reusable static library. This lets `rustc` compile against it without standard crates.io downloads:",
+        "rust_ex_title": "C. Compiling the Rust Example",
+        "rust_ex_p1": "Compile your application by pointing directly to the generated metadata `.rlib` file:"
+      },
+      "preprocessor": {
+        "title": "⚙️ 2. Advanced Preprocessor Compilation Flags",
+        "p1": "You can tune specific GPU capabilities using CMake cache entries:",
+        "table": {
+          "definition": "CMake Definition",
+          "default": "Default Value",
+          "impact": "Technical Impact on Engine",
+          "msaa": "Enables Multi-Sample Anti-Aliasing (4x) for sharp vector edges on modern GPUs. Set to `OFF` to maximize performance on low-power devices.",
+          "vsync": "Locks screen frame pacing to vertical intervals. Set to `OFF` to benchmark GPU frame rates exceeding 500+ FPS.",
+          "font": "Bakes Latin and Latin-Extended glyph grids to textures on start. Lowers VRAM requirements and accelerates dynamic font caching.",
+          "backend": "Sets the starting backend preference if selection is set to `Auto`. Options: `VULKAN`, `D3D12`, `METAL`."
+        }
+      }
+    },
+    "ffi": {
+      "handles": {
+        "title": "FFI C-ABI Specification",
+        "p1": "To guarantee binary compatibility across C++, Rust, and Zig, FluxUI provides a strict, opaque C-ABI boundary.",
+        "p2": "All API interfaces avoid passing complex C++ structures by value. Instead, they expose opaque pointers that are marshaled safely across language boundaries.",
+        "ref_title": "Core Opaque Handles Reference",
+        "app_handle": "<strong>`FluxUIApp`</strong>: Tracks runtime engine loops, active OS windower queues, and swapchain render thread routines.",
+        "widget_handle": "<strong>`FluxUIWidget`</strong>: Represents an addressable node inside the retained tree (button, panel, label). These handles are stored inside Parent Arenas."
+      },
+      "event_bus": {
+        "title": "🔄 1. Event Registration & Router Callbacks",
+        "p1": "FluxUI FFI maps modern event listeners using standardized function pointers. When an input, resize, or routing action occurs, the engine triggers FFI registered hooks:",
+        "pre_comment": "// Opaque event listener mapping signature"
+      },
+      "rules": {
+        "title": "⚠️ 2. ABI Memory & Ownership Rules",
+        "p1": "When compiling wrapper layers for Rust and Zig, you must strictly follow these memory rules to avoid undefined pointer behaviors:",
+        "step_a_title": "Widget Ownership",
+        "step_a_p": "Widgets are strictly owned by their parent panels in the layout tree. When a parent container is cleared or deleted, all child `FluxUIWidget` pointers immediately become invalid. Rust and Zig wrappers use runtime references or raw handles carefully without double-freeing.",
+        "step_b_title": "String Lifetimes",
+        "step_b_p": "Any string passed into FFI calls (such as class names or label parameters) is copied immediately inside the engine's dynamic buffers. You can safely discard FFI string pointers once the call returns.",
+        "step_c_title": "Getter Buffers",
+        "step_c_p": "Getter strings return raw pointers to the underlying `std::string` buffers in C++. They remain valid ONLY until the widget's value undergoes changes or the widget is destroyed."
+      }
+    },
+    "styling": {
+      "cascade": {
+        "title": "Blink-Style CSS & Cascade",
+        "p1": "FluxUI features a sophisticated, modern CSS engine modeled closely after the Chromium/Blink specification.",
+        "rules_title": "Cascade Specificity Rules",
+        "rules_p": "Matching styling rules are resolved based on specificity priority weightings. Rules are sorted and resolved in the following priority order:",
+        "table": {
+          "type": "Selector Type",
+          "weight": "Specificity Weight",
+          "example": "Example",
+          "inline": "Inline Styles",
+          "id": "ID Selectors",
+          "class": "Class & Attribute Selectors",
+          "type_sel": "Type Selectors"
+        }
+      },
+      "combinators": {
+        "title": "🌲 Sibling & Ancestral Walks",
+        "p1": "FluxUI style rules participate in descendant matching. The engine parses CSS selector lists and walks parent chains from right-to-left:",
+        "descendant": "<strong>Descendant Selector (`.sidebar .nav-text`)</strong>: The engine matches `.nav-text`, then walks up the parent layout tree verifying if any ancestor contains class `.sidebar`.",
+        "child": "<strong>Child Combinator (`.top-bar > .title-group`)</strong>: Matches if the immediate parent of `.title-group` has the class `.top-bar`."
+      },
+      "live_sandbox": {
+        "title": "🎨 Interactive Flexbox / Layout Tree Simulator",
+        "p1": "Tweak the layout properties below to see how FluxUI's Flexbox engine places nodes dynamically!",
+        "card1": "Card 1",
+        "card2": "Card 2 (Tall)",
+        "card3": "Card 3"
+      },
+      "pseudos": {
+        "title": "🎯 Selector Pseudo-Classes",
+        "p1": "FluxUI implements standard pseudo-selectors inside the CSS cascading checker, providing strong layout control:",
+        "is": "<strong>`:is(.primary, .danger)`</strong>: Matches when any layout rule in the parameter list is true.",
+        "not": "<strong>`:not(.active)`</strong>: Rejects rules when the widget matches the parameter class.",
+        "where": "<strong>`:where(.panel)`</strong>: Operates identically to `:is()`, but adds **zero** weight to CSS specificity."
+      },
+      "media": {
+        "title": "📱 Viewport @media Queries",
+        "p1": "Stylesheets can register fully responsive conditions. Viewport changes automatically clear layout caches, forcing a style invalidation cycle:"
+      }
+    },
+    "api_ref": {
+      "title": "API & Widget Reference",
+      "p1": "Every widget in FluxUI is created inside Parent Allocator Arenas and is accessed through raw pointers in C++ or safe struct wrappers in Rust and Zig.",
+      "app": {
+        "title": "1. Application Class",
+        "p1": "Manages standard event dispatches, window states, and GPU threads."
+      },
+      "panel": {
+        "title": "2. Panel Class",
+        "p1": "A modular container node, serving as the equivalent of a `<div>` element in HTML. Used for layout containers, cards, and custom canvases."
+      },
+      "button": {
+        "title": "3. Button Class",
+        "p1": "Interactive push widget supporting callbacks."
+      },
+      "text": {
+        "title": "4. Class Text",
+        "p1": "Renders high-fidelity rasterized glyph structures."
+      },
+      "input": {
+        "title": "5. Class TextInput",
+        "p1": "Handles active text input buffers and keyboard listeners."
+      },
+      "progress": {
+        "title": "6. Class ProgressBar",
+        "p1": "Displays instanced status bars."
+      }
+    },
+    "tutorials": {
+      "title": "Multi-Language Guide",
+      "p1": "Because FluxUI wraps a standard C++ core inside a dynamic FFI layer, you write the exact same structural layouts whether coding in Rust, C++, or Zig.",
+      "rust": {
+        "title": "🦀 Rust Native Bindings",
+        "p1": "The Rust FFI binder uses safe lifetimes, matches options, and automatically panics/returns errors when initializations lack graphics support."
+      },
+      "cpp": {
+        "title": "🛡️ C++ Native API",
+        "p1": "Includes direct access to standard template lists, custom C++ types, and functional lambdas. Layout creation is direct and fast."
+      },
+      "zig": {
+        "title": "⚡ Zig bindings",
+        "p1": "Directly interacts using Zig's `@cImport` wrapper. Leverages general-purpose allocators and maps standard error unions."
+      }
+    },
+    "performance": {
+      "title": "Performance Work Landed",
+      "p1": "FluxUI undergoes rigorous layout profiling to ensure frame execution stays fast and consistent on modern GPU setups.",
+      "allocators": {
+        "title": "1. O(1) Arena Allocation pools",
+        "p1": "To prevent memory fragmentation and repeated system-level allocations when modifying layout hierarchies dynamically, FluxUI utilizes **Arena-backed pools**.",
+        "p2": "All child nodes added via <code>add<T>()</code> or alias builders are laid out inside an arena memory segment dedicated to their parent node container. When changing routing paths, parent scopes discard the entire memory block instantly."
+      },
+      "caching": {
+        "title": "2. Style Invalidation & Dirty Layout Flags",
+        "p1": "To save clock cycles during heavy styling resolution:",
+        "dirty": "<strong>Dirty subtree caching</strong>: Stable components skip layout recalculates.",
+        "align": "<strong>Left-Aligned Optimization</strong>: Common string widgets bypass glyph-width Walks."
+      },
+      "font": {
+        "title": "3. Font Cache Warming",
+        "p1": "To eliminate stuttering when presenting new text sizes:",
+        "comment1": "// Pre-bake character textures during startup",
+        "comment2": "// Safely release memory occupied by source font bytes"
+      }
+    },
+    "roadmap": {
+      "title": "Roadmap & Future backends",
+      "p1": "FluxUI is committed to native performance. We are actively refining fallback trees to bring other graphic backends to full parity with our Vulkan pipeline.",
+      "backends": {
+        "title": "Staged Backend Fallbacks",
+        "p1": "The default renderer auto-selection implements a clear chain:",
+        "vulkan_title": "Vulkan Core (Active)",
+        "vulkan_p": "Our main dynamic GPU drawing target featuring full instanced rounded-rectangle structures, mapped dynamic resource pages, and atlas fonts.",
+        "dx_title": "DirectX 12 / Metal (Staged)",
+        "dx_p": "Exposed in the API. Parity features are currently in staging under compiler flags.",
+        "compat_title": "Compatibility Fallback",
+        "compat_p": "Ensures that even if graphics cards fail to load Vulkan drivers, the UI interface falls back cleanly to safe software rendering."
+      },
+      "milestones": {
+        "title": "🗺️ Future Feature Milestones",
+        "keyframes": "<strong>CSS Keyframe Animations</strong>: GPU-interpolated transitions and transforms.",
+        "wasm": "<strong>WebAssembly Target</strong>: Porting core layouts to WASM + WebGL2.",
+        "hot_reload": "<strong>Runtime Hot-Reloading</strong>: Stylesheets monitor filesystem modifications and dynamically update window layouts."
+      }
+    }
+  }
+}

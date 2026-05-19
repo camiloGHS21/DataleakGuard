@@ -1,0 +1,344 @@
+{
+  "nav": {
+    "core_engine": "Motor Principal",
+    "intro": "Introducción y Arquitectura",
+    "setup": "Configuración y Compilación",
+    "language_bindings": "Enlaces de Lenguaje",
+    "ffi": "Especificación FFI C-ABI",
+    "styling": "CSS Estilo-Blink y Cascada",
+    "api_ref": "Referencia de API y Widgets",
+    "tutorials": "Guía Multi-lenguaje",
+    "deep_dive": "Inmersión Profunda y Hoja de Ruta",
+    "performance": "Trabajo de Rendimiento Realizado",
+    "roadmap": "Hoja de Ruta y Futuros Backends"
+  },
+  "header": {
+    "search_placeholder": "Buscar documentación (ej. Vulkan, FFI)...",
+    "search_results": "Resultados de búsqueda",
+    "keywords": "Palabras clave"
+  },
+  "footer": {
+    "copyright": "© {{year}} FluxUI. Motor de interfaz y diseño GPU de alto rendimiento.",
+    "github": "GitHub"
+  },
+  "common": {
+    "on_this_page": "En esta página"
+  },
+  "docs": {
+    "intro": {
+      "title": "Inmersión Profunda en Arquitectura y Modelo de Hilos",
+      "keywords": "vulkan gpu core capas arquitectura swapchain spv spir-v blink GPUI zed diseño pipeline hilos doble-buffer cola valla"
+    },
+    "setup": {
+      "title": "Configuración, Compiladores y Cadenas de Herramientas",
+      "keywords": "cmake instalar compilación msbuild build_bindings construcción powershell scripts toolchain release vcpkg"
+    },
+    "ffi": {
+      "title": "Especificación FFI C-ABI",
+      "keywords": "ffi c-abi enlaces manejadores cabeceras vida útil entrada-texto punteros cadenas memoria opaco widget"
+    },
+    "styling": {
+      "title": "Reglas de Cascada y Especificidad de Estilo Blink",
+      "keywords": "css selectores hoja-estilos especificidad media reglas pseudo función especificidad no es donde ancestro padre cascada"
+    },
+    "api-ref": {
+      "title": "Referencia de API Nativa y Widgets",
+      "keywords": "api referencia cpp rust zig paneles botones texto barra-progreso entrada-texto lienzo firmas métodos"
+    },
+    "tutorials": {
+      "title": "Guía Multi-lenguaje",
+      "keywords": "rust cpp zig tutorial fuente minimal ejemplos enlaces"
+    },
+    "performance": {
+      "title": "Arquitectura de Rendimiento y Benchmarks",
+      "keywords": "caché fuente buffer uniforme vértice sombra listas tabla preconstrucción calentamiento warmFontCache invalidación sucio"
+    },
+    "roadmap": {
+      "title": "Hoja de Ruta de Etapas y Paridad del Núcleo",
+      "keywords": "roadmap metal d3d12 directx12 wasm animaciones transformaciones metal d3d12 fallback"
+    }
+  },
+  "toc": {
+    "intro": {
+      "overview": "1. Descripción Técnica",
+      "threading": "2. Hilos y Ritmo de Fotogramas",
+      "pipeline": "3. Lote de Llamadas de Dibujo Vulkan",
+      "comparison": "4. Tabla de Paridad Técnica"
+    },
+    "setup": {
+      "quick": "1. Inicio Rápido",
+      "build-steps": "2. Cadenas de Herramientas CMake",
+      "preprocessor": "3. Configuración del Preprocesador"
+    },
+    "ffi": {
+      "handles": "1. Manejadores C Opacos",
+      "event-bus": "2. Registro de Eventos",
+      "rules": "3. Reglas de Seguridad ABI"
+    },
+    "styling": {
+      "cascade": "1. Especificidad de Cascada",
+      "combinators": "2. Recorridos de Hermanos y Ancestros",
+      "live-sandbox": "3. Flexbox Interactivo",
+      "pseudos": "4. Pseudo-Clases de Selector",
+      "media": "5. Viewports Dinámicos"
+    },
+    "api-ref": {
+      "app-api": "1. Clase Application",
+      "panel-api": "2. Clase Panel",
+      "button-api": "3. Clase Button",
+      "text-api": "4. Clase Text",
+      "input-api": "5. Clase TextInput",
+      "progress-api": "6. Clase ProgressBar"
+    },
+    "tutorials": {
+      "rust-binder": "1. Enlaces de Rust",
+      "cpp-native": "2. Producción C++",
+      "zig-native": "3. Módulos Zig"
+    },
+    "performance": {
+      "allocators": "1. Asignadores de Arena",
+      "caching-opt": "2. Caché de Estilo y Diseño",
+      "font-warm": "3. Caché de Atlas de Fuentes"
+    },
+    "roadmap": {
+      "staging-order": "1. Etapas de Respaldo",
+      "milestones": "2. Futuros Hitos"
+    }
+  },
+  "sections": {
+    "intro": {
+      "overview": {
+        "title": "Inmersión Profunda en Arquitectura y Modelo de Hilos",
+        "description": "FluxUI es un shell de aplicación de escritorio de alto rendimiento centrado en la GPU y un kit de herramientas de estilo construido en C++ con enlaces nativos para Rust y Zig.",
+        "p1": "Históricamente, los frameworks de interfaz de usuario de escritorio han dependido de pesados entornos de ejecución de navegadores HTML/CSS (como Electron) o estructuras de rasterización de modo inmediato heredadas que ejecutan repetidos algoritmos de pintura en el lado de la CPU en cada fotograma. FluxUI se aparta de este legado implementando una **arquitectura tipo GPUI** (similar al motor que impulsa Zed).",
+        "p2": "La filosofía central es simple: **la lógica de la aplicación define un árbol de widgets retenido similar al DOM, pero la compilación real de coordenadas, cascadas de estilo y listas de dibujo de renderizado se delega a una tubería especializada acelerada por hardware.**"
+      },
+      "terminal": {
+        "filename": "fluxui_terminal.ps1",
+        "executing": "Ejecutando comando...",
+        "probe": "Sonda Vulkan",
+        "test_run": "Ejecución de prueba",
+        "build_all": "Construir todo",
+        "help": "Ayuda"
+      },
+      "threading": {
+        "title": "🔄 1. Modelo de Hilos y Ritmo de Fotogramas",
+        "p1": "FluxUI separa la lógica de la aplicación de la interfaz de usuario del bucle de eventos subyecente a nivel de sistema operativo y los envíos de dibujo de la GPU utilizando un **modelo de hilos asíncrono de dos niveles**:",
+        "app_thread": "<strong>El Hilo de la Aplicación (Bucle Principal)</strong>: Coordina los eventos de usuario, realiza navegaciones de ruta, construye árboles de diseño y ejecuta cascadas de especificidad CSS. No se bloquea esperando vallas de la GPU.",
+        "render_thread": "<strong>El Hilo de la Tubería de Renderizado</strong>: Recibe listas de dibujo de widgets serializadas (rectángulos, bordes, sombras de caja y vértices de glifos de texto). Estructura estos arrays dentro de páginas de instancia Vulkan de doble buffer y envía los buffers a la GPU de forma asíncrona.",
+        "p2": "Esta separación garantiza que los cálculos pesados de estilo o las rutas de red nunca causen tartamudeos o caídas de fotogramas. La GPU mantiene un bucle de presentación sólido sincronizado verticalmente a más de 60 FPS bajo cargas pesadas."
+      },
+      "pipeline": {
+        "title": "⚡ 2. Núcleo Vulkan: Lote de Llamadas de Dibujo Instanciadas",
+        "p1": "En lugar de emitir comandos de dibujo individuales a la API de gráficos para cada botón, cabecera y nodo de lienzo, el backend de FluxUI Vulkan agrupa los recursos dentro de una tubería de sombreado unificada.",
+        "p2": "Las propiedades de rectángulos redondeados (dimensiones, esquinas redondeadas, tamaños de borde, colores y desenfoques de sombra) se escriben en un único **buffer de página de instancia**. Un sombreador especializado analiza estos límites y dibuja todo el diseño de la interfaz en una **única llamada de dibujo instanciada**.",
+        "p3": "Las cadenas de texto se agrupan utilizando un **Conjunto de Descriptores de Atlas de Fuentes** de alta fidelidad. Los glifos se mapean en un atlas de texturas, y sus correspondientes rejillas de vértices se compilan y se envían a una cola de vértices compartida, activando vaciados de dibujo solo al cambiar las dimensiones de la tijera o las páginas de textura."
+      },
+      "comparison": {
+        "title": "📊 3. Comparación de Motores: Matriz de Paridad",
+        "p1": "Para entender cómo se compara FluxUI con otros frameworks de UI populares, revise nuestra matriz de ejecución técnica a continuación:",
+        "table": {
+          "metric": "Métrica / Característica",
+          "chromium": "Chromium (Blink / Electron)",
+          "flutter": "Flutter (Impeller / Skia)",
+          "fluxui": "Motor FluxUI (C++ / Vulkan)",
+          "memory": "Huella de Memoria",
+          "memory_val": "<strong>Baja (12MB - 18MB)</strong>",
+          "pipeline": "Tubería de Renderizado",
+          "pipeline_val": "<strong>Búferes de Comando Vulkan y Procesamiento por Lotes Instanciado</strong>",
+          "layout": "Resolución de Diseño",
+          "layout_val": "<strong>Cascadas de Especificidad Blink de Árbol Retenido</strong>",
+          "bindings": "Enlaces de Lenguaje",
+          "bindings_val": "<strong>C++ Nativo, Rust y Zig (Cero Penalización ABI)</strong>",
+          "overhead": "Sobrecarga del Ejecutable",
+          "overhead_val": "<strong>Elegante (< 2.8MB DLL Core)</strong>"
+        }
+      }
+    },
+    "setup": {
+      "quick": {
+        "title": "Configuración y Cadena de Herramientas de Compilación",
+        "p1": "FluxUI está diseñado para compilarse directamente usando configuraciones modernas de CMake, sin necesidad de gestores de paquetes externos más allá de un compilador local y un cargador de tiempo de ejecución Vulkan.",
+        "callout_title": "Constructor de Enlaces Automatizado",
+        "callout_desc": "En la raíz de su espacio de trabajo, proporcionamos `build_bindings.ps1`, que automatiza las configuraciones de CMake, compila las bibliotecas de C++, genera los enlaces estáticos de Rust `.rlib` y prepara la estructura del módulo Zig.",
+        "pre_comment": "# Ejecutar la compilación del Núcleo C++, Rust FFI y objetivos Zig"
+      },
+      "build_steps": {
+        "title": "🛠️ 1. Cadenas de Herramientas Manuales Paso a Paso",
+        "cpp_title": "A. Compilación de la DLL del Núcleo C++",
+        "cpp_p1": "Primero, configure el proyecto con CMake, apuntando a compiladores estándar C++17 (MSVC en Windows, GCC/Clang en Linux):",
+        "cpp_output": "Esto genera:",
+        "cpp_list_1": "`build/Release/fluxui_shared.dll` (DLL del núcleo que contiene los puntos de entrada C-ABI)",
+        "cpp_list_2": "`build/Release/fluxui_shared.lib` (Biblioteca de enlace para C++)",
+        "rust_rlib_title": "B. Construcción del Crate Rust `.rlib` Reutilizable",
+        "rust_rlib_p1": "Compile el archivo de enlaces FFI en una biblioteca estática reutilizable. Esto permite que `rustc` compile contra ella sin descargas estándar de crates.io:",
+        "rust_ex_title": "C. Compilación del Ejemplo de Rust",
+        "rust_ex_p1": "Compile su aplicación apuntando directamente al archivo de metadatos `.rlib` generado:"
+      },
+      "preprocessor": {
+        "title": "⚙️ 2. Banderas de Compilación del Preprocesador Avanzadas",
+        "p1": "Puede ajustar capacidades específicas de la GPU utilizando entradas de caché de CMake:",
+        "table": {
+          "definition": "Definición de CMake",
+          "default": "Valor por Defecto",
+          "impact": "Impacto Técnico en el Motor",
+          "msaa": "Habilita el Anti-Aliasing de Múltiples Muestras (4x) para bordes vectoriales nítidos en GPUs modernas. Establézcalo en `OFF` para maximizar el rendimiento en dispositivos de baja potencia.",
+          "vsync": "Bloquea el ritmo de fotogramas de la pantalla a intervalos verticales. Establézcalo en `OFF` para realizar benchmarks de tasas de fotogramas de la GPU que superen los 500+ FPS.",
+          "font": "Hornea las rejillas de glifos latinos y latinos extendidos en texturas al inicio. Reduce los requisitos de VRAM y acelera el almacenamiento en caché dinámico de fuentes.",
+          "backend": "Establece la preferencia del backend de inicio si la selección se establece en `Auto`. Opciones: `VULKAN`, `D3D12`, `METAL`."
+        }
+      }
+    },
+    "ffi": {
+      "handles": {
+        "title": "Especificación FFI C-ABI",
+        "p1": "Para garantizar la compatibilidad binaria entre C++, Rust y Zig, FluxUI proporciona un límite C-ABI estricto y opaco.",
+        "p2": "Todas las interfaces de API evitan pasar estructuras complejas de C++ por valor. En su lugar, exponen punteros opacos que se gestionan de forma segura a través de los límites del lenguaje.",
+        "ref_title": "Referencia de Manejadores Opacos del Núcleo",
+        "app_handle": "<strong>`FluxUIApp`</strong>: Rastrea los bucles del motor en tiempo de ejecución, las colas de ventanas activas del sistema operativo y las rutinas del hilo de renderizado del swapchain.",
+        "widget_handle": "<strong>`FluxUIWidget`</strong>: Representa un nodo direccionable dentro del árbol retenido (botón, panel, etiqueta). Estos manejadores se almacenan dentro de las Arenas de los padres."
+      },
+      "event_bus": {
+        "title": "🔄 1. Registro de Eventos y Callbacks del Router",
+        "p1": "El FFI de FluxUI mapea los oyentes de eventos modernos utilizando punteros de función estandarizados. Cuando ocurre una acción de entrada, redimensionamiento o enrutamiento, el motor activa los ganchos registrados por FFI:",
+        "pre_comment": "// Mapeo de firma de oyente de eventos opaco"
+      },
+      "rules": {
+        "title": "⚠️ 2. Reglas de Memoria y Propiedad de ABI",
+        "p1": "Al compilar capas de envoltura para Rust y Zig, debe seguir estrictamente estas reglas de memoria para evitar comportamientos de punteros indefinidos:",
+        "step_a_title": "Propiedad del Widget",
+        "step_a_p": "Los widgets son propiedad estricta de sus paneles padres en el árbol de diseño. Cuando se limpia o elimina un contenedor padre, todos los punteros `FluxUIWidget` hijos se vuelven inválidos inmediatamente.",
+        "step_b_title": "Vida Útil de las Cadenas",
+        "step_b_p": "Cualquier cadena pasada a las llamadas FFI se copia inmediatamente dentro de los búferes dinámicos del motor. Puede descartar de forma segura los punteros de cadena FFI una vez que la llamada retorna.",
+        "step_c_title": "Búferes de Obtención",
+        "step_c_p": "Las cadenas de obtención retornan punteros crudos a los búferes `std::string` subyecentes en C++. Permanecen válidos SOLO hasta que el valor del widget experimenta cambios o el widget es destruido."
+      }
+    },
+    "styling": {
+      "cascade": {
+        "title": "CSS Estilo-Blink y Cascada",
+        "p1": "FluxUI presenta un motor CSS moderno y sofisticado modelado de cerca según la especificación Chromium/Blink.",
+        "rules_title": "Reglas de Especificidad de Cascada",
+        "rules_p": "Las reglas de estilo coincidentes se resuelven en función de las ponderaciones de prioridad de especificidad. Las reglas se ordenan y resuelven en el siguiente orden de prioridad:",
+        "table": {
+          "type": "Tipo de Selector",
+          "weight": "Peso de Especificidad",
+          "example": "Ejemplo",
+          "inline": "Estilos en Línea",
+          "id": "Selectores de ID",
+          "class": "Selectores de Clase y Atributo",
+          "type_sel": "Selectores de Tipo"
+        }
+      },
+      "combinators": {
+        "title": "🌲 Recorridos de Hermanos y Ancestros",
+        "p1": "Las reglas de estilo de FluxUI participan en la coincidencia de descendientes. El motor analiza las listas de selectores CSS y recorre las cadenas de padres de derecha a izquierda:",
+        "descendant": "<strong>Selector de Descendientes (`.sidebar .nav-text`)</strong>: El motor busca `.nav-text`, luego sube por el árbol de diseño verificando si algún ancestro contiene la clase `.sidebar`.",
+        "child": "<strong>Combinador de Hijos (`.top-bar > .title-group`)</strong>: Coincide si el padre inmediato de `.title-group` tiene la clase `.top-bar`."
+      },
+      "live_sandbox": {
+        "title": "🎨 Simulador de Flexbox / Árbol de Diseño Interactivo",
+        "p1": "¡Ajuste las propiedades de diseño a continuación para ver cómo el motor Flexbox de FluxUI coloca los nodos dinámicamente!",
+        "card1": "Tarjeta 1",
+        "card2": "Tarjeta 2 (Alta)",
+        "card3": "Tarjeta 3"
+      },
+      "pseudos": {
+        "title": "🎯 Pseudo-Clases de Selector",
+        "p1": "FluxUI implementa selectores pseudo estándar dentro del comprobador de cascada CSS, proporcionando un fuerte control de diseño:",
+        "is": "<strong>`:is(.primary, .danger)`</strong>: Coincide cuando cualquier regla de diseño en la lista de parámetros es verdadera.",
+        "not": "<strong>`:not(.active)`</strong>: Rechaza reglas cuando el widget coincide con la clase del parámetro.",
+        "where": "<strong>`:where(.panel)`</strong>: Funciona de manera idéntica a `:is()`, pero añade **cero** peso a la especificidad CSS."
+      },
+      "media": {
+        "title": "📱 Consultas @media de Viewport",
+        "p1": "Las hojas de estilo pueden registrar condiciones totalmente responsivas. Los cambios de viewport limpian automáticamente las cachés de diseño, forzando un ciclo de invalidación de estilo:"
+      }
+    },
+    "api_ref": {
+      "title": "Referencia de API y Widgets",
+      "p1": "Cada widget en FluxUI se crea dentro de Arenas de Asignación de Padres y se accede a través de punteros crudos en C++ o envolturas de estructuras seguras en Rust y Zig.",
+      "app": {
+        "title": "1. Clase Application",
+        "p1": "Gestiona los envíos de eventos estándar, los estados de las ventanas y los hilos de la GPU."
+      },
+      "panel": {
+        "title": "2. Clase Panel",
+        "p1": "Un nodo contenedor modular, que sirve como equivalente a un elemento `<div>` en HTML. Se utiliza para contenedores de diseño, tarjetas y lienzos personalizados."
+      },
+      "button": {
+        "title": "3. Clase Button",
+        "p1": "Widget de pulsación interactivo que admite callbacks."
+      },
+      "text": {
+        "title": "4. Clase Text",
+        "p1": "Renderiza estructuras de glifos rasterizados de alta fidelidad."
+      },
+      "input": {
+        "title": "5. Clase TextInput",
+        "p1": "Gestiona búferes de entrada de texto activos y oyentes de teclado."
+      },
+      "progress": {
+        "title": "6. Clase ProgressBar",
+        "p1": "Muestra barras de estado instanciadas."
+      }
+    },
+    "tutorials": {
+      "title": "Guía Multi-lenguaje",
+      "p1": "Debido a que FluxUI envuelve un núcleo C++ estándar dentro de una capa FFI dinámica, usted escribe exactamente los mismos diseños estructurales ya sea codificando en Rust, C++ o Zig.",
+      "rust": {
+        "title": "🦀 Enlaces Nativos de Rust",
+        "p1": "El enlazador FFI de Rust utiliza vidas útiles seguras, coincide con opciones y automáticamente entra en pánico o retorna errores cuando las inicializaciones carecen de soporte gráfico."
+      },
+      "cpp": {
+        "title": "🛡️ API Nativa de C++",
+        "p1": "Incluye acceso directo a listas de plantillas estándar, tipos de C++ personalizados y lambdas funcionales. La creación de diseños es directa y rápida."
+      },
+      "zig": {
+        "title": "⚡ Enlaces de Zig",
+        "p1": "Interactúa directamente utilizando la envoltura `@cImport` de Zig. Aprovecha los asignadores de propósito general y mapea las uniones de error estándar."
+      }
+    },
+    "performance": {
+      "title": "Trabajo de Rendimiento Realizado",
+      "p1": "FluxUI se somete a un riguroso perfilado de diseño para garantizar que la ejecución de los fotogramas sea rápida y constante en las configuraciones de GPU modernas.",
+      "allocators": {
+        "title": "1. Piscinas de Asignación de Arena O(1)",
+        "p1": "Para evitar la fragmentación de la memoria y las repetidas asignaciones a nivel de sistema al modificar las jerarquías de diseño de forma dinámica, FluxUI utiliza **piscinas respaldadas por Arena**.",
+        "p2": "Todos los nodos hijos se disponen dentro de un segmento de memoria de arena dedicado a su contenedor de nodos padre. Al cambiar las rutas de enrutamiento, los ámbitos padres descartan todo el bloque de memoria al instante."
+      },
+      "caching": {
+        "title": "2. Invalidación de Estilo y Banderas de Diseño Sucio",
+        "p1": "Para ahorrar ciclos de reloj durante la resolución de estilos pesados:",
+        "dirty": "<strong>Caché de subárbol sucio</strong>: Los componentes estables omiten los recálculos de diseño.",
+        "align": "<strong>Optimización Alineada a la Izquierda</strong>: Los widgets de cadena comunes omiten los recorridos de ancho de glifo."
+      },
+      "font": {
+        "title": "3. Calentamiento de la Caché de Fuentes",
+        "p1": "Para eliminar el tartamudeo al presentar nuevos tamaños de texto:",
+        "comment1": "// Pre-hornear texturas de caracteres durante el inicio",
+        "comment2": "// Liberar de forma segura la memoria ocupada por los bytes de la fuente de origen"
+      }
+    },
+    "roadmap": {
+      "title": "Hoja de Ruta y Futuros Backends",
+      "p1": "FluxUI está comprometido con el rendimiento nativo. Estamos refinando activamente los árboles de respaldo para llevar otros backends gráficos a la paridad total con nuestra tubería Vulkan.",
+      "backends": {
+        "title": "Respaldos de Backend por Etapas",
+        "p1": "La selección automática del renderizador por defecto implementa una cadena clara:",
+        "vulkan_title": "Núcleo Vulkan (Activo)",
+        "vulkan_p": "Nuestro principal objetivo de dibujo dinámico por GPU que presenta estructuras completas de rectángulos redondeados instanciados y fuentes de atlas.",
+        "dx_title": "DirectX 12 / Metal (En Etapas)",
+        "dx_p": "Expuesto en la API. Las características de paridad están actualmente en etapas bajo banderas del compilador.",
+        "compat_title": "Respaldo de Compatibilidad",
+        "compat_p": "Garantiza que incluso si las tarjetas gráficas no cargan los controladores Vulkan, la interfaz UI cae limpiamente a un renderizado por software seguro."
+      },
+      "milestones": {
+        "title": "🗺️ Futuros Hitos de Características",
+        "keyframes": "<strong>Animaciones CSS Keyframe</strong>: Transiciones e interpolaciones por GPU.",
+        "wasm": "<strong>Objetivo WebAssembly</strong>: Portar los diseños centrales a WASM + WebGL2.",
+        "hot_reload": "<strong>Hot-Reloading en Tiempo de Ejecución</strong>: Las hojas de estilo monitorean las modificaciones del sistema de archivos y actualizan dinámicamente los diseños de las ventanas."
+      }
+    }
+  }
+}
