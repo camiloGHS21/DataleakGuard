@@ -431,6 +431,19 @@ static bool rectEqual(const Rect& a, const Rect& b) {
     return a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h;
 }
 
+static bool intersectRects(const Rect& a, const Rect& b, Rect& out) {
+    float x0 = std::max(a.x, b.x);
+    float y0 = std::max(a.y, b.y);
+    float x1 = std::min(a.x + a.w, b.x + b.w);
+    float y1 = std::min(a.y + a.h, b.y + b.h);
+    if (x1 <= x0 || y1 <= y0) {
+        out = Rect();
+        return false;
+    }
+    out = {x0, y0, x1 - x0, y1 - y0};
+    return true;
+}
+
 static void hashCombine(size_t& seed, size_t value) {
     seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
 }
@@ -2375,12 +2388,7 @@ void Image::render(Renderer& renderer) {
     Rect draw = content;
     float scaleX = natural.x > 0.0f ? content.w / natural.x : 1.0f;
     float scaleY = natural.y > 0.0f ? content.h / natural.y : 1.0f;
-
-    // Apply devicePixelRatio for HiDPI (mirrors LayoutImage::image_device_pixel_ratio_)
-    if (devicePixelRatio > 0.0f && devicePixelRatio != 1.0f) {
-        scaleX /= devicePixelRatio;
-        scaleY /= devicePixelRatio;
-    }
+    bool clipToContent = false;
 
     if (computedStyle.objectFit == ObjectFit::Contain ||
         computedStyle.objectFit == ObjectFit::ScaleDown) {
@@ -2402,7 +2410,7 @@ void Image::render(Renderer& renderer) {
                  computedStyle.objectPositionOffset.x;
         draw.y = content.y + (content.h - draw.h) * computedStyle.objectPosition.y +
                  computedStyle.objectPositionOffset.y;
-        renderer.pushScissor(content);
+        clipToContent = true;
     } else if (computedStyle.objectFit == ObjectFit::None) {
         draw.w = natural.x;
         draw.h = natural.y;
@@ -2410,7 +2418,7 @@ void Image::render(Renderer& renderer) {
                  computedStyle.objectPositionOffset.x;
         draw.y = content.y + (content.h - draw.h) * computedStyle.objectPosition.y +
                  computedStyle.objectPositionOffset.y;
-        renderer.pushScissor(content);
+        clipToContent = true;
     }
 
     if (loadState == ImageWidgetState::Error && !alt.empty()) {
@@ -2428,10 +2436,18 @@ void Image::render(Renderer& renderer) {
         return;
     }
 
-    renderer.drawImage(currentSrc, draw, computedStyle.opacity);
-    if (computedStyle.objectFit == ObjectFit::Cover ||
-        computedStyle.objectFit == ObjectFit::None) {
-        renderer.popScissor();
+    if (clipToContent) {
+        Rect visible;
+        if (intersectRects(draw, content, visible)) {
+            Rect sourceUv(
+                (visible.x - draw.x) / std::max(1.0f, draw.w),
+                (visible.y - draw.y) / std::max(1.0f, draw.h),
+                visible.w / std::max(1.0f, draw.w),
+                visible.h / std::max(1.0f, draw.h));
+            renderer.drawImage(currentSrc, visible, sourceUv, computedStyle.opacity);
+        }
+    } else {
+        renderer.drawImage(currentSrc, draw, computedStyle.opacity);
     }
     renderChildren(renderer);
 }

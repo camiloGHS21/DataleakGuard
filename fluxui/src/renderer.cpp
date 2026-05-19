@@ -3991,6 +3991,7 @@ void Renderer::drawVulkanText(const std::string& text,
 void Renderer::drawVulkanImage(const std::string& key,
                                ImageData& image,
                                const Rect& rect,
+                               const Rect& sourceUv,
                                const Color& tint,
                                float opacity) {
 #if FLUXUI_HAS_VULKAN_SDK
@@ -4029,13 +4030,17 @@ void Renderer::drawVulkanImage(const std::string& key,
     float w = std::max(1.0f, snapPx(drawRect.w * dpiScale_));
     float h = std::max(1.0f, snapPx(drawRect.h * dpiScale_));
     float a = tint.a * opacity;
+    float u0 = std::clamp(sourceUv.x, 0.0f, 1.0f);
+    float v0 = std::clamp(sourceUv.y, 0.0f, 1.0f);
+    float u1 = std::clamp(sourceUv.x + sourceUv.w, 0.0f, 1.0f);
+    float v1 = std::clamp(sourceUv.y + sourceUv.h, 0.0f, 1.0f);
     float data[] = {
-        x,     y,     0.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        x + w, y,     1.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        x + w, y + h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
-        x,     y,     0.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        x + w, y + h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
-        x,     y + h, 0.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        x,     y,     u0, v0, tint.r, tint.g, tint.b, a,
+        x + w, y,     u1, v0, tint.r, tint.g, tint.b, a,
+        x + w, y + h, u1, v1, tint.r, tint.g, tint.b, a,
+        x,     y,     u0, v0, tint.r, tint.g, tint.b, a,
+        x + w, y + h, u1, v1, tint.r, tint.g, tint.b, a,
+        x,     y + h, u0, v1, tint.r, tint.g, tint.b, a,
     };
 
     flushVulkanBatches(state, scissorStack_, dpiScale_);
@@ -4082,6 +4087,7 @@ void Renderer::drawVulkanImage(const std::string& key,
     (void)key;
     (void)image;
     (void)rect;
+    (void)sourceUv;
     (void)tint;
     (void)opacity;
 #endif
@@ -5055,6 +5061,12 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
 
 void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
                          float opacity, const Color& tint) {
+    drawImage(nameOrPath, rect, Rect(0.0f, 0.0f, 1.0f, 1.0f), opacity, tint);
+}
+
+void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
+                         const Rect& sourceUv,
+                         float opacity, const Color& tint) {
     if (nameOrPath.empty() || rect.w <= 0.0f || rect.h <= 0.0f ||
         opacity <= 0.0f || tint.a <= 0.0f) {
         return;
@@ -5068,7 +5080,7 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
     }
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
-        drawVulkanImage(nameOrPath, it->second, rect, tint, opacity);
+        drawVulkanImage(nameOrPath, it->second, rect, sourceUv, tint, opacity);
         return;
     }
 
@@ -5091,13 +5103,17 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
     }
 
     float a = tint.a * opacity;
+    float u0 = std::clamp(sourceUv.x, 0.0f, 1.0f);
+    float v0 = std::clamp(sourceUv.y, 0.0f, 1.0f);
+    float u1 = std::clamp(sourceUv.x + sourceUv.w, 0.0f, 1.0f);
+    float v1 = std::clamp(sourceUv.y + sourceUv.h, 0.0f, 1.0f);
     float vertices[] = {
-        drawRect.x,              drawRect.y,              0.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y,              1.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y + drawRect.h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
-        drawRect.x,              drawRect.y,              0.0f, 0.0f, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y + drawRect.h, 1.0f, 1.0f, tint.r, tint.g, tint.b, a,
-        drawRect.x,              drawRect.y + drawRect.h, 0.0f, 1.0f, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y,              u0, v0, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y,              u1, v0, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y,              u0, v0, tint.r, tint.g, tint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y + drawRect.h, u0, v1, tint.r, tint.g, tint.b, a,
     };
 
     flushRectBatch();

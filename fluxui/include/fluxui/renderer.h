@@ -189,6 +189,10 @@ public:
     void drawImage(const std::string& nameOrPath, const Rect& rect,
                    float opacity = 1.0f,
                    const Color& tint = Color(1, 1, 1, 1));
+    void drawImage(const std::string& nameOrPath, const Rect& rect,
+                   const Rect& sourceUv,
+                   float opacity = 1.0f,
+                   const Color& tint = Color(1, 1, 1, 1));
 
     // Clipping
     void pushScissor(const Rect& rect);
@@ -333,7 +337,8 @@ private:
     void drawVulkanText(const std::string& text, const Vec2& pos, const Color& color,
                         float fontSize, FontWeight weight, const std::string& fontName);
     void drawVulkanImage(const std::string& key, ImageData& image,
-                         const Rect& rect, const Color& tint, float opacity);
+                         const Rect& rect, const Rect& sourceUv,
+                         const Color& tint, float opacity);
 
     std::unique_ptr<VulkanRendererState> vulkan_;
 };
