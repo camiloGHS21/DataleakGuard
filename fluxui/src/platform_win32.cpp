@@ -22,6 +22,18 @@ void Platform::setEventCallback(void* context, PlatformEventCallback callback) {
 // Forward declaration of the internal event callback
 extern void Internal_OnWindowEvent(void* app, UINT msg, WPARAM wParam, LPARAM lParam);
 
+static HBRUSH initialBackgroundBrush() {
+    static HBRUSH brush = CreateSolidBrush(RGB(15, 15, 23));
+    return brush;
+}
+
+static void paintInitialBackground(HWND hwnd, HDC dc) {
+    RECT rect;
+    if (GetClientRect(hwnd, &rect)) {
+        FillRect(dc, &rect, initialBackgroundBrush());
+    }
+}
+
 static std::wstring utf8ToWide(const std::string& text) {
     if (text.empty()) return L"";
     int size = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
@@ -43,11 +55,13 @@ static LRESULT CALLBACK FluxUI_WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
     }
     
     if (msg == WM_ERASEBKGND) {
-        return 1; // Prevent background clear flicker
+        paintInitialBackground(hwnd, (HDC)wParam);
+        return 1;
     }
     if (msg == WM_PAINT) {
         PAINTSTRUCT ps;
-        BeginPaint(hwnd, &ps);
+        HDC dc = BeginPaint(hwnd, &ps);
+        paintInitialBackground(hwnd, dc);
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -84,7 +98,8 @@ NativeWindowHandle Platform::createWindow(const PlatformWindowConfig& config) {
     wc.hInstance = hInst;
     wc.lpszClassName = L"FluxUIWindowClass";
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    wc.hbrBackground = initialBackgroundBrush();
+    wc.style = CS_OWNDC;
     RegisterClassExW(&wc);
 
     int x = CW_USEDEFAULT;

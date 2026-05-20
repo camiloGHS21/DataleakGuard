@@ -1994,6 +1994,10 @@ int physicalDeviceScore(VkPhysicalDevice device, VkSurfaceKHR surface) {
     VkPhysicalDeviceProperties properties = {};
     vkGetPhysicalDeviceProperties(device, &properties);
 
+    if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+        return -1;
+    }
+
     int score = 100;
     if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
         score += 1000;

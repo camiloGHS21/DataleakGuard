@@ -2848,8 +2848,6 @@ bool Application::init(const std::string& title, int width, int height) {
 
 #ifdef _WIN32
     SetWindowLongPtr((HWND)window_, GWLP_USERDATA, (LONG_PTR)this);
-    ShowWindow((HWND)window_, SW_SHOWMAXIMIZED);
-    UpdateWindow((HWND)window_);
 #else
     Platform::setEventCallback(this, fluxuiPlatformEventHandler);
 #endif
@@ -2995,6 +2993,13 @@ bool Application::renderRoute(Widget* container) {
 void Application::run() {
     auto lastTime = std::chrono::high_resolution_clock::now();
     bool firstFrame = true;
+
+#ifdef _WIN32
+    if (window_) {
+        ShowWindow((HWND)window_, SW_SHOWMAXIMIZED);
+        UpdateWindow((HWND)window_);
+    }
+#endif
 
     while (running) {
         processEvents();
