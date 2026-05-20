@@ -2848,6 +2848,8 @@ bool Application::init(const std::string& title, int width, int height) {
 
 #ifdef _WIN32
     SetWindowLongPtr((HWND)window_, GWLP_USERDATA, (LONG_PTR)this);
+    ShowWindow((HWND)window_, SW_SHOWMAXIMIZED);
+    UpdateWindow((HWND)window_);
 #else
     Platform::setEventCallback(this, fluxuiPlatformEventHandler);
 #endif
@@ -3069,9 +3071,6 @@ void Application::run() {
         renderer_.endFrame();
 
         if (firstFrame) {
-#ifdef _WIN32
-            ShowWindow((HWND)window_, SW_SHOWMAXIMIZED);
-#endif
             firstFrame = false;
         }
 

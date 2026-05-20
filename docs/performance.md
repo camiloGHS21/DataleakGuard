@@ -3,7 +3,7 @@
 FluxUI is moving toward a Vulkan-first, GPU-command architecture similar in
 spirit to Zed's GPUI. Vulkan is now the default backend preference. `Auto`
 tries Vulkan first, then Direct3D 12 on Windows or Metal on Apple platforms,
-then the internal compatibility renderer.
+then the CPU software compatibility renderer.
 
 ## What Was Optimized
 
@@ -43,6 +43,9 @@ then the internal compatibility renderer.
   records command buffers, builds SPIR-V shader pipelines through glslang, and
   presents frames directly. Rounded rectangles, gradients, borders, and text
   atlas sampling run on this path.
+- The compatibility backend now has a real CPU raster path for Windows and
+  Android. It draws retained UI commands into a persistent software framebuffer
+  and presents through GDI or `ANativeWindow` when Vulkan cannot start.
 - Vulkan rectangles, borders, shadows, and text use batched dynamic pages owned
   by each swapchain frame, so the CPU can reuse memory without overwriting data
   that the GPU may still read.
@@ -212,6 +215,7 @@ Runtime Vulkan check:
 ```powershell
 .\build\Release\DataLeakGuard.exe --probe-vulkan
 .\build\Release\DataLeakGuard.exe --backend=vulkan --frames=3
+.\build\Release\DataLeakGuard.exe --backend=software --frames=3
 ```
 
 ## Native Backend Decision

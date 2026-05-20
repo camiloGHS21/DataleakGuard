@@ -689,7 +689,8 @@ static bool parseBackendArg(const std::string& value, RenderBackendType& backend
         backend = RenderBackendType::Direct3D12;
     } else if (normalized == "metal") {
         backend = RenderBackendType::Metal;
-    } else if (normalized == "compatibility") {
+    } else if (normalized == "compatibility" || normalized == "software" ||
+               normalized == "cpu") {
         backend = RenderBackendType::Compatibility;
     } else {
         return false;

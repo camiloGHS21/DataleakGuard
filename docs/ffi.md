@@ -90,7 +90,7 @@ rustc examples\rust\minimal.rs --extern fluxui=build\Release\libfluxui.rlib -L n
 ```
 
 The Rust wrapper owns the app handle, exposes safe constructors, and keeps raw C handles available through `raw()` for advanced integrations.
-It also exposes `Backend::Auto`, `Backend::Vulkan`, `Backend::Direct3D12`, `Backend::DirectX12`, and `Backend::Metal` through `app.set_backend(...)`.
+It also exposes `Backend::Auto`, `Backend::Vulkan`, `Backend::Direct3D12`, `Backend::DirectX12`, `Backend::Metal`, and `Backend::Compatibility` through `app.set_backend(...)`.
 
 ## Zig
 
@@ -107,7 +107,7 @@ zig build-exe --dep fluxui "-Mroot=examples/zig/minimal.zig" "-Mfluxui=bindings/
 ```
 
 PowerShell users should keep the `-M...=.zig` and `-femit-bin=...exe` arguments quoted so Zig receives each one as a single argument.
-The Zig wrapper exposes backend selection with `app.setBackend(.auto)`, `.vulkan`, `.direct3d12`, or `.metal`.
+The Zig wrapper exposes backend selection with `app.setBackend(.auto)`, `.vulkan`, `.direct3d12`, `.metal`, or `.compatibility`.
 
 Run Rust and Zig examples from a directory where `fluxui_shared.dll`, `SDL2.dll`, and the assets your app needs are available.
 

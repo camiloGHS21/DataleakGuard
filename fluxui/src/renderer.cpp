@@ -8,6 +8,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <windows.h>
+#elif defined(__ANDROID__)
+#include <android/native_window.h>
 #endif
 
 #ifndef FLUXUI_HAS_VULKAN_SDK
@@ -349,7 +352,7 @@ public:
             "Compatibility",
             true,
             true,
-            "Internal compatibility draw path used while native backends are staged"
+            "CPU software fallback for systems without a usable GPU backend"
         };
     }
 
@@ -475,10 +478,6 @@ RenderBackendType chooseBackend(RenderBackendType preference) {
     }
 
     if (preference == RenderBackendType::Compatibility) {
-        const auto vkInfo = Renderer::getBackendInfo(RenderBackendType::Vulkan);
-        if (vkInfo.compiled && vkInfo.selectable) {
-            return RenderBackendType::Vulkan;
-        }
         return RenderBackendType::Compatibility;
     }
 
@@ -1546,6 +1545,146 @@ void main() {
     FragColor = vec4(tex.rgb * vColor.rgb, tex.a * vColor.a);
 }
 )";
+
+namespace {
+
+struct SoftwareClip {
+    int x0 = 0;
+    int y0 = 0;
+    int x1 = 0;
+    int y1 = 0;
+};
+
+uint8_t softwareToByte(float value) {
+    return static_cast<uint8_t>(
+        std::round(std::clamp(value, 0.0f, 1.0f) * 255.0f));
+}
+
+uint32_t softwarePackOpaque(const Color& color) {
+    return 0xff000000u |
+           (static_cast<uint32_t>(softwareToByte(color.r)) << 16) |
+           (static_cast<uint32_t>(softwareToByte(color.g)) << 8) |
+           static_cast<uint32_t>(softwareToByte(color.b));
+}
+
+Color softwareColorFromInstance(const float rgba[4]) {
+    return Color(rgba[0], rgba[1], rgba[2], rgba[3]);
+}
+
+SoftwareClip softwareClipFor(const std::vector<Rect>& scissorStack,
+                             int width,
+                             int height,
+                             float dpiScale) {
+    SoftwareClip clip{0, 0, std::max(0, width), std::max(0, height)};
+    if (scissorStack.empty()) {
+        return clip;
+    }
+
+    const Rect& r = scissorStack.back();
+    clip.x0 = std::clamp(static_cast<int>(std::floor(r.x * dpiScale)), 0, width);
+    clip.y0 = std::clamp(static_cast<int>(std::floor(r.y * dpiScale)), 0, height);
+    clip.x1 = std::clamp(static_cast<int>(std::ceil((r.x + r.w) * dpiScale)), 0, width);
+    clip.y1 = std::clamp(static_cast<int>(std::ceil((r.y + r.h) * dpiScale)), 0, height);
+    if (clip.x1 < clip.x0) clip.x1 = clip.x0;
+    if (clip.y1 < clip.y0) clip.y1 = clip.y0;
+    return clip;
+}
+
+uint32_t softwareNextCodepoint(const std::string& s, size_t& i) {
+    unsigned char c = static_cast<unsigned char>(s[i]);
+    if (c < 0x80) return static_cast<uint32_t>(s[i++]);
+    if ((c & 0xE0) == 0xC0 && i + 1 < s.size()) {
+        uint32_t cp = ((s[i++] & 0x1F) << 6) | (s[i++] & 0x3F);
+        return cp;
+    }
+    if ((c & 0xF0) == 0xE0 && i + 2 < s.size()) {
+        uint32_t cp = ((s[i++] & 0x0F) << 12) |
+                      ((s[i++] & 0x3F) << 6) |
+                      (s[i++] & 0x3F);
+        return cp;
+    }
+    if ((c & 0xF8) == 0xF0 && i + 3 < s.size()) {
+        uint32_t cp = ((s[i++] & 0x07) << 18) |
+                      ((s[i++] & 0x3F) << 12) |
+                      ((s[i++] & 0x3F) << 6) |
+                      (s[i++] & 0x3F);
+        return cp;
+    }
+    return static_cast<uint32_t>(s[i++]);
+}
+
+float softwareRoundedCoverage(float px, float py, const Rect& rect, float radius) {
+    if (rect.w <= 0.0f || rect.h <= 0.0f) {
+        return 0.0f;
+    }
+    radius = std::clamp(radius, 0.0f, std::min(rect.w, rect.h) * 0.5f);
+    if (radius <= 0.0f) {
+        return 1.0f;
+    }
+
+    float lx = px - rect.x;
+    float ly = py - rect.y;
+    float cx = std::clamp(lx, radius, rect.w - radius);
+    float cy = std::clamp(ly, radius, rect.h - radius);
+    float dx = lx - cx;
+    float dy = ly - cy;
+    float distance = std::sqrt(dx * dx + dy * dy);
+    return std::clamp(radius + 0.5f - distance, 0.0f, 1.0f);
+}
+
+Color softwareGradientColor(const Color& a,
+                            const Color& b,
+                            const Rect& rect,
+                            float px,
+                            float py,
+                            float angleDegrees) {
+    float angle = angleDegrees * 3.14159265358979323846f / 180.0f;
+    float vx = std::cos(angle);
+    float vy = std::sin(angle);
+    float nx = rect.w > 0.0f ? (px - rect.x) / rect.w - 0.5f : 0.0f;
+    float ny = rect.h > 0.0f ? (py - rect.y) / rect.h - 0.5f : 0.0f;
+    float t = std::clamp(nx * vx + ny * vy + 0.5f, 0.0f, 1.0f);
+    return Color::lerp(a, b, t);
+}
+
+void softwareBlendPixel(std::vector<uint32_t>& pixels,
+                        int width,
+                        int height,
+                        int x,
+                        int y,
+                        const Color& color,
+                        float alphaScale) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+        return;
+    }
+    float srcA = std::clamp(color.a * alphaScale, 0.0f, 1.0f);
+    if (srcA <= 0.0f) {
+        return;
+    }
+
+    uint32_t& dst = pixels[static_cast<size_t>(y) * width + x];
+    float dstR = static_cast<float>((dst >> 16) & 0xffu);
+    float dstG = static_cast<float>((dst >> 8) & 0xffu);
+    float dstB = static_cast<float>(dst & 0xffu);
+
+    auto blendChannel = [srcA](float src, float dst) {
+        return static_cast<uint8_t>(std::clamp(
+            static_cast<int>(std::round(std::clamp(src, 0.0f, 1.0f) * 255.0f * srcA +
+                                        dst * (1.0f - srcA))),
+            0,
+            255));
+    };
+    uint8_t outR = blendChannel(color.r, dstR);
+    uint8_t outG = blendChannel(color.g, dstG);
+    uint8_t outB = blendChannel(color.b, dstB);
+
+    dst = 0xff000000u |
+          (static_cast<uint32_t>(outR) << 16) |
+          (static_cast<uint32_t>(outG) << 8) |
+          static_cast<uint32_t>(outB);
+}
+
+} // namespace
 
 
 
@@ -3095,8 +3234,6 @@ bool ensureVulkanFontTexture(VulkanRendererState& state,
     vkUpdateDescriptorSets(state.device, 1, &write, 0, nullptr);
 
     state.fontTextures.emplace(key, texture);
-    font.atlasPixels.clear();
-    font.atlasPixels.shrink_to_fit();
     return true;
 }
 
@@ -3246,8 +3383,6 @@ bool ensureVulkanImageTexture(VulkanRendererState& state,
     vkUpdateDescriptorSets(state.device, 1, &write, 0, nullptr);
 
     state.imageTextures.emplace(key, texture);
-    image.pixels.clear();
-    image.pixels.shrink_to_fit();
     return true;
 }
 
@@ -3457,6 +3592,11 @@ void Renderer::flush() {
 
 void Renderer::flushRectBatch() {
     if (rectBatch_.empty()) return;
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        flushSoftwareRectBatch();
+        return;
+    }
 
     useShader(roundedRectShader_);
     Vec2 pivot = batchScalePivot_;
@@ -3887,6 +4027,486 @@ void Renderer::endVulkanFrame() {
     state.currentFrame = (state.currentFrame + 1) %
                          static_cast<uint32_t>(state.frames.size());
 #endif
+}
+
+bool Renderer::initSoftware(void* windowHandle) {
+#if defined(_WIN32) || defined(__ANDROID__)
+    window_ = windowHandle;
+    int w = 800;
+    int h = 600;
+    if (window_) {
+        Platform::getWindowSize(window_, w, h);
+    }
+    softwareWidth_ = std::max(1, w);
+    softwareHeight_ = std::max(1, h);
+    windowWidth_ = softwareWidth_;
+    windowHeight_ = softwareHeight_;
+    dpiScale_ = 1.0f;
+    softwarePixels_.assign(static_cast<size_t>(softwareWidth_) * softwareHeight_,
+                           softwarePackOpaque(Color(0.06f, 0.06f, 0.09f, 1.0f)));
+    activeBackend_ = RenderBackendType::Compatibility;
+    backendInitialized_ = true;
+    std::cout << "FluxUI Renderer initialized (CPU software compatibility)"
+              << std::endl;
+    return true;
+#else
+    (void)windowHandle;
+    std::cerr << "FluxUI: CPU software compatibility renderer is implemented "
+              << "for Windows and Android in this build." << std::endl;
+    return false;
+#endif
+}
+
+void Renderer::shutdownSoftware() {
+    softwarePixels_.clear();
+    softwarePixels_.shrink_to_fit();
+    softwareWidth_ = 0;
+    softwareHeight_ = 0;
+    softwareFrameActive_ = false;
+}
+
+void Renderer::beginSoftwareFrame(int w, int h) {
+    windowWidth_ = std::max(1, w);
+    windowHeight_ = std::max(1, h);
+    dpiScale_ = 1.0f;
+
+    if (softwareWidth_ != windowWidth_ || softwareHeight_ != windowHeight_) {
+        softwareWidth_ = windowWidth_;
+        softwareHeight_ = windowHeight_;
+        softwarePixels_.resize(static_cast<size_t>(softwareWidth_) * softwareHeight_);
+    }
+
+    std::fill(softwarePixels_.begin(), softwarePixels_.end(),
+              softwarePackOpaque(Color(0.06f, 0.06f, 0.09f, 1.0f)));
+    scissorStack_.clear();
+    rectBatch_.clear();
+    batchValid_ = false;
+    activeShader_ = 0;
+    softwareFrameActive_ = true;
+}
+
+void Renderer::endSoftwareFrame() {
+    if (!softwareFrameActive_) {
+        return;
+    }
+    flushRectBatch();
+    presentSoftwareFrame();
+    softwareFrameActive_ = false;
+}
+
+void Renderer::presentSoftwareFrame() {
+    if (softwarePixels_.empty() || softwareWidth_ <= 0 || softwareHeight_ <= 0) {
+        return;
+    }
+
+#ifdef _WIN32
+    HWND hwnd = static_cast<HWND>(window_);
+    if (!hwnd) {
+        return;
+    }
+
+    HDC dc = GetDC(hwnd);
+    if (!dc) {
+        return;
+    }
+
+    BITMAPINFO bitmapInfo = {};
+    bitmapInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biWidth = softwareWidth_;
+    bitmapInfo.bmiHeader.biHeight = -softwareHeight_;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biBitCount = 32;
+    bitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+    StretchDIBits(dc,
+                  0,
+                  0,
+                  softwareWidth_,
+                  softwareHeight_,
+                  0,
+                  0,
+                  softwareWidth_,
+                  softwareHeight_,
+                  softwarePixels_.data(),
+                  &bitmapInfo,
+                  DIB_RGB_COLORS,
+                  SRCCOPY);
+    ReleaseDC(hwnd, dc);
+#elif defined(__ANDROID__)
+    ANativeWindow* nativeWindow = static_cast<ANativeWindow*>(window_);
+    if (!nativeWindow) {
+        return;
+    }
+
+    ANativeWindow_setBuffersGeometry(nativeWindow,
+                                     softwareWidth_,
+                                     softwareHeight_,
+                                     WINDOW_FORMAT_RGBA_8888);
+    ANativeWindow_Buffer buffer = {};
+    if (ANativeWindow_lock(nativeWindow, &buffer, nullptr) != 0) {
+        return;
+    }
+
+    int copyW = std::min(softwareWidth_, static_cast<int>(buffer.width));
+    int copyH = std::min(softwareHeight_, static_cast<int>(buffer.height));
+    for (int y = 0; y < copyH; ++y) {
+        auto* dst = static_cast<unsigned char*>(buffer.bits) +
+                    static_cast<size_t>(y) * buffer.stride * 4u;
+        const uint32_t* src = softwarePixels_.data() +
+                              static_cast<size_t>(y) * softwareWidth_;
+        for (int x = 0; x < copyW; ++x) {
+            uint32_t pixel = src[x];
+            dst[x * 4 + 0] = static_cast<unsigned char>((pixel >> 16) & 0xffu);
+            dst[x * 4 + 1] = static_cast<unsigned char>((pixel >> 8) & 0xffu);
+            dst[x * 4 + 2] = static_cast<unsigned char>(pixel & 0xffu);
+            dst[x * 4 + 3] = 0xff;
+        }
+    }
+    ANativeWindow_unlockAndPost(nativeWindow);
+#endif
+}
+
+Rect Renderer::transformSoftwareRect(const Rect& rect,
+                                     float drawScale,
+                                     const Vec2& pivot) const {
+    Rect out = rect;
+    if (drawScale != 1.0f) {
+        out.x = pivot.x + (out.x - pivot.x) * drawScale;
+        out.y = pivot.y + (out.y - pivot.y) * drawScale;
+        out.w *= drawScale;
+        out.h *= drawScale;
+    }
+    return out;
+}
+
+void Renderer::flushSoftwareRectBatch() {
+    if (rectBatch_.empty()) {
+        return;
+    }
+
+    Vec2 pivot = batchScalePivot_;
+    for (const auto& inst : rectBatch_) {
+        Rect rect(inst.rect[0], inst.rect[1], inst.rect[2], inst.rect[3]);
+        drawSoftwareRoundedRect(rect,
+                                softwareColorFromInstance(inst.color),
+                                softwareColorFromInstance(inst.color2),
+                                softwareColorFromInstance(inst.borderColor),
+                                BorderRadius(inst.radius),
+                                inst.borderWidth,
+                                inst.opacity,
+                                inst.hasGradient > 0.0f,
+                                inst.gradientAngle,
+                                batchScale_,
+                                pivot);
+    }
+    rectBatch_.clear();
+}
+
+void Renderer::drawSoftwareRoundedRect(const Rect& rect,
+                                       const Color& color,
+                                       const Color& color2,
+                                       const Color& borderColor,
+                                       const BorderRadius& radius,
+                                       float borderWidth,
+                                       float opacity,
+                                       bool hasGradient,
+                                       float gradientAngle,
+                                       float drawScale,
+                                       const Vec2& pivot) {
+    if (!softwareFrameActive_ || softwarePixels_.empty() || opacity <= 0.0f) {
+        return;
+    }
+
+    Rect drawRect = transformSoftwareRect(rect, drawScale, pivot);
+    if (drawRect.w <= 0.0f || drawRect.h <= 0.0f) {
+        return;
+    }
+
+    float scaledRadius = std::max(0.0f, radius.uniform() * drawScale);
+    float scaledBorder = std::max(0.0f, borderWidth * drawScale);
+    const bool drawFill = color.a > 0.0f;
+    const bool drawBorder = scaledBorder > 0.0f && borderColor.a > 0.0f;
+    if (!drawFill && !drawBorder) {
+        return;
+    }
+
+    SoftwareClip clip = softwareClipFor(scissorStack_,
+                                        softwareWidth_,
+                                        softwareHeight_,
+                                        dpiScale_);
+    int x0 = std::max(clip.x0, static_cast<int>(std::floor(drawRect.x)));
+    int y0 = std::max(clip.y0, static_cast<int>(std::floor(drawRect.y)));
+    int x1 = std::min(clip.x1, static_cast<int>(std::ceil(drawRect.x + drawRect.w)));
+    int y1 = std::min(clip.y1, static_cast<int>(std::ceil(drawRect.y + drawRect.h)));
+    if (x0 >= x1 || y0 >= y1) {
+        return;
+    }
+
+    Rect inner(drawRect.x + scaledBorder,
+               drawRect.y + scaledBorder,
+               drawRect.w - scaledBorder * 2.0f,
+               drawRect.h - scaledBorder * 2.0f);
+    float innerRadius = std::max(0.0f, scaledRadius - scaledBorder);
+
+    for (int y = y0; y < y1; ++y) {
+        float py = static_cast<float>(y) + 0.5f;
+        for (int x = x0; x < x1; ++x) {
+            float px = static_cast<float>(x) + 0.5f;
+            float coverage = softwareRoundedCoverage(px, py, drawRect, scaledRadius);
+            if (coverage <= 0.0f) {
+                continue;
+            }
+
+            if (drawFill) {
+                Color fill = hasGradient
+                    ? softwareGradientColor(color, color2, drawRect, px, py, gradientAngle)
+                    : color;
+                softwareBlendPixel(softwarePixels_,
+                                   softwareWidth_,
+                                   softwareHeight_,
+                                   x,
+                                   y,
+                                   fill,
+                                   opacity * coverage);
+            }
+
+            if (drawBorder) {
+                float innerCoverage = 0.0f;
+                if (inner.w > 0.0f && inner.h > 0.0f) {
+                    innerCoverage = softwareRoundedCoverage(px, py, inner, innerRadius);
+                }
+                float borderCoverage = coverage * (1.0f - innerCoverage);
+                if (borderCoverage > 0.0f) {
+                    softwareBlendPixel(softwarePixels_,
+                                       softwareWidth_,
+                                       softwareHeight_,
+                                       x,
+                                       y,
+                                       borderColor,
+                                       borderCoverage);
+                }
+            }
+        }
+    }
+}
+
+void Renderer::drawSoftwareBoxShadow(const Rect& rect,
+                                     const BoxShadow& shadow,
+                                     const BorderRadius& radius) {
+    if (shadow.color.a <= 0.0f || (shadow.blur <= 0.0f && shadow.spread <= 0.0f)) {
+        return;
+    }
+
+    flushRectBatch();
+    int layers = std::clamp(static_cast<int>(std::ceil(shadow.blur / 6.0f)), 1, 8);
+    for (int i = layers; i >= 1; --i) {
+        float t = static_cast<float>(i) / static_cast<float>(layers);
+        float expand = shadow.spread + shadow.blur * t;
+        Rect shadowRect(rect.x + shadow.offsetX - expand + translation_.x,
+                        rect.y + shadow.offsetY - expand + translation_.y,
+                        rect.w + expand * 2.0f,
+                        rect.h + expand * 2.0f);
+        Color layerColor = shadow.color.withAlpha(
+            shadow.color.a * (1.0f - t * 0.82f) / static_cast<float>(layers));
+        Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+        drawSoftwareRoundedRect(shadowRect,
+                                layerColor,
+                                layerColor,
+                                Color(0, 0, 0, 0),
+                                BorderRadius(radius.uniform() + expand),
+                                0.0f,
+                                1.0f,
+                                false,
+                                0.0f,
+                                scale_,
+                                pivot);
+    }
+}
+
+void Renderer::drawSoftwareText(const std::string& text,
+                                const Vec2& pos,
+                                const Color& color,
+                                float fontSize,
+                                FontWeight weight,
+                                const std::string& fontName,
+                                FontStyle style) {
+    if (!softwareFrameActive_ || text.empty() || color.a <= 0.0f) {
+        return;
+    }
+
+    flushRectBatch();
+
+    float renderFontSize = std::max(1.0f, fontSize * std::max(0.01f, scale_));
+    std::string resolvedFontName = resolveFontName(fontName, weight);
+    FontData* fontPtr = getFontForSize(resolvedFontName, renderFontSize);
+    if (!fontPtr || !fontPtr->loaded) {
+        return;
+    }
+    FontData& font = *fontPtr;
+    if (font.atlasPixels.empty() && !font.sourceData.empty()) {
+        buildFontAtlas(font,
+                       font.sourceData.data(),
+                       static_cast<int>(font.sourceData.size()),
+                       renderFontSize);
+    }
+    if (font.atlasPixels.empty() || font.atlasWidth <= 0 || font.atlasHeight <= 0) {
+        return;
+    }
+
+    float logicalFontHeight = font.fontSize / std::max(1.0f, dpiScale_);
+    float glyphScale = std::abs(renderFontSize - logicalFontHeight) < 1.01f
+        ? 1.0f / std::max(1.0f, dpiScale_)
+        : renderFontSize / std::max(1.0f, font.fontSize);
+
+    Vec2 drawPos(pos.x + translation_.x, pos.y + translation_.y);
+    Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+    if (scale_ != 1.0f) {
+        drawPos.x = pivot.x + (drawPos.x - pivot.x) * scale_;
+        drawPos.y = pivot.y + (drawPos.y - pivot.y) * scale_;
+    }
+
+    float cursorX = std::floor(drawPos.x + 0.5f);
+    float baselineY = std::floor(drawPos.y + font.ascent * glyphScale + 0.5f);
+    float boldOffset = (weight == FontWeight::Bold && resolvedFontName == fontName)
+        ? std::max(0.35f, renderFontSize * 0.018f)
+        : 0.0f;
+    float italicSkew = style == FontStyle::Normal ? 0.0f : renderFontSize * 0.18f;
+
+    SoftwareClip clip = softwareClipFor(scissorStack_,
+                                        softwareWidth_,
+                                        softwareHeight_,
+                                        dpiScale_);
+
+    auto drawGlyph = [&](const GlyphInfo& glyph, float originX, float originY) {
+        int drawW = std::max(0, static_cast<int>(std::ceil(glyph.width * glyphScale)));
+        int drawH = std::max(0, static_cast<int>(std::ceil(glyph.height * glyphScale)));
+        if (drawW <= 0 || drawH <= 0) {
+            return;
+        }
+
+        int atlasX0 = std::clamp(static_cast<int>(std::floor(glyph.x0 * font.atlasWidth)),
+                                 0,
+                                 font.atlasWidth - 1);
+        int atlasY0 = std::clamp(static_cast<int>(std::floor(glyph.y0 * font.atlasHeight)),
+                                 0,
+                                 font.atlasHeight - 1);
+        int atlasW = std::max(1, static_cast<int>(std::round(glyph.width)));
+        int atlasH = std::max(1, static_cast<int>(std::round(glyph.height)));
+
+        int y0 = std::max(clip.y0, static_cast<int>(std::floor(originY)));
+        int y1 = std::min(clip.y1, static_cast<int>(std::ceil(originY + drawH)));
+        for (int y = y0; y < y1; ++y) {
+            float localY = static_cast<float>(y) + 0.5f - originY;
+            int sy = atlasY0 + std::clamp(static_cast<int>(localY / glyphScale), 0, atlasH - 1);
+            sy = std::clamp(sy, 0, font.atlasHeight - 1);
+            float rowSkew = italicSkew * (1.0f - localY / std::max(1.0f, static_cast<float>(drawH)));
+            int x0 = std::max(clip.x0, static_cast<int>(std::floor(originX + rowSkew)));
+            int x1 = std::min(clip.x1, static_cast<int>(std::ceil(originX + rowSkew + drawW)));
+            for (int x = x0; x < x1; ++x) {
+                float localX = static_cast<float>(x) + 0.5f - originX - rowSkew;
+                int sx = atlasX0 + std::clamp(static_cast<int>(localX / glyphScale), 0, atlasW - 1);
+                sx = std::clamp(sx, 0, font.atlasWidth - 1);
+                unsigned char alpha = font.atlasPixels[static_cast<size_t>(sy) *
+                                                       font.atlasWidth + sx];
+                if (alpha == 0) {
+                    continue;
+                }
+                softwareBlendPixel(softwarePixels_,
+                                   softwareWidth_,
+                                   softwareHeight_,
+                                   x,
+                                   y,
+                                   color,
+                                   static_cast<float>(alpha) / 255.0f);
+            }
+        }
+    };
+
+    for (size_t i = 0; i < text.size();) {
+        uint32_t codepoint = softwareNextCodepoint(text, i);
+        if (codepoint >= 1024) {
+            continue;
+        }
+        const GlyphInfo& glyph = font.glyphs[codepoint];
+        if (glyph.xadvance == 0.0f && codepoint != ' ') {
+            continue;
+        }
+
+        float x = std::floor(cursorX + glyph.xoff * glyphScale + 0.5f);
+        float y = std::floor(baselineY + glyph.yoff * glyphScale + 0.5f);
+        drawGlyph(glyph, x, y);
+        if (boldOffset > 0.0f) {
+            drawGlyph(glyph, x + boldOffset, y);
+        }
+        cursorX += glyph.xadvance * glyphScale;
+    }
+}
+
+void Renderer::drawSoftwareImage(const std::string& key,
+                                 ImageData& image,
+                                 const Rect& rect,
+                                 const Rect& sourceUv,
+                                 const Color& tint,
+                                 float opacity) {
+    (void)key;
+    if (!softwareFrameActive_ || !image.loaded || image.pixels.empty() ||
+        image.width <= 0 || image.height <= 0 || opacity <= 0.0f ||
+        tint.a <= 0.0f) {
+        return;
+    }
+
+    flushRectBatch();
+
+    Rect drawRect(rect.x + translation_.x, rect.y + translation_.y, rect.w, rect.h);
+    Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+    drawRect = transformSoftwareRect(drawRect, scale_, pivot);
+    if (drawRect.w <= 0.0f || drawRect.h <= 0.0f) {
+        return;
+    }
+
+    SoftwareClip clip = softwareClipFor(scissorStack_,
+                                        softwareWidth_,
+                                        softwareHeight_,
+                                        dpiScale_);
+    int x0 = std::max(clip.x0, static_cast<int>(std::floor(drawRect.x)));
+    int y0 = std::max(clip.y0, static_cast<int>(std::floor(drawRect.y)));
+    int x1 = std::min(clip.x1, static_cast<int>(std::ceil(drawRect.x + drawRect.w)));
+    int y1 = std::min(clip.y1, static_cast<int>(std::ceil(drawRect.y + drawRect.h)));
+    if (x0 >= x1 || y0 >= y1) {
+        return;
+    }
+
+    float u0 = std::clamp(sourceUv.x, 0.0f, 1.0f);
+    float v0 = std::clamp(sourceUv.y, 0.0f, 1.0f);
+    float u1 = std::clamp(sourceUv.x + sourceUv.w, 0.0f, 1.0f);
+    float v1 = std::clamp(sourceUv.y + sourceUv.h, 0.0f, 1.0f);
+
+    for (int y = y0; y < y1; ++y) {
+        float fy = (static_cast<float>(y) + 0.5f - drawRect.y) / drawRect.h;
+        int sy = std::clamp(static_cast<int>((v0 + fy * (v1 - v0)) *
+                                             static_cast<float>(image.height)),
+                            0,
+                            image.height - 1);
+        for (int x = x0; x < x1; ++x) {
+            float fx = (static_cast<float>(x) + 0.5f - drawRect.x) / drawRect.w;
+            int sx = std::clamp(static_cast<int>((u0 + fx * (u1 - u0)) *
+                                                 static_cast<float>(image.width)),
+                                0,
+                                image.width - 1);
+            size_t index = (static_cast<size_t>(sy) * image.width + sx) * 4u;
+            Color sample(image.pixels[index + 0] / 255.0f * tint.r,
+                         image.pixels[index + 1] / 255.0f * tint.g,
+                         image.pixels[index + 2] / 255.0f * tint.b,
+                         image.pixels[index + 3] / 255.0f * tint.a);
+            softwareBlendPixel(softwarePixels_,
+                               softwareWidth_,
+                               softwareHeight_,
+                               x,
+                               y,
+                               sample,
+                               opacity);
+        }
+    }
 }
 
 void Renderer::drawVulkanRect(const Rect& rect, const Color& color, float opacity) {
@@ -4358,18 +4978,14 @@ void Renderer::drawVulkanImage(const std::string& key,
 bool Renderer::init(void* windowHandle) {
     window_ = windowHandle;
 
-    // Handle Compatibility fallback to Vulkan
-    if (activeBackend_ == RenderBackendType::Compatibility) {
-        const auto vkInfo = getBackendInfo(RenderBackendType::Vulkan);
-        if (vkInfo.compiled && vkInfo.selectable) {
-            std::cerr << "FluxUI: Compatibility (OpenGL) backend requires SDL2 (currently removed) or native WGL/GLX implementation. "
-                      << "Falling back to native Vulkan backend." << std::endl;
-            activeBackend_ = RenderBackendType::Vulkan;
-        }
-    }
-
     if (activeBackend_ == RenderBackendType::Vulkan) {
-        return initVulkan(windowHandle);
+        if (initVulkan(windowHandle)) {
+            return true;
+        }
+        std::cerr << "FluxUI: Vulkan could not start. Switching to CPU "
+                  << "software compatibility renderer." << std::endl;
+        activeBackend_ = RenderBackendType::Compatibility;
+        return initSoftware(windowHandle);
     }
 
     if (activeBackend_ != RenderBackendType::Compatibility) {
@@ -4377,26 +4993,21 @@ bool Renderer::init(void* windowHandle) {
                   << " draw path is not implemented yet. Using compatibility renderer." << std::endl;
         activeBackend_ = RenderBackendType::Compatibility;
     }
-    
-    // Calculate DPI scale (Win32 specific fallback for compatibility)
-    int w = 800, h = 600;
-    Platform::getWindowSize(windowHandle, w, h);
-    
-    // In a pure Win32 app without SDL, we'd use GetDpiForWindow
-    dpiScale_ = 1.0f; 
-    windowWidth_ = w;
-    windowHeight_ = h;
 
-    // OpenGL/Compatibility path removal
-    // (If we ever need OpenGL back, we'd need WGL/GLX initialization here)
-    std::cerr << "FluxUI: Compatibility (OpenGL) backend requires SDL2 (currently removed) or native WGL/GLX implementation." << std::endl;
-    return false;
+    return initSoftware(windowHandle);
 }
 
 void Renderer::shutdown() {
     if (activeBackend_ == RenderBackendType::Vulkan || vulkan_) {
         shutdownVulkan();
         backendInitialized_ = false;
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        shutdownSoftware();
+        backendInitialized_ = false;
+        activeShader_ = 0;
         return;
     }
 
@@ -4427,7 +5038,22 @@ void Renderer::shutdown() {
 
 void Renderer::beginFrame(int w, int h) {
     if (activeBackend_ == RenderBackendType::Vulkan) {
-        beginVulkanFrame(w, h);
+        if (beginVulkanFrame(w, h)) {
+            return;
+        }
+        std::cerr << "FluxUI: Vulkan frame begin failed. Switching to CPU "
+                  << "software compatibility renderer." << std::endl;
+        shutdownVulkan();
+        activeBackend_ = RenderBackendType::Compatibility;
+        if (!backendInitialized_) {
+            initSoftware(window_);
+        }
+        beginSoftwareFrame(w, h);
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        beginSoftwareFrame(w, h);
         return;
     }
 
@@ -4452,6 +5078,11 @@ void Renderer::beginFrame(int w, int h) {
 void Renderer::endFrame() {
     if (activeBackend_ == RenderBackendType::Vulkan) {
         endVulkanFrame();
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        endSoftwareFrame();
         return;
     }
 
@@ -4707,6 +5338,10 @@ void Renderer::releaseFontSources() {
 
 bool Renderer::ensureImageTexture(const std::string& key, ImageData& image) {
     if (!image.loaded) return false;
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        (void)key;
+        return !image.pixels.empty() && image.width > 0 && image.height > 0;
+    }
     if (activeBackend_ == RenderBackendType::Vulkan) {
 #if FLUXUI_HAS_VULKAN_SDK
         return vulkan_ && vulkan_->device && ensureVulkanImageTexture(*vulkan_, key, image);
@@ -4727,8 +5362,6 @@ bool Renderer::ensureImageTexture(const std::string& key, ImageData& image) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    image.pixels.clear();
-    image.pixels.shrink_to_fit();
     return image.textureId != 0;
 }
 
@@ -4918,7 +5551,8 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
     FT_Done_Face(face);
     FT_Done_FreeType(library);
 
-    if (activeBackend_ == RenderBackendType::Vulkan) {
+    if (activeBackend_ == RenderBackendType::Vulkan ||
+        activeBackend_ == RenderBackendType::Compatibility) {
         font.atlasPixels = std::move(atlas);
         font.textureId = 0;
     } else {
@@ -4932,7 +5566,6 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        font.atlasPixels.clear();
     }
 
     font.loaded = true;
@@ -5175,6 +5808,11 @@ void Renderer::drawBoxShadow(const Rect& rect, const BoxShadow& shadow,
         return;
     }
 
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        drawSoftwareBoxShadow(rect, shadow, radius);
+        return;
+    }
+
     float expand = shadow.blur + shadow.spread;
     Rect shadowRect = {
         rect.x + shadow.offsetX - expand + translation_.x,
@@ -5212,6 +5850,11 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
                          FontStyle style) {
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanText(text, pos, color, fontSize, weight, fontName, style);
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        drawSoftwareText(text, pos, color, fontSize, weight, fontName, style);
         return;
     }
 
@@ -5346,6 +5989,11 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanImage(nameOrPath, it->second, rect, sourceUv, tint, opacity);
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        drawSoftwareImage(nameOrPath, it->second, rect, sourceUv, tint, opacity);
         return;
     }
 
@@ -5517,6 +6165,12 @@ void Renderer::pushScissor(const Rect& rect) {
         return;
     }
 
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        flushRectBatch();
+        scissorStack_.push_back(clip);
+        return;
+    }
+
     // Flush rect batch before scissor change
     flushRectBatch();
 
@@ -5539,6 +6193,12 @@ void Renderer::popScissor() {
             setVulkanScissor(*vulkan_, scissorStack_, dpiScale_);
         }
 #endif
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        flushRectBatch();
+        if (!scissorStack_.empty()) scissorStack_.pop_back();
         return;
     }
 

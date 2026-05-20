@@ -3,10 +3,12 @@
 FluxUI has a public backend-selection layer. The default preference is Vulkan,
 matching the direction of GPU-first UI engines such as Zed's GPUI. `Auto`
 tries Vulkan first, then the platform-native target (`Direct3D 12` on Windows
-or `Metal` on Apple platforms), then the internal compatibility renderer.
+or `Metal` on Apple platforms), then the CPU software compatibility renderer.
 
 When a requested native backend is not compiled or not selectable yet, FluxUI
-uses its internal compatibility renderer and keeps the app API stable.
+uses its compatibility renderer and keeps the app API stable. If Vulkan is
+compiled but fails at runtime because the machine has no usable GPU or driver,
+FluxUI falls back to the software path on Windows and Android.
 
 ## Current Backend Matrix
 
@@ -16,7 +18,7 @@ uses its internal compatibility renderer and keeps the app API stable.
 | Vulkan | Default native target/Accelerated renderer | Uses a native Vulkan instance, surface, swapchain, render pass, command buffers, glslang-built SPIR-V shader pipelines, text atlas sampling, instanced rounded-rectangle/shadow batching, batched text draws by atlas, borders, per-frame dynamic resource pages, and presentation. |
 | Direct3D 12 | Staged | Available as a public backend target on Windows with `FLUXUI_ENABLE_D3D12=ON`; command rendering is staged. Aliases: `Direct12`, `DirectX12`, `D3D12`. |
 | Metal | Staged | Available as a public backend target on Apple platforms with `FLUXUI_ENABLE_METAL=ON`; command rendering is staged. |
-| Compatibility | Internal fallback | Used when a requested native backend is unavailable. Apps should prefer `Auto` or a native backend. |
+| Compatibility | CPU software fallback | Used when a requested native backend is unavailable or Vulkan cannot start. Windows presents through GDI; Android presents through `ANativeWindow`. Apps should prefer `Auto` or a native backend. |
 
 DirectX 13 is not exposed as a backend target. FluxUI maps the Windows native
 backend to Direct3D 12, which is the documented low-level Direct3D API for this
@@ -36,6 +38,7 @@ app.setBackend(FluxUI::RenderBackendType::Vulkan);
 app.setBackend(FluxUI::RenderBackendType::Direct3D12);
 app.setBackend(FluxUI::RenderBackendType::DirectX12);
 app.setBackend(FluxUI::RenderBackendType::Metal);
+app.setBackend(FluxUI::RenderBackendType::Compatibility);
 ```
 
 If the requested backend is unavailable or not selectable in the current build,
@@ -55,6 +58,13 @@ To request Vulkan and render a short three-frame app run:
 
 Today this validates Vulkan loader/window/surface/device compatibility, then
 the app renders a short run through the native Vulkan swapchain path.
+To force the CPU fallback for validation, use:
+
+```powershell
+.\build\Release\DataLeakGuard.exe --backend=software --frames=3
+```
+
+The app also accepts `--backend=compatibility` and `--backend=cpu`.
 
 ## C ABI
 

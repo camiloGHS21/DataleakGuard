@@ -342,8 +342,35 @@ private:
     void drawVulkanImage(const std::string& key, ImageData& image,
                          const Rect& rect, const Rect& sourceUv,
                          const Color& tint, float opacity);
+    bool initSoftware(void* windowHandle);
+    void shutdownSoftware();
+    void beginSoftwareFrame(int windowWidth, int windowHeight);
+    void endSoftwareFrame();
+    void presentSoftwareFrame();
+    void flushSoftwareRectBatch();
+    void drawSoftwareRoundedRect(const Rect& rect, const Color& color,
+                                 const Color& color2, const Color& borderColor,
+                                 const BorderRadius& radius, float borderWidth,
+                                 float opacity, bool hasGradient,
+                                 float gradientAngle, float drawScale,
+                                 const Vec2& pivot);
+    void drawSoftwareBoxShadow(const Rect& rect, const BoxShadow& shadow,
+                               const BorderRadius& radius);
+    void drawSoftwareText(const std::string& text, const Vec2& pos,
+                          const Color& color, float fontSize,
+                          FontWeight weight, const std::string& fontName,
+                          FontStyle style);
+    void drawSoftwareImage(const std::string& key, ImageData& image,
+                           const Rect& rect, const Rect& sourceUv,
+                           const Color& tint, float opacity);
+    Rect transformSoftwareRect(const Rect& rect, float drawScale,
+                               const Vec2& pivot) const;
 
     std::unique_ptr<VulkanRendererState> vulkan_;
+    std::vector<uint32_t> softwarePixels_;
+    int softwareWidth_ = 0;
+    int softwareHeight_ = 0;
+    bool softwareFrameActive_ = false;
 };
 
 } // namespace FluxUI
