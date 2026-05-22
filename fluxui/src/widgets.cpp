@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <stb_image.h>
 #include "fluxui/platform.h"
+#include <nlohmann/json.hpp>
 namespace FluxUI {
 static Application* g_activeApp = nullptr;
 Application* Application::instance() {
@@ -477,13 +478,13 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         return;
     }
     if (styleDirty) {
-        std::vector<CSSSelectorNode> ancestors;
-        ancestors.reserve(8);
+        thread_local std::vector<CSSSelectorNode> t_ancestors;
+        t_ancestors.clear();
         for (Widget* node = parent; node; node = node->parent) {
-            ancestors.push_back({node->className, node->id, node->type});
+            t_ancestors.push_back({node->className, node->id, node->type});
         }
         const Style* parentStyle = parent ? &parent->computedStyle : nullptr;
-        computedStyle = sheet.resolve(className, id, type, ancestors, parentStyle);
+        computedStyle = sheet.resolve(className, id, type, t_ancestors, parentStyle);
         if (parent) {
             const Style& inherited = parent->computedStyle;
             if (!computedStyle.hasColor) computedStyle.color = inherited.color;
@@ -2717,8 +2718,190 @@ void Application::removeAction(size_t actionId) {
                        }),
         actionBindings_.end());
 }
+static bool parseKeyStroke(const std::string& keyStr, int& keyCode, int& modifiers) {
+    modifiers = MOD_NONE;
+    keyCode = 0;
+    
+    std::string key = keyStr;
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c){ return std::tolower(c); });
+    
+    std::vector<std::string> parts;
+    std::string part;
+    for (char c : key) {
+        if (c == '-' || c == '+') {
+            if (!part.empty()) {
+                parts.push_back(part);
+                part.clear();
+            }
+        } else {
+            part += c;
+        }
+    }
+    if (!part.empty()) {
+        parts.push_back(part);
+    }
+    
+    if (parts.empty()) return false;
+    
+    for (size_t i = 0; i < parts.size(); ++i) {
+        const std::string& p = parts[i];
+        if (p == "ctrl" || p == "control" || p == "cmd" || p == "command") {
+            modifiers |= MOD_CTRL;
+        } else if (p == "shift") {
+            modifiers |= MOD_SHIFT;
+        } else if (p == "alt" || p == "option") {
+            modifiers |= MOD_ALT;
+        } else if (p == "win" || p == "super" || p == "meta" || p == "gui") {
+            modifiers |= MOD_GUI;
+        } else {
+            if (p.size() == 1) {
+                char c = p[0];
+                if (c >= 'a' && c <= 'z') {
+                    keyCode = c - 'a' + 'A';
+                } else if (c >= '0' && c <= '9') {
+                    keyCode = c;
+                } else {
+                    switch (c) {
+                        case ';': keyCode = 0xBA; break;
+                        case '=': keyCode = 0xBB; break;
+                        case ',': keyCode = 0xBC; break;
+                        case '-': keyCode = 0xBD; break;
+                        case '.': keyCode = 0xBE; break;
+                        case '/': keyCode = 0xBF; break;
+                        case '`': keyCode = 0xC0; break;
+                        case '[': keyCode = 0xDB; break;
+                        case '\\': keyCode = 0xDC; break;
+                        case ']': keyCode = 0xDD; break;
+                        case '\'': keyCode = 0xDE; break;
+                        case ' ': keyCode = 0x20; break;
+                        default: keyCode = c; break;
+                    }
+                }
+            } else {
+                if (p == "escape" || p == "esc") keyCode = 0x1B;
+                else if (p == "enter" || p == "return") keyCode = 0x0D;
+                else if (p == "tab") keyCode = 0x09;
+                else if (p == "space") keyCode = 0x20;
+                else if (p == "backspace") keyCode = 0x08;
+                else if (p == "delete" || p == "del") keyCode = 0x2E;
+                else if (p == "left") keyCode = 0x25;
+                else if (p == "up") keyCode = 0x26;
+                else if (p == "right") keyCode = 0x27;
+                else if (p == "down") keyCode = 0x28;
+                else if (p == "pageup" || p == "pgup") keyCode = 0x21;
+                else if (p == "pagedown" || p == "pgdn") keyCode = 0x22;
+                else if (p == "end") keyCode = 0x23;
+                else if (p == "home") keyCode = 0x24;
+                else if (p == "insert" || p == "ins") keyCode = 0x2D;
+                else if (p.size() >= 2 && p[0] == 'f') {
+                    int num = std::atoi(p.substr(1).c_str());
+                    if (num >= 1 && num <= 12) {
+                        keyCode = 0x70 + (num - 1);
+                    }
+                }
+            }
+        }
+    }
+    
+    return keyCode != 0;
+}
+
+static bool widgetMatchesContext(const Widget* widget, const std::string& context) {
+    if (context.empty() || context == "any" || context == "*") return true;
+    if (!widget) return false;
+    
+    if (context[0] == '#') {
+        return widget->id.size() == context.size() - 1 && 
+               widget->id.compare(0, widget->id.size(), context.data() + 1, context.size() - 1) == 0;
+    }
+    
+    if (context[0] == '.') {
+        std::string_view targetClass(context.data() + 1, context.size() - 1);
+        std::string_view className(widget->className);
+        size_t pos = 0;
+        while (true) {
+            pos = className.find(targetClass, pos);
+            if (pos == std::string_view::npos) break;
+            
+            bool leftOk = (pos == 0 || std::isspace(static_cast<unsigned char>(className[pos - 1])));
+            bool rightOk = (pos + targetClass.size() == className.size() || 
+                            std::isspace(static_cast<unsigned char>(className[pos + targetClass.size()])));
+            if (leftOk && rightOk) return true;
+            pos += 1;
+        }
+        return false;
+    }
+    
+    return widget->type == context;
+}
+
+static Widget* findFocusedWidgetHelper(Widget* w) {
+    if (!w || !w->visible) return nullptr;
+    for (auto& child : w->children) {
+        Widget* f = findFocusedWidgetHelper(child.get());
+        if (f) return f;
+    }
+    if (w->focused) return w;
+    return nullptr;
+}
+
+Widget* Application::focusedWidget() {
+    return findFocusedWidgetHelper(root_.get());
+}
+
+void Application::registerAction(const std::string& name, ActionCallback callback) {
+    actionHandlers_[name] = std::move(callback);
+}
+
+void Application::addKeymap(const std::string& jsonContent) {
+    try {
+        auto j = nlohmann::json::parse(jsonContent);
+        if (j.is_array()) {
+            for (const auto& item : j) {
+                std::string context = "";
+                if (item.contains("context") && item["context"].is_string()) {
+                    context = item["context"].get<std::string>();
+                }
+                
+                if (item.contains("bindings") && item["bindings"].is_object()) {
+                    for (auto& el : item["bindings"].items()) {
+                        std::string keyStr = el.key();
+                        std::string actionName = el.value().get<std::string>();
+                        
+                        int keyCode = 0;
+                        int modifiers = MOD_NONE;
+                        if (parseKeyStroke(keyStr, keyCode, modifiers)) {
+                            keymapEntries_.push_back({keyCode, modifiers, context, actionName});
+                        }
+                    }
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to parse keymap JSON: " << e.what() << std::endl;
+    }
+}
+
+bool Application::loadKeymap(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    addKeymap(buffer.str());
+    return true;
+}
+
 bool Application::dispatchAction(const std::string& name) {
     if (name.empty()) return false;
+    
+    auto it = actionHandlers_.find(name);
+    if (it != actionHandlers_.end() && it->second) {
+        it->second(*this, name);
+        requestRedraw();
+        return true;
+    }
+    
     for (auto& binding : actionBindings_) {
         if (binding.name == name && binding.callback) {
             binding.callback(*this, binding.name);
@@ -2728,8 +2911,40 @@ bool Application::dispatchAction(const std::string& name) {
     }
     return false;
 }
+
 bool Application::dispatchKeyAction(int keyCode, int modifiers) {
     if (keyCode == 0) return false;
+    
+    // 1. Locate focused widget
+    Widget* startWidget = focusedWidget();
+    
+    // 2. Walk up the parent chain and try to trigger a keymap entry matching keyCode + modifiers
+    Widget* current = startWidget;
+    while (current != nullptr) {
+        for (const auto& entry : keymapEntries_) {
+            if (entry.keyCode == keyCode && (entry.modifiers & modifiers) == entry.modifiers) {
+                if (widgetMatchesContext(current, entry.context)) {
+                    if (dispatchAction(entry.actionName)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        current = current->parent;
+    }
+    
+    // 3. Fallback: try global keymap entries (context empty or "any" or "*")
+    for (const auto& entry : keymapEntries_) {
+        if (entry.keyCode == keyCode && (entry.modifiers & modifiers) == entry.modifiers) {
+            if (entry.context.empty() || entry.context == "any" || entry.context == "*") {
+                if (dispatchAction(entry.actionName)) {
+                    return true;
+                }
+            }
+        }
+    }
+    
+    // 4. Fallback 2: Check traditional hardcoded actionBindings_ to preserve FFI mappings
     for (auto& binding : actionBindings_) {
         if (binding.keyCode == keyCode &&
             (binding.modifiers & modifiers) == binding.modifiers &&
@@ -2739,6 +2954,7 @@ bool Application::dispatchKeyAction(int keyCode, int modifiers) {
             return true;
         }
     }
+    
     return false;
 }
 void Application::addRoute(const std::string& path, RouteBuilder builder) {

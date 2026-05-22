@@ -92,13 +92,26 @@ std::vector<std::string> StyleSheet::splitDeclarations(const std::string& body) 
     return declarations;
 }
 
-static bool hasClassName(const std::string& className, const std::string& wanted) {
-    std::istringstream classes(className);
-    std::string cls;
-    while (classes >> cls) {
-        if (cls == wanted) return true;
+static bool hasClassName(std::string_view className, std::string_view wanted) {
+    size_t pos = 0;
+    while (pos < className.size()) {
+        while (pos < className.size() && std::isspace((unsigned char)className[pos])) pos++;
+        if (pos >= className.size()) break;
+        size_t start = pos;
+        while (pos < className.size() && !std::isspace((unsigned char)className[pos])) pos++;
+        if (className.substr(start, pos - start) == wanted) return true;
     }
     return false;
+}
+
+static bool equalIgnoreCase(std::string_view a, std::string_view b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static std::string trimLocal(const std::string& s) {
@@ -127,9 +140,9 @@ static void splitSelectorChain(const std::string& selector,
 static std::vector<std::string> splitSelectorListLocal(const std::string& selectorList);
 
 static bool matchCompoundSelector(const std::string& compound,
-                                  const std::string& className,
-                                  const std::string& id,
-                                  const std::string& type) {
+                                  std::string_view className,
+                                  std::string_view id,
+                                  std::string_view type) {
     std::string s = trimLocal(compound);
     if (s.empty() || s == "*") return s == "*";
 
@@ -197,7 +210,7 @@ static bool matchCompoundSelector(const std::string& compound,
         }
     }
 
-    if (!requiredType.empty() && requiredType != lowerAscii(type)) return false;
+    if (!requiredType.empty() && !equalIgnoreCase(requiredType, type)) return false;
     if (!requiredId.empty() && requiredId != id) return false;
     for (const auto& cls : requiredClasses) {
         if (cls.empty() || !hasClassName(className, cls)) return false;
@@ -398,12 +411,16 @@ static float parseHslPercent(const std::string& token) {
     return std::clamp(value, 0.0f, 1.0f);
 }
 
-std::string StyleSheet::cacheKey(const std::string& className,
-                                 const std::string& id,
-                                 const std::string& type,
-                                 const std::vector<CSSSelectorNode>& ancestors) {
-    std::string key;
-    key.reserve(className.size() + id.size() + type.size() + ancestors.size() * 12 + 3);
+void StyleSheet::buildCacheKey(std::string& key,
+                               std::string_view className,
+                               std::string_view id,
+                               std::string_view type,
+                               const std::vector<CSSSelectorNode>& ancestors) {
+    key.clear();
+    size_t needed = className.size() + id.size() + type.size() + ancestors.size() * 24 + 4;
+    if (key.capacity() < needed) {
+        key.reserve(needed * 2);
+    }
     key += className;
     key.push_back('\x1f');
     key += id;
@@ -417,22 +434,21 @@ std::string StyleSheet::cacheKey(const std::string& className,
         key.push_back('\x1f');
         key += ancestor.type;
     }
-    return key;
 }
 
 bool StyleSheet::selectorMatches(const std::string& selector,
-                                 const std::string& className,
-                                 const std::string& id,
-                                 const std::string& type,
+                                 std::string_view className,
+                                 std::string_view id,
+                                 std::string_view type,
                                  std::string* pseudo) {
     static const std::vector<CSSSelectorNode> noAncestors;
     return selectorMatches(selector, className, id, type, noAncestors, pseudo);
 }
 
 bool StyleSheet::selectorMatches(const std::string& selector,
-                                 const std::string& className,
-                                 const std::string& id,
-                                 const std::string& type,
+                                 std::string_view className,
+                                 std::string_view id,
+                                 std::string_view type,
                                  const std::vector<CSSSelectorNode>& ancestors,
                                  std::string* pseudo) {
     std::string s = trim(selector);
@@ -483,11 +499,14 @@ bool StyleSheet::selectorMatches(const std::string& selector,
     return true;
 }
 
-void StyleSheet::appendClassTokens(const std::string& className, std::vector<std::string>& out) {
-    std::istringstream classes(className);
-    std::string cls;
-    while (classes >> cls) {
-        out.push_back(cls);
+void StyleSheet::appendClassTokens(std::string_view className, std::vector<std::string>& out) {
+    size_t pos = 0;
+    while (pos < className.size()) {
+        while (pos < className.size() && std::isspace((unsigned char)className[pos])) pos++;
+        if (pos >= className.size()) break;
+        size_t start = pos;
+        while (pos < className.size() && !std::isspace((unsigned char)className[pos])) pos++;
+        out.push_back(std::string(className.substr(start, pos - start)));
     }
 }
 
@@ -933,27 +952,49 @@ static bool applyCSSWideProperty(Style& target,
                                  const Style* parentStyle,
                                  const Style& initialStyle);
 
-Style StyleSheet::resolve(const std::string& className,
-                          const std::string& id,
-                          const std::string& type) const {
+Style StyleSheet::resolve(std::string_view className,
+                          std::string_view id,
+                          std::string_view type) const {
     static const std::vector<CSSSelectorNode> noAncestors;
     return resolve(className, id, type, noAncestors);
 }
 
-Style StyleSheet::resolve(const std::string& className,
-                          const std::string& id,
-                          const std::string& type,
+Style StyleSheet::resolve(std::string_view className,
+                          std::string_view id,
+                          std::string_view type,
                           const std::vector<CSSSelectorNode>& ancestors) const {
     return resolve(className, id, type, ancestors, nullptr);
 }
 
-Style StyleSheet::resolve(const std::string& className,
-                          const std::string& id,
-                          const std::string& type,
+static void appendInt(std::string& s, int value) {
+    if (value == 0) {
+        s.push_back('0');
+        return;
+    }
+    char buf[32];
+    char* p = buf + 31;
+    *p = '\0';
+    bool neg = value < 0;
+    unsigned int uval = neg ? -(unsigned int)value : (unsigned int)value;
+    while (uval > 0) {
+        *--p = '0' + (uval % 10);
+        uval /= 10;
+    }
+    if (neg) {
+        *--p = '-';
+    }
+    s.append(p);
+}
+
+Style StyleSheet::resolve(std::string_view className,
+                          std::string_view id,
+                          std::string_view type,
                           const std::vector<CSSSelectorNode>& ancestors,
                           const Style* parentStyle) const {
     const auto* inheritedCustomProperties = parentStyle ? &parentStyle->customProperties : nullptr;
-    std::string key = cacheKey(className, id, type, ancestors);
+    thread_local std::string tlsKey;
+    std::string& key = tlsKey;
+    buildCacheKey(key, className, id, type, ancestors);
     if (inheritedCustomProperties && !inheritedCustomProperties->empty()) {
         std::vector<std::pair<std::string, std::string>> inherited(
             inheritedCustomProperties->begin(), inheritedCustomProperties->end());
@@ -968,7 +1009,7 @@ Style StyleSheet::resolve(const std::string& className,
     if (parentStyle) {
         key.push_back('\x1c');
         auto appendFloat = [&key](float value) {
-            key += std::to_string((int)std::round(value * 1000.0f));
+            appendInt(key, (int)std::round(value * 1000.0f));
             key.push_back(',');
         };
         auto appendColor = [&](const Color& color) {
@@ -979,9 +1020,12 @@ Style StyleSheet::resolve(const std::string& className,
         };
         appendColor(parentStyle->color);
         appendFloat(parentStyle->fontSize);
-        key += std::to_string((int)parentStyle->fontWeight) + ",";
-        key += std::to_string((int)parentStyle->fontStyle) + ",";
-        key += std::to_string((int)parentStyle->textAlign) + ",";
+        appendInt(key, (int)parentStyle->fontWeight);
+        key.push_back(',');
+        appendInt(key, (int)parentStyle->fontStyle);
+        key.push_back(',');
+        appendInt(key, (int)parentStyle->textAlign);
+        key.push_back(',');
         appendFloat(parentStyle->lineHeight);
         key += parentStyle->fontFamily;
         key.push_back(',');
@@ -1116,14 +1160,14 @@ Style StyleSheet::resolve(const std::string& className,
     if (resolvedCache_.size() >= FLUXUI_STYLE_CACHE_SIZE) {
         resolvedCache_.clear();
     }
-    resolvedCache_[std::move(key)] = style;
+    resolvedCache_[key] = style;
 #endif
     return style;
 }
 
-void StyleSheet::collectCandidateRules(const std::string& className,
-                                       const std::string& id,
-                                       const std::string& type,
+void StyleSheet::collectCandidateRules(std::string_view className,
+                                       std::string_view id,
+                                       std::string_view type,
                                        std::vector<size_t>& out) const {
     out.clear();
     out.reserve(universalRuleIndex_.size() + 8);
@@ -1135,7 +1179,7 @@ void StyleSheet::collectCandidateRules(const std::string& className,
     append(universalRuleIndex_);
 
     if (!id.empty()) {
-        auto it = idRuleIndex_.find(id);
+        auto it = idRuleIndex_.find(std::string(id));
         if (it != idRuleIndex_.end()) append(it->second);
     }
 
@@ -1146,7 +1190,7 @@ void StyleSheet::collectCandidateRules(const std::string& className,
         if (it != classRuleIndex_.end()) append(it->second);
     }
 
-    std::string lowerType = lowerAscii(type);
+    std::string lowerType = lowerAscii(std::string(type));
     if (!lowerType.empty()) {
         auto it = typeRuleIndex_.find(lowerType);
         if (it != typeRuleIndex_.end()) append(it->second);
@@ -1515,14 +1559,13 @@ static bool applyCSSWideProperty(Style& target,
 }
 
 void StyleSheet::applyUserAgentDefaults(Style& style,
-                                        const std::string& type,
+                                        std::string_view type,
                                         const std::vector<CSSSelectorNode>& ancestors) {
-    std::string t = lowerAscii(type);
+    std::string t = lowerAscii(std::string(type));
     constexpr float medium = 16.0f;
-    auto isSectioning = [](const std::string& nodeType) {
-        std::string lower = lowerAscii(nodeType);
-        return lower == "article" || lower == "aside" ||
-               lower == "nav" || lower == "section";
+    auto isSectioning = [](std::string_view nodeType) {
+        return equalIgnoreCase(nodeType, "article") || equalIgnoreCase(nodeType, "aside") ||
+               equalIgnoreCase(nodeType, "nav") || equalIgnoreCase(nodeType, "section");
     };
     auto block = [&]() {
         style.display = Display::Block;

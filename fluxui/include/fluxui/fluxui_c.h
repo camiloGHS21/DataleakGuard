@@ -139,6 +139,12 @@ FLUXUI_API uint64_t fluxui_app_add_action(FluxUIApp* app,
                                           void* user_data);
 FLUXUI_API void fluxui_app_remove_action(FluxUIApp* app, uint64_t action_id);
 FLUXUI_API int fluxui_app_dispatch_action(FluxUIApp* app, const char* name);
+FLUXUI_API void fluxui_app_register_action(FluxUIApp* app,
+                                           const char* name,
+                                           FluxUIActionCallback callback,
+                                           void* user_data);
+FLUXUI_API int fluxui_app_load_keymap(FluxUIApp* app, const char* path);
+FLUXUI_API void fluxui_app_add_keymap(FluxUIApp* app, const char* json_content);
 FLUXUI_API void fluxui_app_add_route(FluxUIApp* app,
                                      const char* path,
                                      FluxUIRouteCallback callback,

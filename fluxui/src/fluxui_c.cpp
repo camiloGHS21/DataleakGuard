@@ -305,6 +305,26 @@ int fluxui_app_dispatch_action(FluxUIApp* app, const char* name) {
     return app->app.dispatchAction(safe_cstr(name)) ? 1 : 0;
 }
 
+void fluxui_app_register_action(FluxUIApp* app,
+                               const char* name,
+                               FluxUIActionCallback callback,
+                               void* user_data) {
+    if (!app || !name || !callback) return;
+    app->app.registerAction(safe_cstr(name), [app, callback, user_data](Application&, const std::string& dispatchedName) {
+        callback(app, dispatchedName.c_str(), user_data);
+    });
+}
+
+int fluxui_app_load_keymap(FluxUIApp* app, const char* path) {
+    if (!app || !path) return 0;
+    return app->app.loadKeymap(safe_cstr(path)) ? 1 : 0;
+}
+
+void fluxui_app_add_keymap(FluxUIApp* app, const char* json_content) {
+    if (!app || !json_content) return;
+    app->app.addKeymap(safe_cstr(json_content));
+}
+
 void fluxui_app_add_route(FluxUIApp* app,
                           const char* path,
                           FluxUIRouteCallback callback,

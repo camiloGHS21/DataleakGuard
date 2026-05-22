@@ -1,6 +1,7 @@
 #include "fluxui/FluxUI.h"
 #include <chrono>
 #include "embedded_font_atlas.h"
+#include <fstream>
 #include "embedded_theme.h"
 #include <algorithm>
 #include <array>
@@ -16,6 +17,34 @@
 #ifdef _WIN32
 #include <windows.h>
 #endif
+static std::atomic<size_t> g_allocation_count{0};
+static std::atomic<size_t> g_allocated_bytes{0};
+static bool g_tracking_allocations = false;
+static size_t g_allocation_sizes[100];
+static std::atomic<size_t> g_recorded_allocs{0};
+
+void* operator new(size_t size) {
+    if (g_tracking_allocations) {
+        size_t idx = g_recorded_allocs.fetch_add(1, std::memory_order_relaxed);
+        if (idx < 100) {
+            g_allocation_sizes[idx] = size;
+        }
+        g_allocation_count.fetch_add(1, std::memory_order_relaxed);
+        g_allocated_bytes.fetch_add(size, std::memory_order_relaxed);
+    }
+    void* p = malloc(size);
+    if (!p) throw std::bad_alloc();
+    return p;
+}
+
+void operator delete(void* p) noexcept {
+    free(p);
+}
+
+void operator delete(void* p, size_t) noexcept {
+    free(p);
+}
+
 using namespace FluxUI;
 static bool uiDirty = true;
 static bool scannerRunning = false;
@@ -537,6 +566,205 @@ static void buildSettings(Widget* content) {
     addTableRow(privacy, "table-row", "Low-risk telemetry", "30 days", "Endpoints", "IT Ops");
     addTableRow(privacy, "table-row", "PII masking", "Enabled", "Reports", "Compliance");
 }
+static void runKeymapBenchmark(Application& app) {
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "         FLUXUI KEYMAP BUBBLING BENCHMARK" << std::endl;
+    std::cout << "==================================================" << std::endl;
+
+    // 1. Register simulated actions
+    for (int i = 0; i < 100; ++i) {
+        std::string actionName = "action:simulated_" + std::to_string(i);
+        app.registerAction(actionName, [](Application&, const std::string&) {});
+    }
+
+    // Add keymap bindings
+    std::stringstream ss;
+    ss << "[";
+    for (int i = 0; i < 100; ++i) {
+        if (i > 0) ss << ",";
+        ss << "{\n";
+        ss << "  \"context\": \".context-level-" << i << "\",\n";
+        ss << "  \"bindings\": {\n";
+        ss << "    \"ctrl-shift-alt-" << (char)('a' + (i % 26)) << "\": \"action:simulated_" << i << "\"\n";
+        ss << "  }\n";
+        ss << "}";
+    }
+    ss << "]";
+    app.addKeymap(ss.str());
+
+    // 2. Build nested widget hierarchy (100 levels)
+    Widget* current = app.root();
+    for (int i = 0; i < 100; ++i) {
+        auto* next = current->add<Panel>("panel-level-" + std::to_string(i));
+        next->className = "context-level-" + std::to_string(i);
+        current = next;
+    }
+    current->focused = true;
+
+    std::cout << "Widget Tree Depth: 100" << std::endl;
+    std::cout << "Registered Keymap Entry Contexts: 100" << std::endl;
+    std::cout << "Simulating 100,000 keystroke dispatches..." << std::endl;
+
+    // Test a keystroke that matches context-level-99:
+    // "ctrl-shift-alt-v" (for 99 % 26 = 21 -> 'a'+21 = 'v')
+    int testKeyCode = 'V';
+    int testModifiers = MOD_CTRL | MOD_SHIFT | MOD_ALT;
+
+    auto t_start = std::chrono::high_resolution_clock::now();
+    constexpr int iterations = 100000;
+    int successCount = 0;
+    for (int i = 0; i < iterations; ++i) {
+        if (app.dispatchKeyAction(testKeyCode, testModifiers)) {
+            successCount++;
+        }
+    }
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double durationMs = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    double avgUs = (durationMs * 1000.0) / iterations;
+
+    std::cout << "Benchmark complete." << std::endl;
+    std::cout << "Total time: " << durationMs << " ms for " << iterations << " iterations" << std::endl;
+    std::cout << "Average latency per key dispatch: " << avgUs << " microseconds" << std::endl;
+    std::cout << "Bubbling lookup resolved: " << (successCount > 0 ? "YES" : "NO") << std::endl;
+    if (avgUs < 1000.0) {
+        std::cout << "STATUS: PASS (Latency is sub-millisecond: " << avgUs << " us < 1000 us)" << std::endl;
+    } else {
+        std::cout << "STATUS: FAIL (Latency is not sub-millisecond)" << std::endl;
+    }
+    std::cout << "==================================================\n" << std::endl;
+}
+
+static void runStyleResolutionBenchmark(Application& app) {
+    std::cout << "\n==================================================" << std::endl;
+    std::cout << "      FLUXUI STYLE RESOLUTION BENCHMARK" << std::endl;
+    std::cout << "==================================================" << std::endl;
+
+    // 1. Create a stylesheet with complex nested rules
+    StyleSheet sheet;
+    sheet.parse(R"(
+        * { box-sizing: border-box; display: block; }
+        .container { padding: 20px; background-color: #f0f0f0; }
+        .sidebar { width: 250px; background-color: #333; color: white; }
+        .content { flex: 1; padding: 10px; }
+        .button { display: flex; padding: 10px 20px; border-radius: 4px; background-color: #007acc; color: #ffffff; }
+        .button:hover { background-color: #005999; }
+        .button:active { background-color: #004080; }
+        #main-title { font-size: 24px; font-weight: bold; color: #222; }
+        div { margin: 5px; }
+        panel { display: flex; flex-direction: row; }
+        .text-input { border: 1px solid #ccc; padding: 8px; }
+        .text-input:focus { border-color: #007acc; }
+    )");
+
+    // 2. Build a tree of widgets (e.g. 150 widgets)
+    std::vector<Widget*> allWidgets;
+    Widget* root = app.root();
+    root->type = "div";
+    root->className = "container";
+    root->id = "app-root";
+    allWidgets.push_back(root);
+
+    // Create a branch of nested panels, text and buttons
+    Widget* current = root;
+    for (int i = 0; i < 50; ++i) {
+        Panel* panel = current->add<Panel>("sidebar");
+        panel->id = "panel_" + std::to_string(i);
+        allWidgets.push_back(panel);
+        
+        Text* txt = panel->add<Text>("Item " + std::to_string(i), "content");
+        txt->id = "text_" + std::to_string(i);
+        allWidgets.push_back(txt);
+
+        Button* btn = panel->add<Button>("Click Me", "button");
+        btn->id = "btn_" + std::to_string(i);
+        allWidgets.push_back(btn);
+
+        current = panel; // nest further
+    }
+
+    std::ofstream log("style_benchmark.log");
+    auto log_print = [&](const std::string& msg) {
+        std::cout << msg << std::endl;
+        log << msg << std::endl;
+    };
+
+    log_print("Total Widgets in tree: " + std::to_string(allWidgets.size()));
+    log_print("Resolving styles 1,000 times (simulating 1,000 full-tree recalculations)...");
+
+    auto t_start = std::chrono::high_resolution_clock::now();
+    constexpr int iterations = 1000;
+    // Warm up the style cache (populates the cache and runs all misses)
+    log_print("  Warming up style cache (Iteration 0)...");
+    g_tracking_allocations = false;
+    root->markStyleDirtyRecursive();
+    root->resolveStyles(sheet);
+
+    g_allocation_count = 0;
+    g_allocated_bytes = 0;
+    g_recorded_allocs = 0;
+    g_tracking_allocations = true;
+    try {
+        for (int it = 0; it < iterations; ++it) {
+            if (it % 1000 == 0) {
+                log_print("  Iteration " + std::to_string(it) + "...");
+            }
+            // Force complete style dirtying
+            root->markStyleDirtyRecursive();
+            
+            // Resolve styles recursively
+            root->resolveStyles(sheet);
+        }
+        g_tracking_allocations = false;
+        log_print("  Finished loop successfully!");
+        log_print("Total heap allocations during benchmark loop: " + std::to_string(g_allocation_count.load()) + " (" + std::to_string(g_allocated_bytes.load()) + " bytes)");
+
+        size_t limit = std::min((size_t)g_recorded_allocs.load(), (size_t)20);
+        log_print("First " + std::to_string(limit) + " allocation sizes:");
+        for (size_t i = 0; i < limit; ++i) {
+            log_print("  [" + std::to_string(i) + "]: " + std::to_string(g_allocation_sizes[i]) + " bytes");
+        }
+    } catch (const std::exception& e) {
+        g_tracking_allocations = false;
+        log_print("  CRASHED WITH EXCEPTION: " + std::string(e.what()));
+        return;
+    } catch (...) {
+        g_tracking_allocations = false;
+        log_print("  CRASHED WITH UNKNOWN EXCEPTION!");
+        return;
+    }
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double durationMs = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    double avgUsPerFrame = (durationMs * 1000.0) / iterations;
+    double avgUsPerWidget = (durationMs * 1000.0) / (iterations * allWidgets.size());
+
+    log_print("Style Resolution Benchmark complete.");
+    log_print("Total time: " + std::to_string(durationMs) + " ms for " + std::to_string(iterations) + " iterations");
+    log_print("Average latency per full tree style resolution: " + std::to_string(avgUsPerFrame) + " microseconds");
+    log_print("Average latency per single widget style resolution: " + std::to_string(avgUsPerWidget) + " microseconds");
+    
+    // Quick sanity checks
+    bool correctness = true;
+    for (Widget* w : allWidgets) {
+        if (w->type == "button") {
+            if (!w->computedStyle.hasColor ||
+                w->computedStyle.color.r != 1.0f ||
+                w->computedStyle.color.g != 1.0f ||
+                w->computedStyle.color.b != 1.0f ||
+                w->computedStyle.color.a != 1.0f) {
+                correctness = false;
+            }
+        }
+    }
+    log_print("Correctness verification: " + std::string(correctness ? "PASS" : "FAIL"));
+    
+    if (avgUsPerWidget < 1.0) {
+        log_print("STATUS: PASS (Sub-microsecond style resolution: " + std::to_string(avgUsPerWidget) + " us < 1.0 us)");
+    } else {
+        log_print("STATUS: WARN (Style resolution latency is " + std::to_string(avgUsPerWidget) + " us)");
+    }
+    log_print("==================================================\n");
+}
+
 static bool parseBackendArg(const std::string& value, RenderBackendType& backend) {
     std::string normalized = value;
     std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
@@ -589,11 +817,14 @@ int main(int argc, char** argv) {
     RenderBackendType requestedBackend = Renderer::defaultBackend();
     bool backendSpecified = false;
     bool probeVulkan = false;
+    bool runBenchmark = false;
     int frameLimit = 0;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i] ? argv[i] : "";
         if (arg == "--probe-vulkan") {
             probeVulkan = true;
+        } else if (arg == "--benchmark") {
+            runBenchmark = true;
         } else if (arg.rfind("--backend=", 0) == 0) {
             if (!parseBackendArg(arg.substr(10), requestedBackend)) {
                 std::cerr << "Unknown backend: " << arg.substr(10) << std::endl;
@@ -614,6 +845,12 @@ int main(int argc, char** argv) {
     if (!app.init("DataLeak Guard - Enterprise DLP", 1400, 900)) {
         std::cerr << "Failed to initialize application" << std::endl;
         return 1;
+    }
+    if (runBenchmark) {
+        runKeymapBenchmark(app);
+        runStyleResolutionBenchmark(app);
+        app.shutdown();
+        return 0;
     }
     auto t_init = std::chrono::high_resolution_clock::now();
 #if !FLUXUI_SILENT_STARTUP
@@ -661,6 +898,59 @@ int main(int argc, char** argv) {
     });
     app.navigate("/dashboard");
     buildRetainedShell(app);
+
+    // Register actions for the JSON-driven keymap
+    app.registerAction("nav:dashboard", [](Application& a, const std::string&) {
+        a.navigate("/dashboard");
+    });
+    app.registerAction("nav:scanner", [](Application& a, const std::string&) {
+        a.navigate("/scanner");
+    });
+    app.registerAction("nav:alerts", [](Application& a, const std::string&) {
+        a.navigate("/alerts");
+    });
+    app.registerAction("nav:rules", [](Application& a, const std::string&) {
+        a.navigate("/rules");
+    });
+    app.registerAction("nav:reports", [](Application& a, const std::string&) {
+        a.navigate("/reports");
+    });
+    app.registerAction("nav:settings", [](Application& a, const std::string&) {
+        a.navigate("/settings");
+    });
+    app.registerAction("policy:toggle-block", [](Application& a, const std::string&) {
+        blockMode = !blockMode;
+        shell.syncPosture();
+        a.requestRedraw();
+        std::cout << "[DataLeak Guard] Policy mode toggled. Block mode: " << (blockMode ? "ACTIVE" : "DISABLED") << std::endl;
+    });
+    app.registerAction("input:blur-search", [](Application& a, const std::string&) {
+        Widget* w = a.focusedWidget();
+        if (w) {
+            w->focused = false;
+            a.requestRedraw();
+            std::cout << "[DataLeak Guard] Blurred focused element" << std::endl;
+        }
+    });
+    app.registerAction("input:clear-search", [](Application& a, const std::string&) {
+        Widget* w = a.focusedWidget();
+        if (w && w->type == "text-input") {
+            auto* input = static_cast<TextInput*>(w);
+            input->value.clear();
+            a.requestRedraw();
+            std::cout << "[DataLeak Guard] Cleared search input" << std::endl;
+        }
+    });
+
+    // Load keymap.json
+    if (app.loadKeymap("keymap.json")) {
+#if !FLUXUI_SILENT_STARTUP
+        std::cout << "Loaded keymap.json successfully" << std::endl;
+#endif
+    } else {
+        std::cerr << "Warning: Failed to load keymap.json" << std::endl;
+    }
+
     auto t_routes = std::chrono::high_resolution_clock::now();
 #if !FLUXUI_SILENT_STARTUP
     std::cout << "[TIMER] routes and shell took: " << std::chrono::duration<float, std::milli>(t_routes - t_fonts).count() << " ms" << std::endl;

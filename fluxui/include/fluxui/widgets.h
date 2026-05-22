@@ -760,6 +760,10 @@ public:
                      ActionCallback callback);
     void removeAction(size_t actionId);
     bool dispatchAction(const std::string& name);
+    void registerAction(const std::string& name, ActionCallback callback);
+    void addKeymap(const std::string& jsonContent);
+    bool loadKeymap(const std::string& path);
+    Widget* focusedWidget();
     bool dispatchKeyAction(int keyCode, int modifiers);
     void addRoute(const std::string& path, RouteBuilder builder);
     void setNotFoundRoute(RouteBuilder builder);
@@ -809,6 +813,14 @@ private:
     };
     std::vector<ActionBinding> actionBindings_;
     size_t nextActionId_ = 1;
+    struct KeymapEntry {
+        int keyCode = 0;
+        int modifiers = 0;
+        std::string context;
+        std::string actionName;
+    };
+    std::vector<KeymapEntry> keymapEntries_;
+    std::unordered_map<std::string, ActionCallback> actionHandlers_;
     void processEvents();
     void updateCursor(CursorType cursor);
 };

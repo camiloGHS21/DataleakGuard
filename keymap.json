@@ -1,0 +1,21 @@
+[
+  {
+    "context": "any",
+    "bindings": {
+      "ctrl-1": "nav:dashboard",
+      "ctrl-2": "nav:scanner",
+      "ctrl-3": "nav:alerts",
+      "ctrl-4": "nav:rules",
+      "ctrl-5": "nav:reports",
+      "ctrl-6": "nav:settings",
+      "ctrl-t": "policy:toggle-block",
+      "escape": "input:blur-search"
+    }
+  },
+  {
+    "context": ".search-box",
+    "bindings": {
+      "escape": "input:clear-search"
+    }
+  }
+]

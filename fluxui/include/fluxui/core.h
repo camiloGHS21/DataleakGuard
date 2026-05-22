@@ -278,6 +278,117 @@ private:
     }
 };
 
+struct FastCustomProperties {
+    std::unique_ptr<std::unordered_map<std::string, std::string>> map;
+
+    FastCustomProperties() = default;
+
+    FastCustomProperties(const FastCustomProperties& other) {
+        if (other.map && !other.map->empty()) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>(*other.map);
+        }
+    }
+
+    FastCustomProperties& operator=(const FastCustomProperties& other) {
+        if (this == &other) return *this;
+        if (!other.map || other.map->empty()) {
+            map.reset();
+        } else {
+            if (map) {
+                *map = *other.map;
+            } else {
+                map = std::make_unique<std::unordered_map<std::string, std::string>>(*other.map);
+            }
+        }
+        return *this;
+    }
+
+    FastCustomProperties(FastCustomProperties&& other) noexcept : map(std::move(other.map)) {}
+
+    FastCustomProperties& operator=(FastCustomProperties&& other) noexcept {
+        map = std::move(other.map);
+        return *this;
+    }
+
+    FastCustomProperties(const std::unordered_map<std::string, std::string>& other) {
+        if (!other.empty()) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>(other);
+        }
+    }
+
+    FastCustomProperties& operator=(const std::unordered_map<std::string, std::string>& other) {
+        if (other.empty()) {
+            map.reset();
+        } else {
+            if (map) {
+                *map = other;
+            } else {
+                map = std::make_unique<std::unordered_map<std::string, std::string>>(other);
+            }
+        }
+        return *this;
+    }
+
+    operator std::unordered_map<std::string, std::string>&() {
+        if (!map) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>();
+        }
+        return *map;
+    }
+
+    operator const std::unordered_map<std::string, std::string>&() const {
+        static const std::unordered_map<std::string, std::string> emptyMap;
+        return map ? *map : emptyMap;
+    }
+
+    auto begin() {
+        if (!map) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>();
+        }
+        return map->begin();
+    }
+
+    auto begin() const {
+        static const std::unordered_map<std::string, std::string> emptyMap;
+        return map ? map->begin() : emptyMap.begin();
+    }
+
+    auto end() {
+        if (!map) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>();
+        }
+        return map->end();
+    }
+
+    auto end() const {
+        static const std::unordered_map<std::string, std::string> emptyMap;
+        return map ? map->end() : emptyMap.end();
+    }
+
+    size_t size() const { return map ? map->size() : 0; }
+    bool empty() const { return !map || map->empty(); }
+    void clear() { map.reset(); }
+
+    std::string& operator[](const std::string& key) {
+        if (!map) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>();
+        }
+        return (*map)[key];
+    }
+
+    auto find(const std::string& key) {
+        if (!map) {
+            map = std::make_unique<std::unordered_map<std::string, std::string>>();
+        }
+        return map->find(key);
+    }
+
+    auto find(const std::string& key) const {
+        static const std::unordered_map<std::string, std::string> emptyMap;
+        return map ? map->find(key) : emptyMap.find(key);
+    }
+};
+
 // ============================================================
 //  Style (all CSS properties for a widget)
 // ============================================================
@@ -373,7 +484,7 @@ struct Style {
     bool hasTextTransform = false;
     bool hasWordBreak = false;
     bool hasVerticalAlign = false;
-    std::unordered_map<std::string, std::string> customProperties;
+    FastCustomProperties customProperties;
 
     // Interaction
     CursorType cursor = CursorType::Default;

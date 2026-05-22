@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include <string>
+#include <string_view>
 #include <vector>
 #include <unordered_map>
 #include <sstream>
@@ -28,9 +29,9 @@ struct CSSRule {
 };
 
 struct CSSSelectorNode {
-    std::string className;
-    std::string id;
-    std::string type;
+    std::string_view className;
+    std::string_view id;
+    std::string_view type;
 };
 
 enum class CSSRuleBucket {
@@ -63,16 +64,16 @@ public:
     bool setViewportSize(float width, float height);
 
     // Get style for a specific class/id/type
-    Style resolve(const std::string& className,
-                  const std::string& id = "",
-                  const std::string& type = "") const;
-    Style resolve(const std::string& className,
-                  const std::string& id,
-                  const std::string& type,
+    Style resolve(std::string_view className,
+                  std::string_view id = "",
+                  std::string_view type = "") const;
+    Style resolve(std::string_view className,
+                  std::string_view id,
+                  std::string_view type,
                   const std::vector<CSSSelectorNode>& ancestors) const;
-    Style resolve(const std::string& className,
-                  const std::string& id,
-                  const std::string& type,
+    Style resolve(std::string_view className,
+                  std::string_view id,
+                  std::string_view type,
                   const std::vector<CSSSelectorNode>& ancestors,
                   const Style* parentStyle) const;
     std::string resolveValue(const std::string& value,
@@ -100,34 +101,35 @@ private:
                                      const std::unordered_map<std::string, std::string>* customProperties,
                                      bool* valid = nullptr,
                                      int depth = 0) const;
-    static std::string cacheKey(const std::string& className,
-                                const std::string& id,
-                                const std::string& type,
-                                const std::vector<CSSSelectorNode>& ancestors = {});
+    static void buildCacheKey(std::string& key,
+                              std::string_view className,
+                              std::string_view id,
+                              std::string_view type,
+                              const std::vector<CSSSelectorNode>& ancestors = {});
     static std::string trim(const std::string& s);
     static std::vector<std::string> splitTopLevel(const std::string& value, char delimiter);
     static bool selectorMatches(const std::string& selector,
-                                const std::string& className,
-                                const std::string& id,
-                                const std::string& type,
+                                std::string_view className,
+                                std::string_view id,
+                                std::string_view type,
                                 std::string* pseudo = nullptr);
     static bool selectorMatches(const std::string& selector,
-                                const std::string& className,
-                                const std::string& id,
-                                const std::string& type,
+                                std::string_view className,
+                                std::string_view id,
+                                std::string_view type,
                                 const std::vector<CSSSelectorNode>& ancestors,
                                 std::string* pseudo = nullptr);
     static int selectorSpecificity(const std::string& selector);
     static CSSRuleIndexKey selectorIndexKey(const std::string& selector);
-    static void appendClassTokens(const std::string& className, std::vector<std::string>& out);
+    static void appendClassTokens(std::string_view className, std::vector<std::string>& out);
     static std::vector<std::string> splitDeclarations(const std::string& body);
     static bool stripImportant(std::string& value);
     static void applyUserAgentDefaults(Style& style,
-                                       const std::string& type,
+                                       std::string_view type,
                                        const std::vector<CSSSelectorNode>& ancestors);
-    void collectCandidateRules(const std::string& className,
-                               const std::string& id,
-                               const std::string& type,
+    void collectCandidateRules(std::string_view className,
+                               std::string_view id,
+                               std::string_view type,
                                std::vector<size_t>& out) const;
     bool mediaQueryMatches(const std::string& query) const;
     static void mergeHoverProperty(Style& style, const std::string& name, const std::string& value);

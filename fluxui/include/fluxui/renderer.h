@@ -77,6 +77,12 @@ struct FontData {
     std::vector<unsigned char> sourceData;
     std::vector<unsigned char> atlasPixels;
     bool loaded = false;
+
+    // RLE prebaked atlas parameters for lazy decompression
+    const uint16_t* runLengths = nullptr;
+    const unsigned char* runValues = nullptr;
+    size_t runCount = 0;
+    size_t pixelCount = 0;
 };
 
 // ============================================================
@@ -326,6 +332,7 @@ private:
     bool decodeImageBytes(const unsigned char* data, int dataSize,
                           ImageData& image, bool forceSvg = false);
     bool ensureImageTexture(const std::string& key, ImageData& image);
+    bool ensureFontTexture(FontData& font);
     void setupQuad();
     void setupTextBuffer();
     void cacheUniformLocations();

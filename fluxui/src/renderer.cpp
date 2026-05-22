@@ -3180,12 +3180,44 @@ void trimVulkanDynamicPool(VulkanRendererState& state,
     }
 }
 
+static bool decompressFontAtlas(FontData& font) {
+    if (!font.atlasPixels.empty()) {
+        return true;
+    }
+    if (font.runCount == 0 || !font.runLengths || !font.runValues || font.pixelCount == 0) {
+        return false;
+    }
+    font.atlasPixels.resize(font.pixelCount);
+    size_t out = 0;
+    for (size_t i = 0; i < font.runCount; ++i) {
+        size_t count = font.runLengths[i];
+        if (count == 0 || out + count > font.pixelCount) {
+            font.atlasPixels.clear();
+            return false;
+        }
+        std::fill(font.atlasPixels.begin() + static_cast<std::ptrdiff_t>(out),
+                  font.atlasPixels.begin() + static_cast<std::ptrdiff_t>(out + count),
+                  font.runValues[i]);
+        out += count;
+    }
+    if (out != font.pixelCount) {
+        font.atlasPixels.clear();
+        return false;
+    }
+    return true;
+}
+
 bool ensureVulkanFontTexture(VulkanRendererState& state,
                              const std::string& key,
                              FontData& font) {
     auto existing = state.fontTextures.find(key);
     if (existing != state.fontTextures.end()) {
         return existing->second.descriptorSet != VK_NULL_HANDLE;
+    }
+    if (font.atlasPixels.empty()) {
+        if (!decompressFontAtlas(font)) {
+            return false;
+        }
     }
     if (font.atlasPixels.empty() || font.atlasWidth <= 0 || font.atlasHeight <= 0) {
         return false;
@@ -3326,6 +3358,8 @@ bool ensureVulkanFontTexture(VulkanRendererState& state,
     vkUpdateDescriptorSets(state.device, 1, &write, 0, nullptr);
 
     state.fontTextures.emplace(key, texture);
+    font.atlasPixels.clear();
+    font.atlasPixels.shrink_to_fit();
     return true;
 }
 
@@ -5333,34 +5367,10 @@ bool Renderer::loadPrebakedFontAtlas(const std::string& name, float pixelSize,
         font.glyphs[i] = glyphs[i];
     }
 
-    font.atlasPixels.resize(pixelCount);
-    size_t out = 0;
-    for (size_t i = 0; i < runCount; ++i) {
-        size_t count = runLengths[i];
-        if (count == 0 || out + count > pixelCount) {
-            return false;
-        }
-        std::fill(font.atlasPixels.begin() + static_cast<std::ptrdiff_t>(out),
-                  font.atlasPixels.begin() + static_cast<std::ptrdiff_t>(out + count),
-                  runValues[i]);
-        out += count;
-    }
-    if (out != pixelCount) {
-        return false;
-    }
-
-    if (activeBackend_ != RenderBackendType::Vulkan &&
-        activeBackend_ != RenderBackendType::Compatibility) {
-        glGenTextures(1, &font.textureId);
-        glBindTexture(GL_TEXTURE_2D, font.textureId);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, font.atlasWidth, font.atlasHeight,
-                     0, GL_RED, GL_UNSIGNED_BYTE, font.atlasPixels.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
+    font.runLengths = runLengths;
+    font.runValues = runValues;
+    font.runCount = runCount;
+    font.pixelCount = pixelCount;
 
     fonts_[name] = std::move(font);
     textMeasureCache_.clear();
@@ -5534,6 +5544,44 @@ bool Renderer::ensureImageTexture(const std::string& key, ImageData& image) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     return image.textureId != 0;
+}
+
+bool Renderer::ensureFontTexture(FontData& font) {
+    if (!font.loaded) return false;
+    if (activeBackend_ == RenderBackendType::Compatibility) {
+        return true;
+    }
+    if (activeBackend_ == RenderBackendType::Vulkan) {
+        return true;
+    }
+
+    if (font.textureId != 0) return true;
+
+    if (font.atlasPixels.empty()) {
+        if (!decompressFontAtlas(font)) {
+            return false;
+        }
+    }
+
+    if (font.atlasPixels.empty() || font.atlasWidth <= 0 || font.atlasHeight <= 0) {
+        return false;
+    }
+
+    glGenTextures(1, &font.textureId);
+    glBindTexture(GL_TEXTURE_2D, font.textureId);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, font.atlasWidth, font.atlasHeight,
+                 0, GL_RED, GL_UNSIGNED_BYTE, font.atlasPixels.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Clear CPU-side copy of the atlas pixels once uploaded to OpenGL to free system memory
+    font.atlasPixels.clear();
+    font.atlasPixels.shrink_to_fit();
+
+    return font.textureId != 0;
 }
 
 // Platform-specific FreeType hinting to match Chromium/Blink perfectly
@@ -6067,6 +6115,7 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
     std::string resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontPtr = getFontForSize(resolvedFontName, fontSize);
     if (!fontPtr || !fontPtr->loaded) return;
+    if (!ensureFontTexture(*fontPtr)) return;
     auto& font = *fontPtr;
 
     float logicalFontHeight = font.fontSize / std::max(1.0f, dpiScale_);
