@@ -4469,7 +4469,7 @@ void Renderer::drawSoftwareText(const std::string& text,
     flushRectBatch();
 
     float renderFontSize = std::max(1.0f, fontSize * std::max(0.01f, scale_));
-    std::string resolvedFontName = resolveFontName(fontName, weight);
+    const std::string& resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontPtr = getFontForSize(resolvedFontName, renderFontSize);
     if (!fontPtr || !fontPtr->loaded) {
         return;
@@ -4855,7 +4855,7 @@ void Renderer::drawVulkanText(const std::string& text,
         return;
     }
 
-    std::string resolvedFontName = resolveFontName(fontName, weight);
+    const std::string& resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontPtr = getFontForSize(resolvedFontName, fontSize);
     if (!fontPtr || !fontPtr->loaded) {
         return;
@@ -5838,23 +5838,25 @@ FontData* Renderer::getFontForSize(const std::string& fontName, float fontSize) 
     return &it->second;
 }
 
-std::string Renderer::resolveFontName(const std::string& fontName, FontWeight weight) const {
-    std::string baseName = fontName.empty() ? "default" : fontName;
-    auto baseIt = fonts_.find(baseName);
-    if ((baseIt == fonts_.end() || !baseIt->second.loaded) && baseName != "default") {
-        baseName = "default";
+const std::string& Renderer::resolveFontName(const std::string& fontName, FontWeight weight) const {
+    static const std::string s_defaultFont = "default";
+    const std::string* baseName = fontName.empty() ? &s_defaultFont : &fontName;
+    auto baseIt = fonts_.find(*baseName);
+    if ((baseIt == fonts_.end() || !baseIt->second.loaded) && *baseName != "default") {
+        baseIt = fonts_.find(s_defaultFont);
     }
+    const std::string& resolvedBase = (baseIt != fonts_.end()) ? baseIt->first : s_defaultFont;
 
     if (weight != FontWeight::Bold) {
-        return baseName;
+        return resolvedBase;
     }
 
-    std::string boldName = baseName + "-bold";
+    std::string boldName = resolvedBase + "-bold";
     auto boldIt = fonts_.find(boldName);
     if (boldIt != fonts_.end() && boldIt->second.loaded) {
-        return boldName;
+        return boldIt->first;
     }
-    return baseName;
+    return resolvedBase;
 }
 
 const FontData* Renderer::findFontForMeasure(const std::string& fontName, float fontSize) const {
@@ -6112,7 +6114,7 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
         return;
     }
 
-    std::string resolvedFontName = resolveFontName(fontName, weight);
+    const std::string& resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontPtr = getFontForSize(resolvedFontName, fontSize);
     if (!fontPtr || !fontPtr->loaded) return;
     if (!ensureFontTexture(*fontPtr)) return;
@@ -6306,7 +6308,7 @@ void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const C
                                float fontSize, TextAlign align, FontWeight weight,
                                const std::string& fontName,
                                FontStyle style) {
-    std::string resolvedFontName = resolveFontName(fontName, weight);
+    const std::string& resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontForRect = getFontForSize(resolvedFontName, fontSize);
 
     float x = rect.x;

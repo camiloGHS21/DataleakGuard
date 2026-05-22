@@ -341,7 +341,7 @@ private:
     bool buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size);
     FontData* getFontForSize(const std::string& fontName, float fontSize);
     const FontData* findFontForMeasure(const std::string& fontName, float fontSize) const;
-    std::string resolveFontName(const std::string& fontName, FontWeight weight) const;
+    const std::string& resolveFontName(const std::string& fontName, FontWeight weight) const;
     bool initVulkan(void* windowHandle);
     void shutdownVulkan();
     bool beginVulkanFrame(int windowWidth, int windowHeight);

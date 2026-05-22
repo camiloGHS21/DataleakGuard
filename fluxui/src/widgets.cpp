@@ -366,8 +366,9 @@ static float usedBorderHorizontal(const Style& style) {
 static float usedBorderVertical(const Style& style) {
     return usedBorderTopWidth(style) + usedBorderBottomWidth(style);
 }
-static std::string renderFontName(const Style& style) {
-    return style.fontFamily.empty() ? "default" : style.fontFamily;
+static const std::string& renderFontName(const Style& style) {
+    static const std::string s_defaultFont = "default";
+    return style.fontFamily.empty() ? s_defaultFont : style.fontFamily;
 }
 static std::string applyTextTransform(const std::string& text, TextTransform transform) {
     if (transform == TextTransform::None || text.empty()) return text;
@@ -806,7 +807,15 @@ void Widget::layoutFlexChildren() {
     int visibleCount = 0;
     float totalFlexGrow = 0;
     float fixedSize = 0;
-    std::vector<float> measuredMain(children.size(), 0.0f);
+    float measuredMainStack[64];
+    std::vector<float> measuredMainHeap;
+    float* measuredMain = measuredMainStack;
+    if (children.size() > 64) {
+        measuredMainHeap.resize(children.size(), 0.0f);
+        measuredMain = measuredMainHeap.data();
+    } else {
+        std::fill(measuredMainStack, measuredMainStack + children.size(), 0.0f);
+    }
     if (!isRow) {
         for (size_t i = 0; i < children.size(); i++) {
             auto& child = children[i];
@@ -1525,17 +1534,24 @@ void Text::render(Renderer& renderer) {
     } else if (computedStyle.verticalAlign == VerticalAlign::Sub) {
         textRect.y += computedStyle.fontSize * 0.22f;
     }
-    std::string displayText = applyTextTransform(content, computedStyle.textTransform);
-    std::string fontName = renderFontName(computedStyle);
-    if (computedStyle.textOverflow == TextOverflow::Ellipsis) {
-        displayText = ellipsizeText(renderer, displayText, textRect.w,
-                                    computedStyle.fontSize, fontName);
+    const std::string* displayTextPtr = &content;
+    std::string transformedText;
+    if (computedStyle.textTransform != TextTransform::None && !content.empty()) {
+        transformedText = applyTextTransform(content, computedStyle.textTransform);
+        displayTextPtr = &transformedText;
     }
-    renderer.drawTextInRect(displayText, textRect, textColor,
+    const std::string& fontName = renderFontName(computedStyle);
+    std::string ellipsizedText;
+    if (computedStyle.textOverflow == TextOverflow::Ellipsis) {
+        ellipsizedText = ellipsizeText(renderer, *displayTextPtr, textRect.w,
+                                      computedStyle.fontSize, fontName);
+        displayTextPtr = &ellipsizedText;
+    }
+    renderer.drawTextInRect(*displayTextPtr, textRect, textColor,
                             computedStyle.fontSize, computedStyle.textAlign,
                             computedStyle.fontWeight, fontName,
                             computedStyle.fontStyle);
-    renderTextDecoration(renderer, displayText, textRect, textColor, computedStyle);
+    renderTextDecoration(renderer, *displayTextPtr, textRect, textColor, computedStyle);
     renderChildren(renderer);
 }
 void Button::layout(const Rect& parentBounds) {
@@ -1618,14 +1634,21 @@ void Button::render(Renderer& renderer) {
         std::max(0.0f, drawBounds.w - s.padding.horizontal()),
         std::max(0.0f, drawBounds.h - s.padding.vertical())
     };
-    std::string displayLabel = applyTextTransform(label, s.textTransform);
-    std::string fontName = renderFontName(s);
-    if (s.textOverflow == TextOverflow::Ellipsis) {
-        displayLabel = ellipsizeText(renderer, displayLabel, textRect.w, s.fontSize, fontName);
+    const std::string* displayLabelPtr = &label;
+    std::string transformedLabel;
+    if (s.textTransform != TextTransform::None && !label.empty()) {
+        transformedLabel = applyTextTransform(label, s.textTransform);
+        displayLabelPtr = &transformedLabel;
     }
-    renderer.drawTextInRect(displayLabel, textRect, textColor,
+    const std::string& fontName = renderFontName(s);
+    std::string ellipsizedLabel;
+    if (s.textOverflow == TextOverflow::Ellipsis) {
+        ellipsizedLabel = ellipsizeText(renderer, *displayLabelPtr, textRect.w, s.fontSize, fontName);
+        displayLabelPtr = &ellipsizedLabel;
+    }
+    renderer.drawTextInRect(*displayLabelPtr, textRect, textColor,
                             s.fontSize, s.textAlign, s.fontWeight, fontName);
-    renderTextDecoration(renderer, displayLabel, textRect, textColor, s);
+    renderTextDecoration(renderer, *displayLabelPtr, textRect, textColor, s);
     renderChildren(renderer);
     if (hasScale) {
         renderer.popScale();
@@ -1884,18 +1907,22 @@ void TextInput::render(Renderer& renderer) {
         };
         renderer.drawRoundedRect(selectionRect, Color(0.54f, 0.70f, 0.98f, 0.56f), BorderRadius(2));
     }
-    std::string displayText = value.empty() ? placeholder : value;
-    displayText = applyTextTransform(displayText, s.textTransform);
+    const std::string* displayTextPtr = value.empty() ? &placeholder : &value;
+    std::string transformedText;
+    if (s.textTransform != TextTransform::None && !displayTextPtr->empty()) {
+        transformedText = applyTextTransform(*displayTextPtr, s.textTransform);
+        displayTextPtr = &transformedText;
+    }
     Color textColor = value.empty() ? Color(0.81f, 0.84f, 0.87f, 0.56f) : s.color;
     Rect textRect = {
         clipRect.x - scrollX_,
         bounds.y,
-        std::max(clipRect.w + scrollX_, renderer.measureText(displayText, s.fontSize, fontName).x + 8.0f),
+        std::max(clipRect.w + scrollX_, renderer.measureText(*displayTextPtr, s.fontSize, fontName).x + 8.0f),
         bounds.h
     };
-    renderer.drawTextInRect(displayText, textRect, textColor,
+    renderer.drawTextInRect(*displayTextPtr, textRect, textColor,
                             s.fontSize, TextAlign::Left, s.fontWeight, fontName);
-    renderTextDecoration(renderer, displayText, textRect, textColor, s);
+    renderTextDecoration(renderer, *displayTextPtr, textRect, textColor, s);
     if (focused) {
         float caretX = clipRect.x + renderer.measureText(value.substr(0, caretIndex_), s.fontSize, fontName).x - scrollX_;
         float cursorH = std::min(bounds.h - 12.0f, s.fontSize + 8.0f);
