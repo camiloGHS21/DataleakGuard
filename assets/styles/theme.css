@@ -48,25 +48,30 @@ button:active {
 }
 
 input {
-    background-color: rgba(237, 243, 248, 0.055);
-    border: 1px solid var(--stroke);
-    border-radius: 8px;
-    color: var(--text);
+    background-color: #202124;
+    border: 1px solid #5f6368;
+    border-radius: 4px;
+    color: #e8eaed;
     cursor: text;
-    outline: none;
-    outline-offset: 2px;
-    transition: background-color 140ms ease, border-color 140ms ease;
+    font-size: 13.333px;
+    line-height: normal;
+    outline: 1px solid transparent;
+    outline-offset: -2px;
+    padding: 1px 6px 1px 6px;
+    text-transform: none;
+    box-shadow: none;
 }
 
 input:hover {
-    background-color: rgba(237, 243, 248, 0.085);
-    border-color: var(--stroke-strong);
+    background-color: #202124;
+    border-color: #8e9299;
 }
 
 input:focus {
-    background-color: rgba(237, 243, 248, 0.10);
-    border-color: rgba(138, 180, 248, 0.72);
-    outline: 2px solid rgba(138, 180, 248, 0.36);
+    background-color: #202124;
+    border-color: #8ab4f8;
+    outline: 1px solid #8ab4f8;
+    outline-offset: -2px;
 }
 
 /* Sidebar */
@@ -285,10 +290,11 @@ input:focus {
 .search-box {
     width: 356px;
     height: 42px;
-    padding: 0 18px 0 18px;
-    font-size: 14px;
-    line-height: 1.2;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.14);
+    padding: 1px 26px 1px 8px;
+    font-size: 13.333px;
+    line-height: normal;
+    border-radius: 4px;
+    box-shadow: none;
 }
 
 .main-scroll {
@@ -527,8 +533,8 @@ input:focus {
 }
 
 .btn:focus {
-    outline: 2px solid rgba(138, 180, 248, 0.42);
-    outline-offset: 2px;
+    outline: 1px solid #8ab4f8;
+    outline-offset: 0;
 }
 
 .btn-icon {
@@ -921,8 +927,8 @@ input:focus {
 .builder-input {
     width: 100%;
     height: 40px;
-    padding: 0 14px 0 14px;
-    font-size: 13px;
+    padding: 1px 8px 1px 8px;
+    font-size: 13.333px;
 }
 
 .rule-row {

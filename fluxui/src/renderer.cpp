@@ -6334,9 +6334,10 @@ void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const C
 
 Vec2 Renderer::measureText(const std::string& text, float fontSize,
                             const std::string& fontName) const {
+    const std::string& resolvedFontName = resolveFontName(fontName, FontWeight::Normal);
 #if FLUXUI_TEXT_MEASURE_CACHE_SIZE > 0
     uint64_t key = 14695981039346656037ULL;
-    for (char c : fontName) {
+    for (char c : resolvedFontName) {
         key ^= static_cast<uint8_t>(c);
         key *= 1099511628211ULL;
     }
@@ -6358,7 +6359,7 @@ Vec2 Renderer::measureText(const std::string& text, float fontSize,
     }
 #endif
 
-    const FontData* fontPtr = findFontForMeasure(fontName, fontSize);
+    const FontData* fontPtr = findFontForMeasure(resolvedFontName, fontSize);
     if (!fontPtr || !fontPtr->loaded) return {0, fontSize};
     auto& font = *fontPtr;
     float logicalFontHeight = font.fontSize / std::max(1.0f, dpiScale_);

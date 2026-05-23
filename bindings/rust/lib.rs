@@ -123,7 +123,21 @@ pub mod sys {
             parent: *mut FluxUIWidget,
             class_name: *const c_char,
         ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_fieldset(
+            parent: *mut FluxUIWidget,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
         pub fn fluxui_widget_add_text(
+            parent: *mut FluxUIWidget,
+            text: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_label(
+            parent: *mut FluxUIWidget,
+            text: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_legend(
             parent: *mut FluxUIWidget,
             text: *const c_char,
             class_name: *const c_char,
@@ -136,6 +150,51 @@ pub mod sys {
         pub fn fluxui_widget_add_text_input(
             parent: *mut FluxUIWidget,
             placeholder: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_input(
+            parent: *mut FluxUIWidget,
+            input_type: *const c_char,
+            placeholder: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_password_input(
+            parent: *mut FluxUIWidget,
+            placeholder: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_textarea(
+            parent: *mut FluxUIWidget,
+            placeholder: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_checkbox(
+            parent: *mut FluxUIWidget,
+            checked: i32,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_radio(
+            parent: *mut FluxUIWidget,
+            checked: i32,
+            group: *const c_char,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_range(
+            parent: *mut FluxUIWidget,
+            value: f32,
+            min: f32,
+            max: f32,
+            step: f32,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_select(
+            parent: *mut FluxUIWidget,
+            class_name: *const c_char,
+        ) -> *mut FluxUIWidget;
+        pub fn fluxui_widget_add_option(
+            parent: *mut FluxUIWidget,
+            label: *const c_char,
+            value: *const c_char,
             class_name: *const c_char,
         ) -> *mut FluxUIWidget;
         pub fn fluxui_widget_add_icon(
@@ -214,6 +273,15 @@ pub mod sys {
             widget: *mut FluxUIWidget,
             placeholder: *const c_char,
         );
+        pub fn fluxui_text_input_set_type(widget: *mut FluxUIWidget, input_type: *const c_char);
+        pub fn fluxui_checkbox_set_checked(widget: *mut FluxUIWidget, checked: i32);
+        pub fn fluxui_checkbox_get_checked(widget: *mut FluxUIWidget) -> i32;
+        pub fn fluxui_radio_set_checked(widget: *mut FluxUIWidget, checked: i32);
+        pub fn fluxui_radio_get_checked(widget: *mut FluxUIWidget) -> i32;
+        pub fn fluxui_range_set_value(widget: *mut FluxUIWidget, value: f32);
+        pub fn fluxui_range_get_value(widget: *mut FluxUIWidget) -> f32;
+        pub fn fluxui_select_set_selected_index(widget: *mut FluxUIWidget, index: u32);
+        pub fn fluxui_select_get_selected_index(widget: *mut FluxUIWidget) -> u32;
         pub fn fluxui_icon_set_glyph(widget: *mut FluxUIWidget, glyph: *const c_char);
         pub fn fluxui_progress_bar_set_value(widget: *mut FluxUIWidget, progress: f32);
         pub fn fluxui_progress_bar_set_color(widget: *mut FluxUIWidget, color: FluxUIColor);
@@ -470,11 +538,34 @@ impl Widget {
         }))
     }
 
+    pub fn add_fieldset(self, class_name: &str) -> Result<Option<Widget>> {
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_fieldset(self.raw.as_ptr(), class_name.as_ptr())
+        }))
+    }
+
     pub fn add_text(self, text: &str, class_name: &str) -> Result<Option<Widget>> {
         let text = cstring(text)?;
         let class_name = cstring(class_name)?;
         Ok(widget_from_ptr(unsafe {
             sys::fluxui_widget_add_text(self.raw.as_ptr(), text.as_ptr(), class_name.as_ptr())
+        }))
+    }
+
+    pub fn add_label(self, text: &str, class_name: &str) -> Result<Option<Widget>> {
+        let text = cstring(text)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_label(self.raw.as_ptr(), text.as_ptr(), class_name.as_ptr())
+        }))
+    }
+
+    pub fn add_legend(self, text: &str, class_name: &str) -> Result<Option<Widget>> {
+        let text = cstring(text)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_legend(self.raw.as_ptr(), text.as_ptr(), class_name.as_ptr())
         }))
     }
 
@@ -493,6 +584,115 @@ impl Widget {
             sys::fluxui_widget_add_text_input(
                 self.raw.as_ptr(),
                 placeholder.as_ptr(),
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_input(
+        self,
+        input_type: &str,
+        placeholder: &str,
+        class_name: &str,
+    ) -> Result<Option<Widget>> {
+        let input_type = cstring(input_type)?;
+        let placeholder = cstring(placeholder)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_input(
+                self.raw.as_ptr(),
+                input_type.as_ptr(),
+                placeholder.as_ptr(),
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_password_input(self, placeholder: &str, class_name: &str) -> Result<Option<Widget>> {
+        let placeholder = cstring(placeholder)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_password_input(
+                self.raw.as_ptr(),
+                placeholder.as_ptr(),
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_textarea(self, placeholder: &str, class_name: &str) -> Result<Option<Widget>> {
+        let placeholder = cstring(placeholder)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_textarea(
+                self.raw.as_ptr(),
+                placeholder.as_ptr(),
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_checkbox(self, checked: bool, class_name: &str) -> Result<Option<Widget>> {
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_checkbox(
+                self.raw.as_ptr(),
+                if checked { 1 } else { 0 },
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_radio(self, checked: bool, group: &str, class_name: &str) -> Result<Option<Widget>> {
+        let group = cstring(group)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_radio(
+                self.raw.as_ptr(),
+                if checked { 1 } else { 0 },
+                group.as_ptr(),
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_range(
+        self,
+        value: f32,
+        min: f32,
+        max: f32,
+        step: f32,
+        class_name: &str,
+    ) -> Result<Option<Widget>> {
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_range(
+                self.raw.as_ptr(),
+                value,
+                min,
+                max,
+                step,
+                class_name.as_ptr(),
+            )
+        }))
+    }
+
+    pub fn add_select(self, class_name: &str) -> Result<Option<Widget>> {
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_select(self.raw.as_ptr(), class_name.as_ptr())
+        }))
+    }
+
+    pub fn add_option(self, label: &str, value: &str, class_name: &str) -> Result<Option<Widget>> {
+        let label = cstring(label)?;
+        let value = cstring(value)?;
+        let class_name = cstring(class_name)?;
+        Ok(widget_from_ptr(unsafe {
+            sys::fluxui_widget_add_option(
+                self.raw.as_ptr(),
+                label.as_ptr(),
+                value.as_ptr(),
                 class_name.as_ptr(),
             )
         }))
@@ -572,6 +772,42 @@ impl Widget {
 
     pub fn bounds(self) -> Rect {
         unsafe { sys::fluxui_widget_get_bounds(self.raw.as_ptr()) }
+    }
+
+    pub fn set_text_input_type(self, input_type: &str) -> Result<()> {
+        let input_type = cstring(input_type)?;
+        unsafe { sys::fluxui_text_input_set_type(self.raw.as_ptr(), input_type.as_ptr()) }
+        Ok(())
+    }
+
+    pub fn set_checked(self, checked: bool) {
+        unsafe {
+            sys::fluxui_checkbox_set_checked(self.raw.as_ptr(), if checked { 1 } else { 0 });
+            sys::fluxui_radio_set_checked(self.raw.as_ptr(), if checked { 1 } else { 0 });
+        }
+    }
+
+    pub fn checked(self) -> bool {
+        unsafe {
+            sys::fluxui_checkbox_get_checked(self.raw.as_ptr()) != 0 ||
+                sys::fluxui_radio_get_checked(self.raw.as_ptr()) != 0
+        }
+    }
+
+    pub fn set_range_value(self, value: f32) {
+        unsafe { sys::fluxui_range_set_value(self.raw.as_ptr(), value) }
+    }
+
+    pub fn range_value(self) -> f32 {
+        unsafe { sys::fluxui_range_get_value(self.raw.as_ptr()) }
+    }
+
+    pub fn set_selected_index(self, index: u32) {
+        unsafe { sys::fluxui_select_set_selected_index(self.raw.as_ptr(), index) }
+    }
+
+    pub fn selected_index(self) -> u32 {
+        unsafe { sys::fluxui_select_get_selected_index(self.raw.as_ptr()) }
     }
 
     pub fn set_on_click_raw(

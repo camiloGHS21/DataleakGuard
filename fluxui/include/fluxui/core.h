@@ -216,6 +216,20 @@ enum class PointerEvents { Auto, None };
 enum class WordBreak { Normal, BreakAll, KeepAll, BreakWord };
 enum class ObjectFit { Fill, Contain, Cover, None, ScaleDown };
 enum class VerticalAlign { Baseline, Sub, Super, Middle, Top, Bottom, TextTop, TextBottom };
+enum class Appearance {
+    Auto,
+    None,
+    TextField,
+    SearchField,
+    PushButton,
+    Button,
+    Checkbox,
+    Radio,
+    Menulist,
+    Textarea,
+    SliderHorizontal,
+    SquareButton
+};
 
 // ============================================================
 //  CSS Value (supports px, %, auto)
@@ -422,6 +436,8 @@ struct Style {
     float aspectRatio = 0;  // 0 means auto
     ObjectFit objectFit = ObjectFit::Fill;
     bool hasObjectFit = false;
+    Appearance appearance = Appearance::Auto;
+    bool hasAppearance = false;
     Vec2 objectPosition = {0.5f, 0.5f};
     Vec2 objectPositionOffset = {0.0f, 0.0f};
     bool hasObjectPosition = false;

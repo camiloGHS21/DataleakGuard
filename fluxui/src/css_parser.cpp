@@ -1561,6 +1561,9 @@ static bool applyCSSWideProperty(Style& target,
     } else if (name == "object-fit") {
         target.objectFit = source.objectFit;
         target.hasObjectFit = source.hasObjectFit;
+    } else if (name == "appearance" || name == "-webkit-appearance") {
+        target.appearance = source.appearance;
+        target.hasAppearance = source.hasAppearance;
     } else if (name == "object-position") {
         target.objectPosition = source.objectPosition;
         target.objectPositionOffset = source.objectPositionOffset;
@@ -1600,6 +1603,26 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.margin = EdgeInsets(marginEm * medium, 0.0f, marginEm * medium, 0.0f);
         style.fontWeight = FontWeight::Bold;
         style.hasFontWeight = true;
+    };
+    auto smallControl = [&]() {
+        style.margin = EdgeInsets(0.0f);
+        style.fontSize = 13.333f;
+        style.hasFontSize = true;
+        style.fontWeight = FontWeight::Normal;
+        style.hasFontWeight = true;
+        style.fontStyle = FontStyle::Normal;
+        style.hasFontStyle = true;
+        style.lineHeight = 1.2f;
+        style.hasLineHeight = true;
+        style.letterSpacing = 0.0f;
+        style.hasLetterSpacing = true;
+        style.wordSpacing = 0.0f;
+        style.hasWordSpacing = true;
+        style.textTransform = TextTransform::None;
+        style.hasTextTransform = true;
+        style.textAlign = TextAlign::Left;
+        style.hasTextAlign = true;
+        style.display = Display::InlineBlock;
     };
 
     if (t == "head" || t == "meta" || t == "title" || t == "link" ||
@@ -1746,28 +1769,110 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         block();
     } else if (t == "span") {
         inlineBox();
-    } else if (t == "button") {
+    } else if (t == "label") {
+        inlineBox();
         style.cursor = CursorType::Default;
-        style.display = Display::Flex;
+    } else if (t == "fieldset") {
+        block();
+        style.margin = EdgeInsets(0.0f, 2.0f, 0.0f, 2.0f);
+        style.padding = EdgeInsets(5.6f, 12.0f, 10.0f, 12.0f);
+        style.border = Border(2.0f, Color(0.63f, 0.63f, 0.63f, 1.0f));
+        style.minWidth = CSSValue::px(0.0f);
+    } else if (t == "legend") {
+        block();
+        style.padding = EdgeInsets(0.0f, 2.0f, 0.0f, 2.0f);
+    } else if (t == "button") {
+        smallControl();
+        style.appearance = Appearance::Auto;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Default;
         style.textAlign = TextAlign::Center;
         style.hasTextAlign = true;
-        style.padding = EdgeInsets(2.0f, 6.0f, 3.0f, 6.0f);
-        style.border = Border(2.0f, Color(0.63f, 0.63f, 0.63f, 1.0f));
+        style.padding = EdgeInsets(1.0f, 6.0f, 1.0f, 6.0f);
+        style.border = Border(2.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
+        style.borderRadius = BorderRadius(2.0f);
         style.backgroundColor = Color(0.94f, 0.94f, 0.94f, 1.0f);
         style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
         style.hasColor = true;
-        style.lineHeight = 1.2f;
-        style.hasLineHeight = true;
     } else if (t == "input") {
+        smallControl();
+        style.appearance = Appearance::Auto;
+        style.hasAppearance = true;
         style.cursor = CursorType::Text;
-        style.display = Display::InlineBlock;
-        style.padding = EdgeInsets(1.0f);
-        style.border = Border(2.0f, Color(0.62f, 0.62f, 0.62f, 1.0f));
+        style.padding = EdgeInsets(1.0f, 2.0f, 1.0f, 2.0f);
+        style.border = Border(2.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
         style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
         style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
         style.hasColor = true;
-        style.lineHeight = 1.2f;
-        style.hasLineHeight = true;
+    } else if (t == "textarea") {
+        smallControl();
+        style.appearance = Appearance::Auto;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Text;
+        style.whiteSpace = WhiteSpace::PreWrap;
+        style.hasWhiteSpace = true;
+        style.wordBreak = WordBreak::BreakWord;
+        style.hasWordBreak = true;
+        style.fontFamily = "monospace";
+        style.hasFontFamily = true;
+        style.padding = EdgeInsets(2.0f);
+        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
+        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
+        style.hasColor = true;
+    } else if (t == "select") {
+        smallControl();
+        style.appearance = Appearance::Menulist;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Default;
+        style.padding = EdgeInsets(1.0f, 22.0f, 1.0f, 4.0f);
+        style.border = Border(1.0f, Color(0.0f, 0.0f, 0.0f, 1.0f));
+        style.borderRadius = BorderRadius(5.0f);
+        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
+        style.hasColor = true;
+    } else if (t == "option") {
+        smallControl();
+        style.display = Display::Block;
+        style.padding = EdgeInsets(0.0f, 2.0f, 1.0f, 2.0f);
+        style.whiteSpace = WhiteSpace::Pre;
+        style.hasWhiteSpace = true;
+        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
+        style.hasColor = true;
+    } else if (t == "checkbox") {
+        smallControl();
+        style.appearance = Appearance::Checkbox;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Default;
+        style.margin = EdgeInsets(3.0f, 4.0f, 3.0f, 4.0f);
+        style.padding = EdgeInsets(0.0f);
+        style.width = CSSValue::px(13.0f);
+        style.height = CSSValue::px(13.0f);
+        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
+        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+    } else if (t == "radio") {
+        smallControl();
+        style.appearance = Appearance::Radio;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Default;
+        style.margin = EdgeInsets(3.0f, 4.0f, 3.0f, 4.0f);
+        style.padding = EdgeInsets(0.0f);
+        style.width = CSSValue::px(13.0f);
+        style.height = CSSValue::px(13.0f);
+        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
+        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+    } else if (t == "range") {
+        smallControl();
+        style.appearance = Appearance::SliderHorizontal;
+        style.hasAppearance = true;
+        style.cursor = CursorType::Default;
+        style.margin = EdgeInsets(2.0f);
+        style.padding = EdgeInsets(0.0f);
+        style.width = CSSValue::px(129.0f);
+        style.height = CSSValue::px(16.0f);
+        style.border = Border(0.0f, Color(0, 0, 0, 0));
+        style.color = Color(0.565f, 0.565f, 0.565f, 1.0f);
+        style.hasColor = true;
     }
 }
 
@@ -2387,6 +2492,21 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         else if (lower == "scale-down") style.objectFit = ObjectFit::ScaleDown;
         else style.objectFit = ObjectFit::Fill;
         style.hasObjectFit = true;
+    } else if (name == "appearance" || name == "-webkit-appearance") {
+        std::string lower = lowerAscii(value);
+        if (lower == "none") style.appearance = Appearance::None;
+        else if (lower == "textfield" || lower == "text-field") style.appearance = Appearance::TextField;
+        else if (lower == "searchfield" || lower == "search-field") style.appearance = Appearance::SearchField;
+        else if (lower == "push-button") style.appearance = Appearance::PushButton;
+        else if (lower == "button") style.appearance = Appearance::Button;
+        else if (lower == "checkbox") style.appearance = Appearance::Checkbox;
+        else if (lower == "radio") style.appearance = Appearance::Radio;
+        else if (lower == "menulist" || lower == "menulist-button") style.appearance = Appearance::Menulist;
+        else if (lower == "textarea") style.appearance = Appearance::Textarea;
+        else if (lower == "slider-horizontal") style.appearance = Appearance::SliderHorizontal;
+        else if (lower == "square-button") style.appearance = Appearance::SquareButton;
+        else style.appearance = Appearance::Auto;
+        style.hasAppearance = true;
     } else if (name == "object-position") {
         Vec2 position;
         Vec2 offset;

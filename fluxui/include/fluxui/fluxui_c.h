@@ -158,15 +158,51 @@ FLUXUI_API int fluxui_app_render_route(FluxUIApp* app, FluxUIWidget* container);
 FLUXUI_API void fluxui_widget_clear_children(FluxUIWidget* widget);
 FLUXUI_API void fluxui_widget_reserve_children(FluxUIWidget* widget, uint32_t count);
 FLUXUI_API FluxUIWidget* fluxui_widget_add_panel(FluxUIWidget* parent, const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_fieldset(FluxUIWidget* parent, const char* class_name);
 FLUXUI_API FluxUIWidget* fluxui_widget_add_text(FluxUIWidget* parent,
                                                 const char* text,
                                                 const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_label(FluxUIWidget* parent,
+                                                 const char* text,
+                                                 const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_legend(FluxUIWidget* parent,
+                                                  const char* text,
+                                                  const char* class_name);
 FLUXUI_API FluxUIWidget* fluxui_widget_add_button(FluxUIWidget* parent,
                                                   const char* label,
                                                   const char* class_name);
 FLUXUI_API FluxUIWidget* fluxui_widget_add_text_input(FluxUIWidget* parent,
                                                       const char* placeholder,
                                                       const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_input(FluxUIWidget* parent,
+                                                 const char* input_type,
+                                                 const char* placeholder,
+                                                 const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_password_input(FluxUIWidget* parent,
+                                                          const char* placeholder,
+                                                          const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_textarea(FluxUIWidget* parent,
+                                                    const char* placeholder,
+                                                    const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_checkbox(FluxUIWidget* parent,
+                                                    int checked,
+                                                    const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_radio(FluxUIWidget* parent,
+                                                 int checked,
+                                                 const char* group,
+                                                 const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_range(FluxUIWidget* parent,
+                                                 float value,
+                                                 float min,
+                                                 float max,
+                                                 float step,
+                                                 const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_select(FluxUIWidget* parent,
+                                                  const char* class_name);
+FLUXUI_API FluxUIWidget* fluxui_widget_add_option(FluxUIWidget* parent,
+                                                  const char* label,
+                                                  const char* value,
+                                                  const char* class_name);
 FLUXUI_API FluxUIWidget* fluxui_widget_add_icon(FluxUIWidget* parent,
                                                 const char* glyph,
                                                 const char* class_name);
@@ -213,6 +249,15 @@ FLUXUI_API void fluxui_button_set_label(FluxUIWidget* widget, const char* label)
 FLUXUI_API void fluxui_text_input_set_value(FluxUIWidget* widget, const char* value);
 FLUXUI_API const char* fluxui_text_input_get_value(FluxUIWidget* widget);
 FLUXUI_API void fluxui_text_input_set_placeholder(FluxUIWidget* widget, const char* placeholder);
+FLUXUI_API void fluxui_text_input_set_type(FluxUIWidget* widget, const char* input_type);
+FLUXUI_API void fluxui_checkbox_set_checked(FluxUIWidget* widget, int checked);
+FLUXUI_API int fluxui_checkbox_get_checked(FluxUIWidget* widget);
+FLUXUI_API void fluxui_radio_set_checked(FluxUIWidget* widget, int checked);
+FLUXUI_API int fluxui_radio_get_checked(FluxUIWidget* widget);
+FLUXUI_API void fluxui_range_set_value(FluxUIWidget* widget, float value);
+FLUXUI_API float fluxui_range_get_value(FluxUIWidget* widget);
+FLUXUI_API void fluxui_select_set_selected_index(FluxUIWidget* widget, uint32_t index);
+FLUXUI_API uint32_t fluxui_select_get_selected_index(FluxUIWidget* widget);
 FLUXUI_API void fluxui_icon_set_glyph(FluxUIWidget* widget, const char* glyph);
 FLUXUI_API void fluxui_progress_bar_set_value(FluxUIWidget* widget, float progress);
 FLUXUI_API void fluxui_progress_bar_set_color(FluxUIWidget* widget, FluxUIColor color);

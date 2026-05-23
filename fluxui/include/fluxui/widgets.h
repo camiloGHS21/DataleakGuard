@@ -56,6 +56,11 @@ class Panel;
 class Text;
 class Button;
 class TextInput;
+class Checkbox;
+class Radio;
+class RangeInput;
+class Select;
+class Option;
 class Icon;
 class Image;
 class ProgressBar;
@@ -135,6 +140,26 @@ public:
                    std::function<void()> onClick = {});
     TextInput* textInput(const std::string& placeholder = "",
                          const std::string& cls = "");
+    TextInput* passwordInput(const std::string& placeholder = "",
+                             const std::string& cls = "");
+    Checkbox* checkbox(bool checked = false,
+                       const std::string& cls = "",
+                       std::function<void(bool)> onChange = {});
+    Radio* radio(bool checked = false,
+                 const std::string& group = "",
+                 const std::string& cls = "",
+                 std::function<void(bool)> onChange = {});
+    RangeInput* range(float value = 0.5f,
+                      float min = 0.0f,
+                      float max = 1.0f,
+                      float step = 0.01f,
+                      const std::string& cls = "",
+                      std::function<void(float)> onChange = {});
+    Select* select(const std::string& cls = "",
+                   std::function<void(size_t, const std::string&)> onChange = {});
+    Option* option(const std::string& label,
+                   const std::string& value = "",
+                   const std::string& cls = "");
     Icon* addIcon(const std::string& glyph, const std::string& cls = "");
     Icon* icon(const std::string& glyph, const std::string& cls = "");
     Image* image(const std::string& source, const std::string& cls = "");
@@ -162,6 +187,7 @@ public:
     Panel* nav(const std::string& cls = "", size_t reserve = 0);
     Panel* body(const std::string& cls = "", size_t reserve = 0);
     Panel* form(const std::string& cls = "", size_t reserve = 0);
+    Panel* fieldset(const std::string& cls = "", size_t reserve = 0);
     Panel* blockquote(const std::string& cls = "", size_t reserve = 0);
     Panel* ul(const std::string& cls = "", size_t reserve = 0);
     Panel* ol(const std::string& cls = "", size_t reserve = 0);
@@ -171,6 +197,8 @@ public:
     Text* strong(const std::string& content, const std::string& cls = "");
     Text* b(const std::string& content, const std::string& cls = "");
     Text* small(const std::string& content, const std::string& cls = "");
+    Text* label(const std::string& content, const std::string& cls = "");
+    Text* legend(const std::string& content, const std::string& cls = "");
     Text* code(const std::string& content, const std::string& cls = "");
     Text* pre(const std::string& content, const std::string& cls = "");
     Text* h1(const std::string& content, const std::string& cls = "");
@@ -180,6 +208,10 @@ public:
     Text* h5(const std::string& content, const std::string& cls = "");
     Text* h6(const std::string& content, const std::string& cls = "");
     TextInput* input(const std::string& placeholder = "", const std::string& cls = "");
+    TextInput* input(const std::string& type,
+                     const std::string& placeholder,
+                     const std::string& cls);
+    TextInput* textarea(const std::string& placeholder = "", const std::string& cls = "");
     Widget* setId(const std::string& value);
     Widget* classes(const std::string& value);
     Widget* addClass(const std::string& value);
@@ -232,13 +264,26 @@ public:
     void layout(const Rect& parentBounds) override;
     void render(Renderer& renderer) override;
 };
+enum class TextInputType {
+    Text,
+    Password,
+    Search,
+    Email,
+    Url,
+    Tel,
+    Number
+};
 class TextInput : public Widget {
 public:
     std::string value;
     std::string placeholder;
+    TextInputType inputType = TextInputType::Text;
     TextInput() { type = "input"; style.cursor = CursorType::Text; }
     TextInput(const std::string& ph, const std::string& cls = "")
         : placeholder(ph) { type = "input"; className = cls; style.cursor = CursorType::Text; }
+    TextInput* setInputType(TextInputType kind);
+    TextInput* setInputType(const std::string& kind);
+    bool isPassword() const { return inputType == TextInputType::Password; }
     void layout(const Rect& parentBounds) override;
     void update(const InputState& input) override;
     CursorType cursorAt(Vec2 point) const override;
@@ -257,6 +302,79 @@ private:
     size_t selectionStart() const;
     size_t selectionEnd() const;
     Rect clearButtonRect() const;
+};
+class Checkbox : public Widget {
+public:
+    bool checked = false;
+    std::function<void(bool)> onChange;
+    Checkbox() { type = "checkbox"; style.cursor = CursorType::Default; }
+    Checkbox(bool isChecked, const std::string& cls = "")
+        : checked(isChecked) { type = "checkbox"; className = cls; style.cursor = CursorType::Default; }
+    void setChecked(bool value);
+    void layout(const Rect& parentBounds) override;
+    void update(const InputState& input) override;
+    void render(Renderer& renderer) override;
+};
+class Radio : public Widget {
+public:
+    bool checked = false;
+    std::string group;
+    std::function<void(bool)> onChange;
+    Radio() { type = "radio"; style.cursor = CursorType::Default; }
+    Radio(bool isChecked, const std::string& groupName = "", const std::string& cls = "")
+        : checked(isChecked), group(groupName) { type = "radio"; className = cls; style.cursor = CursorType::Default; }
+    void setChecked(bool value);
+    void layout(const Rect& parentBounds) override;
+    void update(const InputState& input) override;
+    void render(Renderer& renderer) override;
+};
+class RangeInput : public Widget {
+public:
+    float value = 0.5f;
+    float min = 0.0f;
+    float max = 1.0f;
+    float step = 0.01f;
+    std::function<void(float)> onChange;
+    RangeInput() { type = "range"; style.cursor = CursorType::Default; }
+    RangeInput(float v, float minValue, float maxValue, float stepValue, const std::string& cls = "")
+        : value(v), min(minValue), max(maxValue), step(stepValue) {
+        type = "range";
+        className = cls;
+        style.cursor = CursorType::Default;
+    }
+    void setValue(float newValue, bool notify = true);
+    void layout(const Rect& parentBounds) override;
+    void update(const InputState& input) override;
+    void render(Renderer& renderer) override;
+private:
+    bool dragging_ = false;
+};
+class Option : public Widget {
+public:
+    std::string label;
+    std::string value;
+    Option() { type = "option"; }
+    Option(const std::string& optionLabel, const std::string& optionValue = "", const std::string& cls = "")
+        : label(optionLabel), value(optionValue.empty() ? optionLabel : optionValue) {
+        type = "option";
+        className = cls;
+    }
+    void layout(const Rect& parentBounds) override;
+    void render(Renderer& renderer) override;
+};
+class Select : public Widget {
+public:
+    size_t selectedIndex = 0;
+    bool expanded = false;
+    std::function<void(size_t, const std::string&)> onChange;
+    Select() { type = "select"; style.cursor = CursorType::Default; }
+    Select(const std::string& cls) { type = "select"; className = cls; style.cursor = CursorType::Default; }
+    void selectIndex(size_t index, bool notify = true);
+    std::string selectedLabel() const;
+    std::string selectedValue() const;
+    void layout(const Rect& parentBounds) override;
+    void update(const InputState& input) override;
+    void render(Renderer& renderer) override;
 };
 class Icon : public Widget {
 public:
@@ -401,6 +519,47 @@ inline Button* Widget::button(const std::string& label,
 inline TextInput* Widget::textInput(const std::string& placeholder, const std::string& cls) {
     return add<TextInput>(placeholder, cls);
 }
+inline TextInput* Widget::passwordInput(const std::string& placeholder, const std::string& cls) {
+    auto* widget = textInput(placeholder, cls);
+    widget->setInputType(TextInputType::Password);
+    return widget;
+}
+inline Checkbox* Widget::checkbox(bool checked,
+                                  const std::string& cls,
+                                  std::function<void(bool)> onChange) {
+    auto* widget = add<Checkbox>(checked, cls);
+    if (onChange) widget->onChange = std::move(onChange);
+    return widget;
+}
+inline Radio* Widget::radio(bool checked,
+                            const std::string& group,
+                            const std::string& cls,
+                            std::function<void(bool)> onChange) {
+    auto* widget = add<Radio>(checked, group, cls);
+    if (onChange) widget->onChange = std::move(onChange);
+    return widget;
+}
+inline RangeInput* Widget::range(float value,
+                                 float min,
+                                 float max,
+                                 float step,
+                                 const std::string& cls,
+                                 std::function<void(float)> onChange) {
+    auto* widget = add<RangeInput>(value, min, max, step, cls);
+    if (onChange) widget->onChange = std::move(onChange);
+    return widget;
+}
+inline Select* Widget::select(const std::string& cls,
+                              std::function<void(size_t, const std::string&)> onChange) {
+    auto* widget = add<Select>(cls);
+    if (onChange) widget->onChange = std::move(onChange);
+    return widget;
+}
+inline Option* Widget::option(const std::string& label,
+                              const std::string& value,
+                              const std::string& cls) {
+    return add<Option>(label, value, cls);
+}
 inline Icon* Widget::addIcon(const std::string& glyph, const std::string& cls) {
     return add<Icon>(glyph, cls);
 }
@@ -484,6 +643,11 @@ inline Panel* Widget::form(const std::string& cls, size_t reserve) {
     widget->type = "form";
     return widget;
 }
+inline Panel* Widget::fieldset(const std::string& cls, size_t reserve) {
+    auto* widget = panel(cls, reserve);
+    widget->type = "fieldset";
+    return widget;
+}
 inline Panel* Widget::blockquote(const std::string& cls, size_t reserve) {
     auto* widget = panel(cls, reserve);
     widget->type = "blockquote";
@@ -529,6 +693,16 @@ inline Text* Widget::small(const std::string& content, const std::string& cls) {
     widget->type = "small";
     return widget;
 }
+inline Text* Widget::label(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "label";
+    return widget;
+}
+inline Text* Widget::legend(const std::string& content, const std::string& cls) {
+    auto* widget = text(content, cls);
+    widget->type = "legend";
+    return widget;
+}
 inline Text* Widget::code(const std::string& content, const std::string& cls) {
     auto* widget = text(content, cls);
     widget->type = "code";
@@ -571,6 +745,18 @@ inline Text* Widget::h6(const std::string& content, const std::string& cls) {
 }
 inline TextInput* Widget::input(const std::string& placeholder, const std::string& cls) {
     return textInput(placeholder, cls);
+}
+inline TextInput* Widget::input(const std::string& type,
+                                const std::string& placeholder,
+                                const std::string& cls) {
+    auto* widget = textInput(placeholder, cls);
+    widget->setInputType(type);
+    return widget;
+}
+inline TextInput* Widget::textarea(const std::string& placeholder, const std::string& cls) {
+    auto* widget = textInput(placeholder, cls);
+    widget->type = "textarea";
+    return widget;
 }
 inline Widget* Widget::setId(const std::string& value) {
     id = value;

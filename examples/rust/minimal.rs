@@ -84,12 +84,23 @@ fn main() -> Result<(), fluxui::Error> {
             justify-content: center; \
             align-items: center; \
             margin-top: 20px; \
+        } \
+        .form-demo { \
+            width: 360px; \
+            display: flex; \
+            flex-direction: column; \
+            gap: 8px; \
+            margin-top: 8px; \
+        } \
+        .form-label { \
+            color: rgba(237, 243, 248, 0.85); \
+            font-size: 13px; \
         }"
     )?;
     
     // Get the root widget of the application
     let root = app.root().ok_or(fluxui::Error::InitFailed)?;
-    root.reserve_children(4);
+    root.reserve_children(5);
     
     // Header section
     let header = root.add_panel("header")?.ok_or(fluxui::Error::InitFailed)?;
@@ -113,6 +124,25 @@ fn main() -> Result<(), fluxui::Error> {
     card2.add_text("FFI Memory Safety", "card-title")?;
     card2.add_text("Safe Rust Wrappers", "subtitle")?;
     card2.add_text("Zero Overhead", "card-value")?;
+
+    // Browser-style form controls using FluxUI's UA defaults.
+    let form = root.add_fieldset("form-demo")?.ok_or(fluxui::Error::InitFailed)?;
+    form.add_legend("Browser controls", "card-title")?;
+    form.add_label("Search", "form-label")?;
+    form.add_input("search", "Search...", "")?;
+    form.add_label("Password", "form-label")?;
+    form.add_password_input("Password", "")?;
+    form.add_label("Notes", "form-label")?;
+    form.add_textarea("Write notes", "")?;
+    form.add_label("Remember device", "form-label")?;
+    form.add_checkbox(true, "")?;
+    form.add_label("Sensitivity", "form-label")?;
+    form.add_range(0.65, 0.0, 1.0, 0.05, "")?;
+    form.add_label("Mode", "form-label")?;
+    let select = form.add_select("")?.ok_or(fluxui::Error::InitFailed)?;
+    select.add_option("Balanced", "balanced", "")?;
+    select.add_option("Strict", "strict", "")?;
+    select.add_option("Audit only", "audit", "")?;
 
     // Close button
     let close = root.add_button("Close Application", "button")?.ok_or(fluxui::Error::InitFailed)?;

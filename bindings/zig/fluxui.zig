@@ -143,8 +143,20 @@ pub const Widget = struct {
         return fromRaw(c.fluxui_widget_add_panel(self.raw, class_name));
     }
 
+    pub fn addFieldset(self: Widget, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_fieldset(self.raw, class_name));
+    }
+
     pub fn addText(self: Widget, text: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
         return fromRaw(c.fluxui_widget_add_text(self.raw, text, class_name));
+    }
+
+    pub fn addLabel(self: Widget, text: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_label(self.raw, text, class_name));
+    }
+
+    pub fn addLegend(self: Widget, text: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_legend(self.raw, text, class_name));
     }
 
     pub fn addButton(self: Widget, label: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
@@ -153,6 +165,38 @@ pub const Widget = struct {
 
     pub fn addTextInput(self: Widget, placeholder: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
         return fromRaw(c.fluxui_widget_add_text_input(self.raw, placeholder, class_name));
+    }
+
+    pub fn addInput(self: Widget, input_type: [*:0]const u8, placeholder: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_input(self.raw, input_type, placeholder, class_name));
+    }
+
+    pub fn addPasswordInput(self: Widget, placeholder: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_password_input(self.raw, placeholder, class_name));
+    }
+
+    pub fn addTextarea(self: Widget, placeholder: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_textarea(self.raw, placeholder, class_name));
+    }
+
+    pub fn addCheckbox(self: Widget, checked: bool, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_checkbox(self.raw, if (checked) 1 else 0, class_name));
+    }
+
+    pub fn addRadio(self: Widget, checked: bool, group: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_radio(self.raw, if (checked) 1 else 0, group, class_name));
+    }
+
+    pub fn addRange(self: Widget, value: f32, min: f32, max: f32, step: f32, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_range(self.raw, value, min, max, step, class_name));
+    }
+
+    pub fn addSelect(self: Widget, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_select(self.raw, class_name));
+    }
+
+    pub fn addOption(self: Widget, label: [*:0]const u8, value: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_option(self.raw, label, value, class_name));
     }
 
     pub fn addIcon(self: Widget, glyph: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
@@ -211,6 +255,36 @@ pub const Widget = struct {
 
     pub fn bounds(self: Widget) Rect {
         return c.fluxui_widget_get_bounds(self.raw);
+    }
+
+    pub fn setTextInputType(self: Widget, input_type: [*:0]const u8) void {
+        c.fluxui_text_input_set_type(self.raw, input_type);
+    }
+
+    pub fn setChecked(self: Widget, checked: bool) void {
+        c.fluxui_checkbox_set_checked(self.raw, if (checked) 1 else 0);
+        c.fluxui_radio_set_checked(self.raw, if (checked) 1 else 0);
+    }
+
+    pub fn checked(self: Widget) bool {
+        return c.fluxui_checkbox_get_checked(self.raw) != 0 or
+            c.fluxui_radio_get_checked(self.raw) != 0;
+    }
+
+    pub fn setRangeValue(self: Widget, value: f32) void {
+        c.fluxui_range_set_value(self.raw, value);
+    }
+
+    pub fn rangeValue(self: Widget) f32 {
+        return c.fluxui_range_get_value(self.raw);
+    }
+
+    pub fn setSelectedIndex(self: Widget, index: u32) void {
+        c.fluxui_select_set_selected_index(self.raw, index);
+    }
+
+    pub fn selectedIndex(self: Widget) u32 {
+        return c.fluxui_select_get_selected_index(self.raw);
     }
 
     fn fromRaw(raw: ?*c.FluxUIWidget) Error!Widget {

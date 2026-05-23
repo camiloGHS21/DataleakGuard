@@ -241,7 +241,7 @@ static void buildTopBar(Widget* content,
     titleGroup->p(subtitle, "page-subtitle");
     auto* tools = topBar->panel("top-tools");
     if (showSearch) {
-        tools->input("Search incidents, hosts, policies...", "search-box");
+        tools->input("search", "Search incidents, hosts, policies...", "search-box");
     }
     addButton(tools, "Export", "download", "btn btn-secondary btn-compact",
               []() { std::cout << "[DataLeak Guard] Export queued" << std::endl; });
@@ -937,7 +937,7 @@ int main(int argc, char** argv) {
     });
     app.registerAction("input:clear-search", [](Application& a, const std::string&) {
         Widget* w = a.focusedWidget();
-        if (w && w->type == "text-input") {
+        if (w && w->type == "input") {
             auto* input = static_cast<TextInput*>(w);
             input->value.clear();
             a.requestRedraw();

@@ -415,6 +415,15 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddPanel(
     return as_jlong(fluxui_widget_add_panel(as_widget(parent), cls.c_str()));
 }
 
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddFieldset(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring className) {
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_fieldset(as_widget(parent), cls.c_str()));
+}
+
 extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddText(
     JNIEnv* env,
     jclass,
@@ -424,6 +433,28 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddText(
     UtfChars textChars(env, text);
     UtfChars cls(env, className);
     return as_jlong(fluxui_widget_add_text(as_widget(parent), textChars.c_str(), cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddLabel(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring text,
+    jstring className) {
+    UtfChars textChars(env, text);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_label(as_widget(parent), textChars.c_str(), cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddLegend(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring text,
+    jstring className) {
+    UtfChars textChars(env, text);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_legend(as_widget(parent), textChars.c_str(), cls.c_str()));
 }
 
 extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddButton(
@@ -448,6 +479,122 @@ extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddTextInput(
     return as_jlong(fluxui_widget_add_text_input(
         as_widget(parent),
         placeholderChars.c_str(),
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddInput(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring inputType,
+    jstring placeholder,
+    jstring className) {
+    UtfChars typeChars(env, inputType);
+    UtfChars placeholderChars(env, placeholder);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_input(
+        as_widget(parent),
+        typeChars.c_str(),
+        placeholderChars.c_str(),
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddPasswordInput(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring placeholder,
+    jstring className) {
+    UtfChars placeholderChars(env, placeholder);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_password_input(
+        as_widget(parent),
+        placeholderChars.c_str(),
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddTextarea(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring placeholder,
+    jstring className) {
+    UtfChars placeholderChars(env, placeholder);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_textarea(
+        as_widget(parent),
+        placeholderChars.c_str(),
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddCheckbox(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jboolean checked,
+    jstring className) {
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_checkbox(as_widget(parent), checked ? 1 : 0, cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddRadio(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jboolean checked,
+    jstring group,
+    jstring className) {
+    UtfChars groupChars(env, group);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_radio(
+        as_widget(parent),
+        checked ? 1 : 0,
+        groupChars.c_str(),
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddRange(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jfloat value,
+    jfloat min,
+    jfloat max,
+    jfloat step,
+    jstring className) {
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_range(
+        as_widget(parent),
+        value,
+        min,
+        max,
+        step,
+        cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddSelect(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring className) {
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_select(as_widget(parent), cls.c_str()));
+}
+
+extern "C" JNIEXPORT jlong JNICALL Java_io_fluxui_Native_widgetAddOption(
+    JNIEnv* env,
+    jclass,
+    jlong parent,
+    jstring label,
+    jstring value,
+    jstring className) {
+    UtfChars labelChars(env, label);
+    UtfChars valueChars(env, value);
+    UtfChars cls(env, className);
+    return as_jlong(fluxui_widget_add_option(
+        as_widget(parent),
+        labelChars.c_str(),
+        valueChars.c_str(),
         cls.c_str()));
 }
 
@@ -591,6 +738,75 @@ extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_buttonSetLabel(
     jstring label) {
     UtfChars labelChars(env, label);
     fluxui_button_set_label(as_widget(widget), labelChars.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_textInputSetType(
+    JNIEnv* env,
+    jclass,
+    jlong widget,
+    jstring inputType) {
+    UtfChars typeChars(env, inputType);
+    fluxui_text_input_set_type(as_widget(widget), typeChars.c_str());
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_checkboxSetChecked(
+    JNIEnv*,
+    jclass,
+    jlong widget,
+    jboolean checked) {
+    fluxui_checkbox_set_checked(as_widget(widget), checked == JNI_TRUE ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_io_fluxui_Native_checkboxGetChecked(
+    JNIEnv*,
+    jclass,
+    jlong widget) {
+    return fluxui_checkbox_get_checked(as_widget(widget)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_radioSetChecked(
+    JNIEnv*,
+    jclass,
+    jlong widget,
+    jboolean checked) {
+    fluxui_radio_set_checked(as_widget(widget), checked == JNI_TRUE ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jboolean JNICALL Java_io_fluxui_Native_radioGetChecked(
+    JNIEnv*,
+    jclass,
+    jlong widget) {
+    return fluxui_radio_get_checked(as_widget(widget)) ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_rangeSetValue(
+    JNIEnv*,
+    jclass,
+    jlong widget,
+    jfloat value) {
+    fluxui_range_set_value(as_widget(widget), value);
+}
+
+extern "C" JNIEXPORT jfloat JNICALL Java_io_fluxui_Native_rangeGetValue(
+    JNIEnv*,
+    jclass,
+    jlong widget) {
+    return fluxui_range_get_value(as_widget(widget));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_selectSetSelectedIndex(
+    JNIEnv*,
+    jclass,
+    jlong widget,
+    jint index) {
+    fluxui_select_set_selected_index(as_widget(widget), static_cast<uint32_t>(index));
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_io_fluxui_Native_selectGetSelectedIndex(
+    JNIEnv*,
+    jclass,
+    jlong widget) {
+    return static_cast<jint>(fluxui_select_get_selected_index(as_widget(widget)));
 }
 
 extern "C" JNIEXPORT void JNICALL Java_io_fluxui_Native_progressBarSetValue(

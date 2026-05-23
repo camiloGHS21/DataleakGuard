@@ -288,6 +288,59 @@ static size_t approximateTextIndexAtX(const std::string& text, float x, float fo
     }
     return text.size();
 }
+static size_t passwordTextIndexAtX(const std::string& text, float x, float fontSize) {
+    if (x <= 0 || text.empty()) return 0;
+    float cursor = 0;
+    float advance = approximateGlyphAdvance('*', fontSize);
+    for (size_t i = 0; i < text.size(); ) {
+        size_t current = i;
+        size_t next = nextCodepoint(text, i);
+        if (x < cursor + advance * 0.5f) return current;
+        if (x < cursor + advance) return next;
+        cursor += advance;
+        i = next;
+    }
+    return text.size();
+}
+static size_t codepointCountInRange(const std::string& text, size_t start, size_t end) {
+    start = clampToUtf8Boundary(text, start);
+    end = clampToUtf8Boundary(text, std::min(end, text.size()));
+    if (end < start) std::swap(start, end);
+    size_t count = 0;
+    for (size_t i = start; i < end; i = nextCodepoint(text, i)) {
+        ++count;
+    }
+    return count;
+}
+static std::string maskedPasswordRange(const std::string& text, size_t start, size_t end) {
+    return std::string(codepointCountInRange(text, start, end), '*');
+}
+static std::string inputVisibleRange(TextInputType type,
+                                     const std::string& text,
+                                     size_t start,
+                                     size_t end) {
+    if (type == TextInputType::Password) {
+        return maskedPasswordRange(text, start, end);
+    }
+    start = clampToUtf8Boundary(text, start);
+    end = clampToUtf8Boundary(text, std::min(end, text.size()));
+    if (end < start) std::swap(start, end);
+    return text.substr(start, end - start);
+}
+static int normalizeTextEditingKey(int keyCode) {
+    switch (keyCode) {
+    case 0x4000004a: return 0x24; // SDL home
+    case 0x4000004d: return 0x23; // SDL end
+    case 0x4000004f: return 0x27; // SDL right
+    case 0x40000050: return 0x25; // SDL left
+    case 0x40000051: return 0x28; // SDL down
+    case 0x40000052: return 0x26; // SDL up
+    case 0x4000004b: return 0x21; // SDL page up
+    case 0x4000004e: return 0x22; // SDL page down
+    case 0x7f:       return 0x2E; // POSIX delete
+    default:         return keyCode;
+    }
+}
 static bool consumesParentMainAxisHeight(const Widget* widget, const Style& style) {
     if (!widget || !widget->parent || style.flexGrow <= 0.0f) return false;
     const Style& parentStyle = widget->parent->computedStyle;
@@ -317,6 +370,95 @@ static bool canPaintWidget(const Widget* widget) {
 static bool canHitTestWidget(const Widget* widget) {
     return canPaintWidget(widget) &&
            widget->computedStyle.pointerEvents != PointerEvents::None;
+}
+static bool isKeyboardFocusableWidget(const Widget* widget) {
+    if (!canHitTestWidget(widget)) return false;
+    return widget->type == "input" ||
+           widget->type == "textarea" ||
+           widget->type == "button" ||
+           widget->type == "checkbox" ||
+           widget->type == "radio" ||
+           widget->type == "range" ||
+           widget->type == "select" ||
+           widget->onClick ||
+           widget->computedStyle.cursor == CursorType::Pointer;
+}
+static void collectKeyboardFocusableWidgets(Widget* widget, std::vector<Widget*>& out) {
+    if (!widget) return;
+    if (isKeyboardFocusableWidget(widget)) {
+        out.push_back(widget);
+    }
+    for (auto& child : widget->children) {
+        collectKeyboardFocusableWidgets(child.get(), out);
+    }
+}
+static void clearFocusRecursive(Widget* widget) {
+    if (!widget) return;
+    widget->focused = false;
+    for (auto& child : widget->children) {
+        clearFocusRecursive(child.get());
+    }
+}
+static Widget* focusedWidgetInSubtree(Widget* widget) {
+    if (!widget) return nullptr;
+    if (widget->focused) return widget;
+    for (auto& child : widget->children) {
+        if (Widget* focused = focusedWidgetInSubtree(child.get())) {
+            return focused;
+        }
+    }
+    return nullptr;
+}
+static bool moveDocumentFocus(Widget* root, bool backwards) {
+    if (!root) return false;
+    std::vector<Widget*> focusables;
+    collectKeyboardFocusableWidgets(root, focusables);
+    if (focusables.empty()) return false;
+
+    Widget* current = focusedWidgetInSubtree(root);
+    size_t nextIndex = backwards ? focusables.size() - 1 : 0;
+    if (current) {
+        auto it = std::find(focusables.begin(), focusables.end(), current);
+        if (it != focusables.end()) {
+            size_t index = static_cast<size_t>(std::distance(focusables.begin(), it));
+            nextIndex = backwards
+                ? (index == 0 ? focusables.size() - 1 : index - 1)
+                : (index + 1) % focusables.size();
+        }
+    }
+    clearFocusRecursive(root);
+    focusables[nextIndex]->focused = true;
+    return true;
+}
+static Widget* rootOfWidget(Widget* widget) {
+    if (!widget) return nullptr;
+    while (widget->parent) {
+        widget = widget->parent;
+    }
+    return widget;
+}
+static void clearRadioGroup(Widget* widget, Radio* active, const std::string& group) {
+    if (!widget) return;
+    if (auto* radio = dynamic_cast<Radio*>(widget)) {
+        bool sameGroup = group.empty() ? (radio->parent == active->parent) : (radio->group == group);
+        if (radio != active && sameGroup) {
+            radio->checked = false;
+        }
+    }
+    for (auto& child : widget->children) {
+        clearRadioGroup(child.get(), active, group);
+    }
+}
+static std::vector<Option*> selectOptions(Select* select) {
+    std::vector<Option*> options;
+    if (!select) return options;
+    options.reserve(select->children.size());
+    for (auto& child : select->children) {
+        if (auto* option = dynamic_cast<Option*>(child.get())) {
+            options.push_back(option);
+        }
+    }
+    return options;
 }
 static bool clipsOverflow(Overflow overflow) {
     return overflow == Overflow::Hidden || overflow == Overflow::Scroll ||
@@ -595,6 +737,10 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         if (style.hasObjectFit) {
             computedStyle.objectFit = style.objectFit;
             computedStyle.hasObjectFit = true;
+        }
+        if (style.hasAppearance) {
+            computedStyle.appearance = style.appearance;
+            computedStyle.hasAppearance = true;
         }
         if (style.hasObjectPosition) {
             computedStyle.objectPosition = style.objectPosition;
@@ -1164,6 +1310,14 @@ void Widget::update(const InputState& input) {
         }
     }
     pressed = hovered && input.mouseDown[0];
+    int widgetKeyCode = normalizeTextEditingKey(input.keyCode);
+    bool keyboardActivate = focused && type == "button" &&
+        (widgetKeyCode == 0x0D || widgetKeyCode == 0x20) &&
+        (input.modifiers & (MOD_CTRL | MOD_ALT | MOD_GUI)) == 0;
+    if (keyboardActivate) {
+        pressed = true;
+        if (onClick) onClick();
+    }
     float currentScale = computedStyle.scale;
     if (computedStyle.hoverScale >= 0) {
         currentScale = computedStyle.scale + (computedStyle.hoverScale - computedStyle.scale) * hoverAnim;
@@ -1213,9 +1367,10 @@ void Widget::update(const InputState& input) {
             targetScrollY -= input.scroll.y * 72.0f;
             clampScroll();
         }
-        if (hovered && !scrollbarDragging && input.keyCode != 0) {
+        int scrollKeyCode = normalizeTextEditingKey(input.keyCode);
+        if (hovered && !scrollbarDragging && scrollKeyCode != 0) {
             float maxScroll = maxScrollY();
-            switch (input.keyCode) {
+            switch (scrollKeyCode) {
             case 0x26:
                 targetScrollY -= 48.0f;
                 break;
@@ -1558,7 +1713,8 @@ void Button::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
     auto& s = computedStyle;
     if (!s.height.isSet()) {
-        bounds.h = std::max(36.0f, s.fontSize * s.lineHeight + s.padding.vertical());
+        bounds.h = std::max(22.0f, s.fontSize * s.lineHeight +
+            s.padding.vertical() + usedBorderVertical(s));
     }
 }
 void Button::render(Renderer& renderer) {
@@ -1658,7 +1814,9 @@ void TextInput::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
     auto& s = computedStyle;
     if (!s.height.isSet()) {
-        bounds.h = std::max(38.0f, s.fontSize * s.lineHeight + s.padding.vertical());
+        float browserMinHeight = type == "textarea" ? 54.0f : 20.0f;
+        bounds.h = std::max(browserMinHeight, s.fontSize * s.lineHeight +
+            s.padding.vertical() + usedBorderVertical(s));
     }
 }
 bool TextInput::hasSelection() const {
@@ -1678,6 +1836,24 @@ Rect TextInput::clearButtonRect() const {
         size,
         size
     };
+}
+TextInput* TextInput::setInputType(TextInputType kind) {
+    inputType = kind;
+    markLayoutDirty();
+    return this;
+}
+TextInput* TextInput::setInputType(const std::string& kind) {
+    std::string lower = kind;
+    for (char& c : lower) {
+        c = (char)std::tolower((unsigned char)c);
+    }
+    if (lower == "password") return setInputType(TextInputType::Password);
+    if (lower == "search") return setInputType(TextInputType::Search);
+    if (lower == "email") return setInputType(TextInputType::Email);
+    if (lower == "url") return setInputType(TextInputType::Url);
+    if (lower == "tel" || lower == "telephone") return setInputType(TextInputType::Tel);
+    if (lower == "number") return setInputType(TextInputType::Number);
+    return setInputType(TextInputType::Text);
 }
 void TextInput::update(const InputState& input) {
     Widget::update(input);
@@ -1716,12 +1892,21 @@ void TextInput::update(const InputState& input) {
     };
     auto indexAtMouse = [&]() {
         float localX = input.mousePos.x - bounds.x - computedStyle.padding.left + scrollX_;
+        if (inputType == TextInputType::Password) {
+            return passwordTextIndexAtX(value, localX, computedStyle.fontSize);
+        }
         return approximateTextIndexAtX(value, localX, computedStyle.fontSize);
     };
     bool shift = (input.modifiers & MOD_SHIFT) != 0;
     bool ctrl = (input.modifiers & MOD_CTRL) != 0;
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    int commandKey = keyCode;
+    if (commandKey >= 'a' && commandKey <= 'z') {
+        commandKey = commandKey - 'a' + 'A';
+    }
+    bool canShowClear = inputType == TextInputType::Search && !value.empty();
     Rect clearRect = clearButtonRect();
-    clearHovered_ = !value.empty() && clearRect.contains(input.mousePos);
+    clearHovered_ = canShowClear && clearRect.contains(input.mousePos);
     clearPressed_ = clearHovered_ && input.mouseDown[0];
     if (hovered && input.mouseClicked[0]) {
         focused = true;
@@ -1767,30 +1952,30 @@ void TextInput::update(const InputState& input) {
     if (focusAnim_ > focusTarget) focusAnim_ = std::max(focusAnim_ - input.deltaTime * focusSpeed, focusTarget);
     if (!focused) return;
     caretBlinkTime_ += input.deltaTime;
-    if (input.keyCode != 0) {
-        if (ctrl && input.keyCode == 'A') {
+    if (keyCode != 0) {
+        if (ctrl && commandKey == 'A') {
             selectionAnchor_ = 0;
             selectionFocus_ = value.size();
             caretIndex_ = value.size();
             caretBlinkTime_ = 0;
             return;
         }
-        if (ctrl && (input.keyCode == 'C' || input.keyCode == 'X')) {
+        if (ctrl && (commandKey == 'C' || commandKey == 'X')) {
             if (hasSelection()) {
                 std::string selected = value.substr(selectionStart(), selectionEnd() - selectionStart());
                 Platform::setClipboardText(selected.c_str());
-                if (input.keyCode == 'X') eraseSelection();
+                if (commandKey == 'X') eraseSelection();
             }
             return;
         }
-        if (ctrl && input.keyCode == 'V') {
+        if (ctrl && commandKey == 'V') {
             std::string clip = Platform::getClipboardText();
             if (!clip.empty()) {
                 insertText(clip);
             }
             return;
         }
-        switch (input.keyCode) {
+        switch (keyCode) {
         case 0x08:
             if (!eraseSelection() && caretIndex_ > 0) {
                 size_t prev = ctrl ? previousWordBoundary(value, caretIndex_) :
@@ -1849,7 +2034,7 @@ CursorType TextInput::cursorAt(Vec2 point) const {
     if (!canHitTestWidget(this) || !bounds.contains(point)) {
         return CursorType::Default;
     }
-    if (!value.empty() && clearButtonRect().contains(point)) {
+    if (inputType == TextInputType::Search && !value.empty() && clearButtonRect().contains(point)) {
         return CursorType::Pointer;
     }
     return CursorType::Text;
@@ -1872,7 +2057,16 @@ void TextInput::render(Renderer& renderer) {
         renderer.drawBorder(bounds, Border(1.0f, Color(0.50f, 0.53f, 0.57f, 0.44f * hoverAnim)),
                             s.borderRadius);
     }
-    float clearSpace = value.empty() ? 0.0f : 28.0f;
+    const bool passwordMode = inputType == TextInputType::Password;
+    std::string visibleValue = inputVisibleRange(inputType, value, 0, value.size());
+    auto visiblePrefix = [&](size_t index) {
+        return inputVisibleRange(inputType, value, 0, index);
+    };
+    auto visibleRange = [&](size_t start, size_t end) {
+        return inputVisibleRange(inputType, value, start, end);
+    };
+    const bool canShowClear = inputType == TextInputType::Search && !value.empty();
+    float clearSpace = canShowClear ? 28.0f : 0.0f;
     Rect clipRect = {
         bounds.x + s.padding.left,
         bounds.y,
@@ -1883,7 +2077,7 @@ void TextInput::render(Renderer& renderer) {
     if (value.empty()) {
         scrollX_ = 0;
     } else {
-        float caretX = renderer.measureText(value.substr(0, caretIndex_), s.fontSize, fontName).x;
+        float caretX = renderer.measureText(visiblePrefix(caretIndex_), s.fontSize, fontName).x;
         float rightPadding = 10.0f;
         if (caretX - scrollX_ > clipRect.w - rightPadding) {
             scrollX_ = caretX - clipRect.w + rightPadding;
@@ -1896,8 +2090,8 @@ void TextInput::render(Renderer& renderer) {
     if (hasSelection() && !value.empty()) {
         size_t start = selectionStart();
         size_t end = selectionEnd();
-        float startX = renderer.measureText(value.substr(0, start), s.fontSize, fontName).x - scrollX_;
-        float width = renderer.measureText(value.substr(start, end - start), s.fontSize, fontName).x;
+        float startX = renderer.measureText(visiblePrefix(start), s.fontSize, fontName).x - scrollX_;
+        float width = renderer.measureText(visibleRange(start, end), s.fontSize, fontName).x;
         float selH = std::min(bounds.h - 10.0f, s.fontSize + 10.0f);
         Rect selectionRect = {
             clipRect.x + startX,
@@ -1907,13 +2101,19 @@ void TextInput::render(Renderer& renderer) {
         };
         renderer.drawRoundedRect(selectionRect, Color(0.54f, 0.70f, 0.98f, 0.56f), BorderRadius(2));
     }
-    const std::string* displayTextPtr = value.empty() ? &placeholder : &value;
+    const std::string* displayTextPtr = value.empty() ? &placeholder : &visibleValue;
     std::string transformedText;
-    if (s.textTransform != TextTransform::None && !displayTextPtr->empty()) {
+    if (s.textTransform != TextTransform::None && !passwordMode && !displayTextPtr->empty()) {
         transformedText = applyTextTransform(*displayTextPtr, s.textTransform);
         displayTextPtr = &transformedText;
     }
-    Color textColor = value.empty() ? Color(0.81f, 0.84f, 0.87f, 0.56f) : s.color;
+    float bgLum = s.backgroundColor.r * 0.2126f +
+                  s.backgroundColor.g * 0.7152f +
+                  s.backgroundColor.b * 0.0722f;
+    Color placeholderColor = bgLum > 0.45f
+        ? Color(0.459f, 0.459f, 0.459f, 1.0f)
+        : Color(0.604f, 0.627f, 0.659f, 0.92f);
+    Color textColor = value.empty() ? placeholderColor : s.color;
     Rect textRect = {
         clipRect.x - scrollX_,
         bounds.y,
@@ -1924,7 +2124,7 @@ void TextInput::render(Renderer& renderer) {
                             s.fontSize, TextAlign::Left, s.fontWeight, fontName);
     renderTextDecoration(renderer, *displayTextPtr, textRect, textColor, s);
     if (focused) {
-        float caretX = clipRect.x + renderer.measureText(value.substr(0, caretIndex_), s.fontSize, fontName).x - scrollX_;
+        float caretX = clipRect.x + renderer.measureText(visiblePrefix(caretIndex_), s.fontSize, fontName).x - scrollX_;
         float cursorH = std::min(bounds.h - 12.0f, s.fontSize + 8.0f);
         float cursorY = bounds.y + (bounds.h - cursorH) * 0.5f;
         float blink = std::fmod(caretBlinkTime_, 1.0f);
@@ -1934,7 +2134,7 @@ void TextInput::render(Renderer& renderer) {
         }
     }
     renderer.popScissor();
-    if (!value.empty()) {
+    if (canShowClear) {
         Rect clear = clearButtonRect();
         Color iconColor = clearPressed_ ? Color(0.91f, 0.93f, 0.96f, 1.0f) :
             Color(0.74f, 0.77f, 0.81f, clearHovered_ ? 0.96f : 0.74f);
@@ -1948,6 +2148,314 @@ void TextInput::render(Renderer& renderer) {
                                 TextAlign::Center, FontWeight::Bold);
     }
     renderChildren(renderer);
+}
+void Checkbox::setChecked(bool value) {
+    if (checked == value) return;
+    checked = value;
+    if (onChange) onChange(checked);
+}
+void Checkbox::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    auto& s = computedStyle;
+    if (!s.width.isSet()) bounds.w = 13.0f + s.margin.horizontal();
+    if (!s.height.isSet()) bounds.h = 13.0f + s.margin.vertical();
+}
+void Checkbox::update(const InputState& input) {
+    Widget::update(input);
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    bool keyboardToggle = focused && (keyCode == 0x20 || keyCode == 0x0D) &&
+        (input.modifiers & (MOD_CTRL | MOD_ALT | MOD_GUI)) == 0;
+    if ((hovered && input.mouseClicked[0]) || keyboardToggle) {
+        focused = true;
+        setChecked(!checked);
+    }
+}
+void Checkbox::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    auto& s = computedStyle;
+    float size = std::max(4.0f, std::min(bounds.w, bounds.h));
+    Rect box = {
+        bounds.x + (bounds.w - size) * 0.5f,
+        bounds.y + (bounds.h - size) * 0.5f,
+        size,
+        size
+    };
+    Color fill = checked ? Color::fromHex("#1a73e8") :
+        (s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1));
+    Color borderColor = checked ? Color::fromHex("#1a73e8") :
+        (s.border.color.a > 0.0f ? s.border.color : Color(0.46f, 0.46f, 0.46f, 1));
+    renderer.drawRoundedRect(box, fill, BorderRadius(2.0f));
+    renderer.drawBorder(box, Border(std::max(1.0f, s.border.width), borderColor), BorderRadius(2.0f));
+    if (checked) {
+        renderer.drawTextInRect("\xE2\x9C\x93", box, Color(1, 1, 1, 1),
+                                std::max(10.0f, size * 0.86f), TextAlign::Center,
+                                FontWeight::Bold);
+    }
+    if (focused) {
+        renderer.drawBorder({box.x - 3.0f, box.y - 3.0f, box.w + 6.0f, box.h + 6.0f},
+                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            BorderRadius(4.0f));
+    }
+}
+void Radio::setChecked(bool value) {
+    if (checked == value) return;
+    checked = value;
+    if (checked) {
+        clearRadioGroup(rootOfWidget(this), this, group);
+    }
+    if (onChange) onChange(checked);
+}
+void Radio::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    auto& s = computedStyle;
+    if (!s.width.isSet()) bounds.w = 13.0f + s.margin.horizontal();
+    if (!s.height.isSet()) bounds.h = 13.0f + s.margin.vertical();
+}
+void Radio::update(const InputState& input) {
+    Widget::update(input);
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    bool keyboardToggle = focused && (keyCode == 0x20 || keyCode == 0x0D) &&
+        (input.modifiers & (MOD_CTRL | MOD_ALT | MOD_GUI)) == 0;
+    if ((hovered && input.mouseClicked[0]) || keyboardToggle) {
+        focused = true;
+        setChecked(true);
+    }
+}
+void Radio::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    auto& s = computedStyle;
+    float size = std::max(4.0f, std::min(bounds.w, bounds.h));
+    Rect ring = {
+        bounds.x + (bounds.w - size) * 0.5f,
+        bounds.y + (bounds.h - size) * 0.5f,
+        size,
+        size
+    };
+    Color fill = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+    Color accent = Color::fromHex("#1a73e8");
+    Color borderColor = checked ? accent :
+        (s.border.color.a > 0.0f ? s.border.color : Color(0.46f, 0.46f, 0.46f, 1));
+    renderer.drawRoundedRect(ring, fill, BorderRadius(size * 0.5f));
+    renderer.drawBorder(ring, Border(std::max(1.0f, s.border.width), borderColor),
+                        BorderRadius(size * 0.5f));
+    if (checked) {
+        float dot = std::max(4.0f, size * 0.48f);
+        renderer.drawRoundedRect({ring.x + (ring.w - dot) * 0.5f,
+                                  ring.y + (ring.h - dot) * 0.5f,
+                                  dot,
+                                  dot},
+                                 accent,
+                                 BorderRadius(dot * 0.5f));
+    }
+    if (focused) {
+        renderer.drawBorder({ring.x - 3.0f, ring.y - 3.0f, ring.w + 6.0f, ring.h + 6.0f},
+                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            BorderRadius((size + 6.0f) * 0.5f));
+    }
+}
+void RangeInput::setValue(float newValue, bool notify) {
+    if (max < min) std::swap(max, min);
+    float clamped = std::clamp(newValue, min, max);
+    if (step > 0.0f) {
+        clamped = min + std::round((clamped - min) / step) * step;
+        clamped = std::clamp(clamped, min, max);
+    }
+    if (std::abs(value - clamped) < 0.0001f) return;
+    value = clamped;
+    if (notify && onChange) onChange(value);
+}
+void RangeInput::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    if (!computedStyle.width.isSet()) bounds.w = 129.0f;
+    if (!computedStyle.height.isSet()) bounds.h = 16.0f;
+}
+void RangeInput::update(const InputState& input) {
+    Widget::update(input);
+    auto setFromPoint = [&](float x) {
+        float pad = 7.0f;
+        float t = (x - (bounds.x + pad)) / std::max(1.0f, bounds.w - pad * 2.0f);
+        setValue(min + std::clamp(t, 0.0f, 1.0f) * (max - min));
+    };
+    if (hovered && input.mouseClicked[0]) {
+        focused = true;
+        dragging_ = true;
+        setFromPoint(input.mousePos.x);
+    }
+    if (dragging_ && input.mouseDown[0]) {
+        setFromPoint(input.mousePos.x);
+    }
+    if (input.mouseReleased[0]) {
+        dragging_ = false;
+    }
+    if (!focused) return;
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    if (keyCode == 0) return;
+    float delta = step > 0.0f ? step : (max - min) / 100.0f;
+    if (keyCode == 0x25 || keyCode == 0x28) setValue(value - delta);
+    else if (keyCode == 0x27 || keyCode == 0x26) setValue(value + delta);
+    else if (keyCode == 0x21) setValue(value + delta * 10.0f);
+    else if (keyCode == 0x22) setValue(value - delta * 10.0f);
+    else if (keyCode == 0x24) setValue(min);
+    else if (keyCode == 0x23) setValue(max);
+}
+void RangeInput::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    auto& s = computedStyle;
+    float pad = 7.0f;
+    float trackH = 4.0f;
+    Rect track = {bounds.x + pad, bounds.y + (bounds.h - trackH) * 0.5f,
+                  std::max(1.0f, bounds.w - pad * 2.0f), trackH};
+    float t = (max == min) ? 0.0f : std::clamp((value - min) / (max - min), 0.0f, 1.0f);
+    Color trackColor = s.color.a > 0.0f ? s.color.withAlpha(0.42f) : Color(0.56f, 0.56f, 0.56f, 1);
+    Color accent = Color::fromHex("#1a73e8");
+    renderer.drawRoundedRect(track, trackColor, BorderRadius(trackH * 0.5f));
+    renderer.drawRoundedRect({track.x, track.y, track.w * t, track.h},
+                             accent.withAlpha(0.86f), BorderRadius(trackH * 0.5f));
+    float thumb = 14.0f;
+    Rect knob = {track.x + track.w * t - thumb * 0.5f,
+                 bounds.y + (bounds.h - thumb) * 0.5f,
+                 thumb,
+                 thumb};
+    renderer.drawRoundedRect(knob, accent, BorderRadius(thumb * 0.5f));
+    renderer.drawBorder(knob, Border(1.0f, Color(1, 1, 1, 0.88f)),
+                        BorderRadius(thumb * 0.5f));
+    if (focused) {
+        renderer.drawBorder({knob.x - 3.0f, knob.y - 3.0f, knob.w + 6.0f, knob.h + 6.0f},
+                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            BorderRadius((thumb + 6.0f) * 0.5f));
+    }
+}
+void Option::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    if (!computedStyle.height.isSet()) {
+        bounds.h = std::max(18.0f, computedStyle.fontSize * computedStyle.lineHeight +
+            computedStyle.padding.vertical());
+    }
+}
+void Option::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    renderBackground(renderer);
+    Rect textRect = {
+        bounds.x + computedStyle.padding.left,
+        bounds.y + computedStyle.padding.top,
+        std::max(0.0f, bounds.w - computedStyle.padding.horizontal()),
+        std::max(0.0f, bounds.h - computedStyle.padding.vertical())
+    };
+    renderer.drawTextInRect(label, textRect, computedStyle.color,
+                            computedStyle.fontSize, TextAlign::Left,
+                            computedStyle.fontWeight, renderFontName(computedStyle));
+}
+void Select::selectIndex(size_t index, bool notify) {
+    auto options = selectOptions(this);
+    if (options.empty()) {
+        selectedIndex = 0;
+        return;
+    }
+    size_t next = std::min(index, options.size() - 1);
+    if (selectedIndex == next) return;
+    selectedIndex = next;
+    if (notify && onChange) onChange(selectedIndex, selectedValue());
+}
+std::string Select::selectedLabel() const {
+    auto* self = const_cast<Select*>(this);
+    auto options = selectOptions(self);
+    if (options.empty()) return "";
+    size_t index = std::min(selectedIndex, options.size() - 1);
+    return options[index]->label;
+}
+std::string Select::selectedValue() const {
+    auto* self = const_cast<Select*>(this);
+    auto options = selectOptions(self);
+    if (options.empty()) return "";
+    size_t index = std::min(selectedIndex, options.size() - 1);
+    return options[index]->value;
+}
+void Select::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    auto& s = computedStyle;
+    if (!s.width.isSet() && parentUsesRowFlex(this)) bounds.w = 128.0f;
+    if (!s.height.isSet()) {
+        bounds.h = std::max(22.0f, s.fontSize * s.lineHeight +
+            s.padding.vertical() + usedBorderVertical(s));
+    }
+}
+void Select::update(const InputState& input) {
+    Widget::update(input);
+    auto options = selectOptions(this);
+    float rowH = std::max(20.0f, computedStyle.fontSize * computedStyle.lineHeight + 5.0f);
+    Rect listRect(bounds.x, bounds.y + bounds.h, bounds.w, rowH * options.size());
+    bool listHovered = expanded && listRect.contains(input.mousePos);
+    if (input.mouseClicked[0]) {
+        if (hovered) {
+            focused = true;
+            expanded = !expanded;
+        } else if (listHovered) {
+            size_t index = std::min(options.size() - 1,
+                static_cast<size_t>((input.mousePos.y - listRect.y) / rowH));
+            selectIndex(index);
+            focused = true;
+            expanded = false;
+        } else if (expanded) {
+            expanded = false;
+        }
+    }
+    if (!focused) return;
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    if (keyCode == 0x1B) {
+        expanded = false;
+    } else if (keyCode == 0x20 || keyCode == 0x0D) {
+        expanded = !expanded;
+    } else if (!options.empty() && (keyCode == 0x28 || keyCode == 0x27)) {
+        selectIndex(std::min(selectedIndex + 1, options.size() - 1));
+    } else if (!options.empty() && (keyCode == 0x26 || keyCode == 0x25)) {
+        selectIndex(selectedIndex == 0 ? 0 : selectedIndex - 1);
+    } else if (!options.empty() && keyCode == 0x24) {
+        selectIndex(0);
+    } else if (!options.empty() && keyCode == 0x23) {
+        selectIndex(options.size() - 1);
+    }
+}
+void Select::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    auto& s = computedStyle;
+    Color bg = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+    renderer.drawRoundedRect(bounds, bg, s.borderRadius);
+    renderer.drawBorder(bounds, s.border.width > 0.0f ? s.border : Border(1.0f, Color(0, 0, 0, 1)),
+                        s.borderRadius);
+    Rect textRect = {bounds.x + s.padding.left,
+                     bounds.y + s.padding.top,
+                     std::max(0.0f, bounds.w - s.padding.horizontal() - 18.0f),
+                     std::max(0.0f, bounds.h - s.padding.vertical())};
+    renderer.drawTextInRect(selectedLabel(), textRect, s.color,
+                            s.fontSize, TextAlign::Left, s.fontWeight, renderFontName(s));
+    Rect arrowRect = {bounds.x + bounds.w - 20.0f, bounds.y, 16.0f, bounds.h};
+    renderer.drawTextInRect("v", arrowRect, s.color,
+                            std::max(9.0f, s.fontSize - 1.0f),
+                            TextAlign::Center, FontWeight::Bold, renderFontName(s));
+    if (focused) {
+        renderer.drawBorder({bounds.x - 2.0f, bounds.y - 2.0f, bounds.w + 4.0f, bounds.h + 4.0f},
+                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            BorderRadius(s.borderRadius.uniform() + 2.0f));
+    }
+    if (expanded) {
+        auto options = selectOptions(this);
+        float rowH = std::max(20.0f, s.fontSize * s.lineHeight + 5.0f);
+        Rect list = {bounds.x, bounds.y + bounds.h, bounds.w, rowH * options.size()};
+        renderer.drawRoundedRect(list, bg, BorderRadius(4.0f));
+        renderer.drawBorder(list, Border(1.0f, Color(0.36f, 0.38f, 0.42f, 1)),
+                            BorderRadius(4.0f));
+        for (size_t i = 0; i < options.size(); ++i) {
+            Rect row = {list.x, list.y + rowH * i, list.w, rowH};
+            if (i == selectedIndex) {
+                renderer.drawRoundedRect(row, Color(0.54f, 0.70f, 0.98f, 0.34f),
+                                         BorderRadius(0.0f));
+            }
+            Rect optionText = {row.x + s.padding.left, row.y, row.w - s.padding.horizontal(), row.h};
+            renderer.drawTextInRect(options[i]->label, optionText, s.color,
+                                    s.fontSize, TextAlign::Left, s.fontWeight,
+                                    renderFontName(s));
+        }
+    }
 }
 void Icon::render(Renderer& renderer) {
     if (!canPaintWidget(this)) return;
@@ -3195,6 +3703,15 @@ void Application::run() {
         }
         root_->resolveStyles(stylesheet_);
         root_->layout({0, 0, (float)w, (float)h});
+        int documentKeyCode = normalizeTextEditingKey(input_.keyCode);
+        if (documentKeyCode == 0x09) {
+            bool backwards = (input_.modifiers & MOD_SHIFT) != 0;
+            if (moveDocumentFocus(root_.get(), backwards)) {
+                input_.keyCode = 0;
+                input_.text.clear();
+                needsRedraw_ = true;
+            }
+        }
         root_->update(input_);
         if (input_.mouseClicked[0]) {
             UIEvent clickEvent;

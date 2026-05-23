@@ -34,8 +34,20 @@ public final class Widget {
         return child(Native.widgetAddPanel(handle, className));
     }
 
+    public Widget addFieldset(String className) {
+        return child(Native.widgetAddFieldset(handle, className));
+    }
+
     public Widget addText(String text, String className) {
         return child(Native.widgetAddText(handle, text, className));
+    }
+
+    public Widget addLabel(String text, String className) {
+        return child(Native.widgetAddLabel(handle, text, className));
+    }
+
+    public Widget addLegend(String text, String className) {
+        return child(Native.widgetAddLegend(handle, text, className));
     }
 
     public Widget addButton(String label, String className) {
@@ -44,6 +56,38 @@ public final class Widget {
 
     public Widget addTextInput(String placeholder, String className) {
         return child(Native.widgetAddTextInput(handle, placeholder, className));
+    }
+
+    public Widget addInput(String inputType, String placeholder, String className) {
+        return child(Native.widgetAddInput(handle, inputType, placeholder, className));
+    }
+
+    public Widget addPasswordInput(String placeholder, String className) {
+        return child(Native.widgetAddPasswordInput(handle, placeholder, className));
+    }
+
+    public Widget addTextarea(String placeholder, String className) {
+        return child(Native.widgetAddTextarea(handle, placeholder, className));
+    }
+
+    public Widget addCheckbox(boolean checked, String className) {
+        return child(Native.widgetAddCheckbox(handle, checked, className));
+    }
+
+    public Widget addRadio(boolean checked, String group, String className) {
+        return child(Native.widgetAddRadio(handle, checked, group, className));
+    }
+
+    public Widget addRange(float value, float min, float max, float step, String className) {
+        return child(Native.widgetAddRange(handle, value, min, max, step, className));
+    }
+
+    public Widget addSelect(String className) {
+        return child(Native.widgetAddSelect(handle, className));
+    }
+
+    public Widget addOption(String label, String value, String className) {
+        return child(Native.widgetAddOption(handle, label, value, className));
     }
 
     public Widget addIcon(String glyph, String className) {
@@ -77,6 +121,39 @@ public final class Widget {
     public Widget refreshVirtualList() {
         Native.virtualListRefresh(handle);
         return this;
+    }
+
+    public Widget setTextInputType(String inputType) {
+        Native.textInputSetType(handle, inputType);
+        return this;
+    }
+
+    public Widget setChecked(boolean checked) {
+        Native.checkboxSetChecked(handle, checked);
+        Native.radioSetChecked(handle, checked);
+        return this;
+    }
+
+    public boolean isChecked() {
+        return Native.checkboxGetChecked(handle) || Native.radioGetChecked(handle);
+    }
+
+    public Widget setRangeValue(float value) {
+        Native.rangeSetValue(handle, value);
+        return this;
+    }
+
+    public float rangeValue() {
+        return Native.rangeGetValue(handle);
+    }
+
+    public Widget setSelectedIndex(int index) {
+        Native.selectSetSelectedIndex(handle, index);
+        return this;
+    }
+
+    public int selectedIndex() {
+        return Native.selectGetSelectedIndex(handle);
     }
 
     public Widget scrollVirtualListToIndex(int index) {

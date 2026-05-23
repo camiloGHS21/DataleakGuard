@@ -3,6 +3,7 @@
 #include "fluxui/FluxUI.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -374,12 +375,34 @@ FluxUIWidget* fluxui_widget_add_panel(FluxUIWidget* parent, const char* class_na
     return as_c_widget(p->add<Panel>(safe_cstr(class_name)));
 }
 
+FluxUIWidget* fluxui_widget_add_fieldset(FluxUIWidget* parent, const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->fieldset(safe_cstr(class_name)));
+}
+
 FluxUIWidget* fluxui_widget_add_text(FluxUIWidget* parent,
                                      const char* text,
                                      const char* class_name) {
     Widget* p = as_widget(parent);
     if (!p) return nullptr;
     return as_c_widget(p->add<Text>(safe_cstr(text), safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_label(FluxUIWidget* parent,
+                                      const char* text,
+                                      const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->label(safe_cstr(text), safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_legend(FluxUIWidget* parent,
+                                       const char* text,
+                                       const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->legend(safe_cstr(text), safe_cstr(class_name)));
 }
 
 FluxUIWidget* fluxui_widget_add_button(FluxUIWidget* parent,
@@ -396,6 +419,75 @@ FluxUIWidget* fluxui_widget_add_text_input(FluxUIWidget* parent,
     Widget* p = as_widget(parent);
     if (!p) return nullptr;
     return as_c_widget(p->add<TextInput>(safe_cstr(placeholder), safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_input(FluxUIWidget* parent,
+                                      const char* input_type,
+                                      const char* placeholder,
+                                      const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    auto* input = p->add<TextInput>(safe_cstr(placeholder), safe_cstr(class_name));
+    input->setInputType(safe_cstr(input_type));
+    return as_c_widget(input);
+}
+
+FluxUIWidget* fluxui_widget_add_password_input(FluxUIWidget* parent,
+                                               const char* placeholder,
+                                               const char* class_name) {
+    return fluxui_widget_add_input(parent, "password", placeholder, class_name);
+}
+
+FluxUIWidget* fluxui_widget_add_textarea(FluxUIWidget* parent,
+                                         const char* placeholder,
+                                         const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->textarea(safe_cstr(placeholder), safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_checkbox(FluxUIWidget* parent,
+                                         int checked,
+                                         const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->checkbox(checked != 0, safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_radio(FluxUIWidget* parent,
+                                      int checked,
+                                      const char* group,
+                                      const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->radio(checked != 0, safe_cstr(group), safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_range(FluxUIWidget* parent,
+                                      float value,
+                                      float min,
+                                      float max,
+                                      float step,
+                                      const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->range(value, min, max, step, safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_select(FluxUIWidget* parent,
+                                       const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->select(safe_cstr(class_name)));
+}
+
+FluxUIWidget* fluxui_widget_add_option(FluxUIWidget* parent,
+                                       const char* label,
+                                       const char* value,
+                                       const char* class_name) {
+    Widget* p = as_widget(parent);
+    if (!p) return nullptr;
+    return as_c_widget(p->option(safe_cstr(label), safe_cstr(value), safe_cstr(class_name)));
 }
 
 FluxUIWidget* fluxui_widget_add_icon(FluxUIWidget* parent,
@@ -595,6 +687,66 @@ void fluxui_text_input_set_placeholder(FluxUIWidget* widget, const char* placeho
         w->placeholder = safe_cstr(placeholder);
         w->markLayoutDirty();
     }
+}
+
+void fluxui_text_input_set_type(FluxUIWidget* widget, const char* input_type) {
+    if (auto* w = as<TextInput>(widget)) {
+        w->setInputType(safe_cstr(input_type));
+        w->markLayoutDirty();
+    }
+}
+
+void fluxui_checkbox_set_checked(FluxUIWidget* widget, int checked) {
+    if (auto* w = as<Checkbox>(widget)) {
+        w->setChecked(checked != 0);
+    }
+}
+
+int fluxui_checkbox_get_checked(FluxUIWidget* widget) {
+    if (auto* w = as<Checkbox>(widget)) {
+        return w->checked ? 1 : 0;
+    }
+    return 0;
+}
+
+void fluxui_radio_set_checked(FluxUIWidget* widget, int checked) {
+    if (auto* w = as<Radio>(widget)) {
+        w->setChecked(checked != 0);
+    }
+}
+
+int fluxui_radio_get_checked(FluxUIWidget* widget) {
+    if (auto* w = as<Radio>(widget)) {
+        return w->checked ? 1 : 0;
+    }
+    return 0;
+}
+
+void fluxui_range_set_value(FluxUIWidget* widget, float value) {
+    if (auto* w = as<RangeInput>(widget)) {
+        w->setValue(value);
+    }
+}
+
+float fluxui_range_get_value(FluxUIWidget* widget) {
+    if (auto* w = as<RangeInput>(widget)) {
+        return w->value;
+    }
+    return 0.0f;
+}
+
+void fluxui_select_set_selected_index(FluxUIWidget* widget, uint32_t index) {
+    if (auto* w = as<Select>(widget)) {
+        w->selectIndex(static_cast<size_t>(index));
+    }
+}
+
+uint32_t fluxui_select_get_selected_index(FluxUIWidget* widget) {
+    if (auto* w = as<Select>(widget)) {
+        return static_cast<uint32_t>(
+            std::min<size_t>(w->selectedIndex, std::numeric_limits<uint32_t>::max()));
+    }
+    return 0;
 }
 
 void fluxui_icon_set_glyph(FluxUIWidget* widget, const char* glyph) {
