@@ -554,6 +554,7 @@ public:
     void showModal();
     void close();
     void resolveStyles(const StyleSheet& sheet) override;
+    void render(Renderer& renderer) override;
 };
 class Meter : public Widget {
 public:

@@ -714,12 +714,12 @@ static size_t layoutStyleSignature(const Style& s) {
     return seed;
 }
 void Widget::markLayoutDirty() {
-    if (layoutDirty) return;
+    if (layoutDirty && (!parent || parent->layoutDirty)) return;
     layoutDirty = true;
     if (parent) parent->markLayoutDirty();
 }
 void Widget::markSubtreeStyleDirty() {
-    if (subtreeStyleDirty) return;
+    if (subtreeStyleDirty && (!parent || parent->subtreeStyleDirty)) return;
     subtreeStyleDirty = true;
     if (parent) parent->markSubtreeStyleDirty();
 }
@@ -939,20 +939,29 @@ void Widget::layout(const Rect& parentBounds) {
         layoutDirty = false;
         return;
     }
+    float vpW = 1920.0f;
+    float vpH = 1080.0f;
+    const Widget* r = this;
+    while (r->parent) r = r->parent;
+    if (r) {
+        vpW = r->bounds.w;
+        vpH = r->bounds.h;
+    }
+
     bool heightProvidedByParentFlex = consumesParentMainAxisHeight(this, s);
     float x = parentBounds.x + s.margin.left;
     float y = parentBounds.y + s.margin.top;
-    float w = s.width.isSet() ? s.width.resolve(parentBounds.w) :
+    float w = s.width.isSet() ? s.width.resolve(parentBounds.w, vpW, vpH) :
               (parentBounds.w < 9999 ? parentBounds.w - s.margin.horizontal() : 0);
-    float h = s.height.isSet() ? s.height.resolve(parentBounds.h) :
+    float h = s.height.isSet() ? s.height.resolve(parentBounds.h, vpW, vpH) :
               (parentBounds.h < 9999 ? parentBounds.h - s.margin.vertical() : 0);
     bool widthControlsRatio = s.aspectRatio > 0.0f && s.width.isSet() && !s.height.isSet();
     bool heightControlsRatio = s.aspectRatio > 0.0f && s.height.isSet() && !s.width.isSet();
-    if (s.minWidth.isSet()) w = std::max(w, s.minWidth.resolve(parentBounds.w));
-    if (s.maxWidth.isSet()) w = std::min(w, s.maxWidth.resolve(parentBounds.w));
+    if (s.minWidth.isSet()) w = std::max(w, s.minWidth.resolve(parentBounds.w, vpW, vpH));
+    if (s.maxWidth.isSet()) w = std::min(w, s.maxWidth.resolve(parentBounds.w, vpW, vpH));
     if (widthControlsRatio) h = w / s.aspectRatio;
-    if (s.minHeight.isSet()) h = std::max(h, s.minHeight.resolve(parentBounds.h));
-    if (s.maxHeight.isSet()) h = std::min(h, s.maxHeight.resolve(parentBounds.h));
+    if (s.minHeight.isSet()) h = std::max(h, s.minHeight.resolve(parentBounds.h, vpW, vpH));
+    if (s.maxHeight.isSet()) h = std::min(h, s.maxHeight.resolve(parentBounds.h, vpW, vpH));
     if (heightControlsRatio) w = h * s.aspectRatio;
     if (s.hasBoxSizing && s.boxSizing == BoxSizing::ContentBox) {
         if (s.width.isSet()) w += s.padding.horizontal() + usedBorderHorizontal(s);
@@ -1232,6 +1241,16 @@ void Widget::layoutPositionedChildren() {
     float contentY = bounds.y + s.padding.top;
     float contentW = std::max(0.0f, bounds.w - s.padding.horizontal());
     float contentH = std::max(0.0f, bounds.h - s.padding.vertical());
+
+    float vpW = 1920.0f;
+    float vpH = 1080.0f;
+    const Widget* r = this;
+    while (r->parent) r = r->parent;
+    if (r) {
+        vpW = r->bounds.w;
+        vpH = r->bounds.h;
+    }
+
     for (auto& child : children) {
         if (!child->visible || isDisplayNone(child.get()) || !isOutOfFlow(child.get())) continue;
         
@@ -1256,14 +1275,14 @@ void Widget::layoutPositionedChildren() {
         bool hasRight = cs.right.isSet();
         bool hasTop = cs.top.isSet();
         bool hasBottom = cs.bottom.isSet();
-        float left = hasLeft ? cs.left.resolve(cw) : 0.0f;
-        float right = hasRight ? cs.right.resolve(cw) : 0.0f;
-        float top = hasTop ? cs.top.resolve(ch) : 0.0f;
-        float bottom = hasBottom ? cs.bottom.resolve(ch) : 0.0f;
-        float childW = cs.width.isSet() ? cs.width.resolve(cw) :
+        float left = hasLeft ? cs.left.resolve(cw, vpW, vpH) : 0.0f;
+        float right = hasRight ? cs.right.resolve(cw, vpW, vpH) : 0.0f;
+        float top = hasTop ? cs.top.resolve(ch, vpW, vpH) : 0.0f;
+        float bottom = hasBottom ? cs.bottom.resolve(ch, vpW, vpH) : 0.0f;
+        float childW = cs.width.isSet() ? cs.width.resolve(cw, vpW, vpH) :
             (hasLeft && hasRight ? cw - left - right - cs.margin.horizontal()
                                  : cw - cs.margin.horizontal());
-        float childH = cs.height.isSet() ? cs.height.resolve(ch) :
+        float childH = cs.height.isSet() ? cs.height.resolve(ch, vpW, vpH) :
             (hasTop && hasBottom ? ch - top - bottom - cs.margin.vertical() : 0.0f);
         float childX = hasLeft ? cx + left :
             (hasRight ? cx + cw - right - std::max(0.0f, childW) - cs.margin.horizontal()
@@ -4009,6 +4028,20 @@ void Dialog::close() {
 void Dialog::resolveStyles(const StyleSheet& sheet) {
     Widget::resolveStyles(sheet);
     computedStyle.display = open ? Display::Block : Display::None;
+    size_t nextLayoutSignature = layoutStyleSignature(computedStyle);
+    if (nextLayoutSignature != layoutSignature) {
+        layoutSignature = nextLayoutSignature;
+        markLayoutDirty();
+    }
+}
+
+void Dialog::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    if (open && computedStyle.position == Position::Fixed) {
+        Vec2 winSize = renderer.getWindowSize();
+        renderer.drawRoundedRect({0.0f, 0.0f, winSize.x, winSize.y}, Color(0.0f, 0.0f, 0.0f, 0.55f), 0.0f, 1.0f);
+    }
+    Widget::render(renderer);
 }
 
 void Meter::render(Renderer& renderer) {
