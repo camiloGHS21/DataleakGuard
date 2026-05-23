@@ -196,6 +196,7 @@ struct Gradient {
 enum class Display {
     Block,
     Flex,
+    Grid,
     InlineBlock,
     Inline,
     None,
@@ -218,6 +219,8 @@ enum class AlignItems { FlexStart, FlexEnd, Center, Stretch, Baseline };
 enum class AlignContent { FlexStart, FlexEnd, Center, Stretch, SpaceBetween, SpaceAround, SpaceEvenly };
 enum class AlignSelf { Auto, FlexStart, FlexEnd, Center, Stretch, Baseline };
 enum class Position { Static, Relative, Absolute, Fixed, Sticky };
+enum class CSSFloat { None, Left, Right };
+enum class CSSClear { None, Left, Right, Both };
 enum class Overflow { Visible, Hidden, Scroll, Auto, Clip };
 enum class TextAlign { Left, Center, Right, Justify };
 enum class FontWeight { Normal, Bold };
@@ -458,6 +461,13 @@ struct Style {
     PointerEvents pointerEvents = PointerEvents::Auto;
     int zIndex = 0;
     bool hasZIndex = false;
+    CSSFloat cssFloat = CSSFloat::None;
+    CSSClear cssClear = CSSClear::None;
+    std::string gridTemplateColumns;
+    std::string gridTemplateRows;
+    std::string gridColumn;
+    std::string gridRow;
+    std::string content;
     float aspectRatio = 0;  // 0 means auto
     ObjectFit objectFit = ObjectFit::Fill;
     bool hasObjectFit = false;

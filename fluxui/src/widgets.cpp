@@ -571,41 +571,45 @@ static const char* textInputTypeSelector(TextInputType type) {
     default: return "text";
     }
 }
+const std::string& Widget::selectorType() const {
+    if (!cachedSelectorType.empty()) {
+        return cachedSelectorType;
+    }
+    std::string type;
+    if (auto* input = dynamic_cast<const TextInput*>(this)) {
+        if (this->type == "textarea") type = "textarea";
+        else type = std::string("input|type=") + textInputTypeSelector(input->inputType);
+    } else if (auto* checkbox = dynamic_cast<const Checkbox*>(this)) {
+        type = std::string("input|type=checkbox") + (checkbox->checked ? "|checked" : "");
+    } else if (auto* radio = dynamic_cast<const Radio*>(this)) {
+        type = std::string("input|type=radio") + (radio->checked ? "|checked" : "");
+    } else if (dynamic_cast<const RangeInput*>(this)) {
+        type = "input|type=range";
+    } else if (auto* select = dynamic_cast<const Select*>(this)) {
+        type = std::string("select") + (select->expanded ? "|open" : "");
+    } else if (auto* details = dynamic_cast<const Details*>(this)) {
+        type = std::string("details") + (details->open ? "|open" : "");
+    } else if (auto* dialog = dynamic_cast<const Dialog*>(this)) {
+        type = "dialog";
+        if (dialog->open) type += "|open";
+        if (dialog->modal) type += "|modal";
+    } else if (auto* progress = dynamic_cast<const Progress*>(this)) {
+        type = "progress";
+        if (progress->value < 0.0f) type += "|indeterminate";
+        else type += "|value";
+    } else {
+        type = this->type;
+    }
+    cachedSelectorType = std::move(type);
+    return cachedSelectorType;
+}
+
 static const std::string& widgetSelectorType(const Widget* widget) {
     if (!widget) {
         static const std::string empty;
         return empty;
     }
-    if (!widget->cachedSelectorType.empty()) {
-        return widget->cachedSelectorType;
-    }
-    std::string type;
-    if (auto* input = dynamic_cast<const TextInput*>(widget)) {
-        if (widget->type == "textarea") type = "textarea";
-        else type = std::string("input|type=") + textInputTypeSelector(input->inputType);
-    } else if (auto* checkbox = dynamic_cast<const Checkbox*>(widget)) {
-        type = std::string("input|type=checkbox") + (checkbox->checked ? "|checked" : "");
-    } else if (auto* radio = dynamic_cast<const Radio*>(widget)) {
-        type = std::string("input|type=radio") + (radio->checked ? "|checked" : "");
-    } else if (dynamic_cast<const RangeInput*>(widget)) {
-        type = "input|type=range";
-    } else if (auto* select = dynamic_cast<const Select*>(widget)) {
-        type = std::string("select") + (select->expanded ? "|open" : "");
-    } else if (auto* details = dynamic_cast<const Details*>(widget)) {
-        type = std::string("details") + (details->open ? "|open" : "");
-    } else if (auto* dialog = dynamic_cast<const Dialog*>(widget)) {
-        type = "dialog";
-        if (dialog->open) type += "|open";
-        if (dialog->modal) type += "|modal";
-    } else if (auto* progress = dynamic_cast<const Progress*>(widget)) {
-        type = "progress";
-        if (progress->value < 0.0f) type += "|indeterminate";
-        else type += "|value";
-    } else {
-        type = widget->type;
-    }
-    widget->cachedSelectorType = std::move(type);
-    return widget->cachedSelectorType;
+    return widget->selectorType();
 }
 static bool clipsOverflow(Overflow overflow) {
     return overflow == Overflow::Hidden || overflow == Overflow::Scroll ||
@@ -876,14 +880,14 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
             }
             t_ancestors.reserve(ancestorCount);
             for (Widget* node = parent; node; node = node->parent) {
-                t_ancestors.push_back({node->className, node->id, widgetSelectorType(node)});
+                t_ancestors.push_back({node->className, node->id, widgetSelectorType(node), node});
             }
             return t_ancestors;
         };
 
         const Style* parentStyle = parent ? &parent->computedStyle : nullptr;
         std::string_view selectorType = widgetSelectorType(this);
-        computedStyle = sheet.resolveLazy(className, id, selectorType, ancestorH1, ancestorH2, parentStyle, getAncestors);
+        computedStyle = sheet.resolveLazy(className, id, selectorType, ancestorH1, ancestorH2, parentStyle, getAncestors, this);
         if (parent) {
             const Style& inherited = parent->computedStyle;
             if (!computedStyle.hasColor) computedStyle.color = inherited.color;
@@ -1034,6 +1038,46 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
             markLayoutDirty();
         }
         styleDirty = false;
+        
+        Style beforeStyle = sheet.resolve(className, id, selectorType, getAncestors(), &computedStyle, this, "before");
+        if (!beforeStyle.content.empty()) {
+            if (!beforePseudoNode) {
+                beforePseudoNode = std::make_shared<Text>(beforeStyle.content, "");
+                beforePseudoNode->parent = this;
+                beforePseudoNode->type = "pseudo-before";
+                children.insert(children.begin(), beforePseudoNode);
+            } else {
+                static_cast<Text*>(beforePseudoNode.get())->content = beforeStyle.content;
+            }
+            beforePseudoNode->computedStyle = beforeStyle;
+            beforePseudoNode->styleDirty = false;
+            beforePseudoNode->subtreeStyleDirty = true;
+        } else {
+            if (beforePseudoNode) {
+                children.erase(std::remove(children.begin(), children.end(), beforePseudoNode), children.end());
+                beforePseudoNode.reset();
+            }
+        }
+
+        Style afterStyle = sheet.resolve(className, id, selectorType, getAncestors(), &computedStyle, this, "after");
+        if (!afterStyle.content.empty()) {
+            if (!afterPseudoNode) {
+                afterPseudoNode = std::make_shared<Text>(afterStyle.content, "");
+                afterPseudoNode->parent = this;
+                afterPseudoNode->type = "pseudo-after";
+                children.push_back(afterPseudoNode);
+            } else {
+                static_cast<Text*>(afterPseudoNode.get())->content = afterStyle.content;
+            }
+            afterPseudoNode->computedStyle = afterStyle;
+            afterPseudoNode->styleDirty = false;
+            afterPseudoNode->subtreeStyleDirty = true;
+        } else {
+            if (afterPseudoNode) {
+                children.erase(std::remove(children.begin(), children.end(), afterPseudoNode), children.end());
+                afterPseudoNode.reset();
+            }
+        }
     }
     for (auto& child : children) {
         if (child->subtreeStyleDirty) {
@@ -1104,30 +1148,274 @@ void Widget::layout(const Rect& parentBounds) {
     bounds = {x, y, w, h};
     if (s.display == Display::Flex) {
         layoutFlexChildren();
-    } else {
-        float cy = bounds.y + s.padding.top;
+    } else if (s.display == Display::Grid) {
+        int cols = 1;
+        if (!s.gridTemplateColumns.empty()) {
+            auto repeatPos = s.gridTemplateColumns.find("repeat(");
+            if (repeatPos != std::string::npos) {
+                auto comma = s.gridTemplateColumns.find(',', repeatPos);
+                if (comma != std::string::npos) {
+                    try {
+                        cols = std::stoi(s.gridTemplateColumns.substr(repeatPos + 7, comma - (repeatPos + 7)));
+                    } catch (...) {}
+                }
+            } else {
+                std::istringstream iss(s.gridTemplateColumns);
+                std::string token;
+                int count = 0;
+                while (iss >> token) {
+                    count++;
+                }
+                if (count > 0) cols = count;
+            }
+        }
+        if (cols < 1) cols = 1;
+
+        float gap = s.columnGap > 0 ? s.columnGap : (s.gap > 0 ? s.gap : 0.0f);
+        float rGap = s.rowGap > 0 ? s.rowGap : (s.gap > 0 ? s.gap : 0.0f);
+        float availW = bounds.w - s.padding.horizontal();
+        float totalGaps = (cols - 1) * gap;
+        float colW = std::max(0.0f, (availW - totalGaps) / cols);
+
+        float startX = bounds.x + s.padding.left;
+        float startY = bounds.y + s.padding.top;
+        float currentRowY = startY;
+        std::vector<Widget*> rowChildren;
+
         for (auto& child : children) {
             if (!child->visible) continue;
             if (isDisplayNone(child.get())) continue;
             if (isOutOfFlow(child.get())) continue;
-            auto& cs = child->computedStyle;
-            Rect childArea = {
-                bounds.x + s.padding.left,
-                cy,
-                bounds.w - s.padding.horizontal(),
-                bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000
-            };
-            child->layout(childArea);
-            cy = child->bounds.y + child->bounds.h + child->computedStyle.margin.bottom;
-        }
-        if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty()) {
-            float maxY = bounds.y;
-            for (auto& c : children) {
-                if (!c->visible || isOutOfFlow(c.get())) continue;
-                if (isDisplayNone(c.get())) continue;
-                maxY = std::max(maxY, c->bounds.y + c->bounds.h + c->computedStyle.margin.bottom);
+
+            rowChildren.push_back(child.get());
+
+            if (rowChildren.size() == static_cast<size_t>(cols)) {
+                float maxRowH = 0.0f;
+                for (size_t i = 0; i < rowChildren.size(); ++i) {
+                    Widget* c = rowChildren[i];
+                    float cellX = startX + i * (colW + gap);
+                    Rect childArea = { cellX, currentRowY, colW, 10000.0f };
+                    c->layout(childArea);
+                    maxRowH = std::max(maxRowH, c->bounds.h);
+                }
+                for (size_t i = 0; i < rowChildren.size(); ++i) {
+                    Widget* c = rowChildren[i];
+                    float cellX = startX + i * (colW + gap);
+                    Rect childArea = { cellX, currentRowY, colW, maxRowH };
+                    c->layout(childArea);
+                }
+                currentRowY += maxRowH + rGap;
+                rowChildren.clear();
             }
-            bounds.h = std::max(bounds.h, maxY - bounds.y + s.padding.bottom);
+        }
+        if (!rowChildren.empty()) {
+            float maxRowH = 0.0f;
+            for (size_t i = 0; i < rowChildren.size(); ++i) {
+                Widget* c = rowChildren[i];
+                float cellX = startX + i * (colW + gap);
+                Rect childArea = { cellX, currentRowY, colW, 10000.0f };
+                c->layout(childArea);
+                maxRowH = std::max(maxRowH, c->bounds.h);
+            }
+            for (size_t i = 0; i < rowChildren.size(); ++i) {
+                Widget* c = rowChildren[i];
+                float cellX = startX + i * (colW + gap);
+                Rect childArea = { cellX, currentRowY, colW, maxRowH };
+                c->layout(childArea);
+            }
+            currentRowY += maxRowH + rGap;
+        }
+
+        if (!s.height.isSet() && !heightProvidedByParentFlex) {
+            float totalH = currentRowY - startY + s.padding.vertical();
+            if (currentRowY > startY) {
+                totalH -= rGap;
+            }
+            bounds.h = std::max(bounds.h, totalH);
+        }
+        contentHeight = currentRowY - bounds.y + s.padding.bottom;
+    } else if (s.display == Display::Table) {
+        std::vector<Widget*> rows;
+        std::function<void(Widget*)> collectRows = [&](Widget* w) {
+            for (auto& child : w->children) {
+                if (!child->visible || isDisplayNone(child.get())) continue;
+                if (child->computedStyle.display == Display::TableRow) {
+                    rows.push_back(child.get());
+                } else if (child->computedStyle.display == Display::TableRowGroup ||
+                           child->computedStyle.display == Display::TableHeaderGroup ||
+                           child->computedStyle.display == Display::TableFooterGroup) {
+                    collectRows(child.get());
+                }
+            }
+        };
+        collectRows(this);
+
+        std::vector<std::vector<Widget*>> matrix;
+        size_t maxCols = 0;
+        for (Widget* row : rows) {
+            std::vector<Widget*> cells;
+            for (auto& child : row->children) {
+                if (!child->visible || isDisplayNone(child.get())) continue;
+                if (child->computedStyle.display == Display::TableCell) {
+                    cells.push_back(child.get());
+                }
+            }
+            maxCols = std::max(maxCols, cells.size());
+            matrix.push_back(cells);
+        }
+
+        std::vector<float> colWidths(maxCols, 0.0f);
+        float availW = bounds.w - s.padding.horizontal();
+        for (size_t col = 0; col < maxCols; ++col) {
+            float maxCellW = 0.0f;
+            for (auto& rowCells : matrix) {
+                if (col < rowCells.size()) {
+                    Widget* cell = rowCells[col];
+                    Rect measureArea = { 0, 0, 10000.0f, 10000.0f };
+                    cell->layout(measureArea);
+                    maxCellW = std::max(maxCellW, cell->bounds.w);
+                }
+            }
+            colWidths[col] = std::max(5.0f, maxCellW);
+        }
+
+        float totalMeasuredW = 0.0f;
+        for (float w : colWidths) totalMeasuredW += w;
+        if (totalMeasuredW > 0.0f && totalMeasuredW > availW) {
+            for (size_t col = 0; col < maxCols; ++col) {
+                colWidths[col] = (colWidths[col] / totalMeasuredW) * availW;
+            }
+        } else if (totalMeasuredW > 0.0f && totalMeasuredW < availW) {
+            float extra = (availW - totalMeasuredW) / maxCols;
+            for (size_t col = 0; col < maxCols; ++col) {
+                colWidths[col] += extra;
+            }
+        } else if (maxCols > 0) {
+            for (size_t col = 0; col < maxCols; ++col) {
+                colWidths[col] = availW / maxCols;
+            }
+        }
+
+        float currentY = bounds.y + s.padding.top;
+        float startX = bounds.x + s.padding.left;
+
+        for (size_t r = 0; r < matrix.size(); ++r) {
+            Widget* rowWidget = rows[r];
+            auto& rowCells = matrix[r];
+            float rowH = 0.0f;
+
+            float currentX = startX;
+            for (size_t col = 0; col < rowCells.size(); ++col) {
+                Widget* cell = rowCells[col];
+                float colW = colWidths[col];
+                Rect cellArea = { currentX, currentY, colW, 10000.0f };
+                cell->layout(cellArea);
+                rowH = std::max(rowH, cell->bounds.h);
+                currentX += colW;
+            }
+
+            currentX = startX;
+            for (size_t col = 0; col < rowCells.size(); ++col) {
+                Widget* cell = rowCells[col];
+                float colW = colWidths[col];
+                Rect cellArea = { currentX, currentY, colW, rowH };
+                cell->layout(cellArea);
+                currentX += colW;
+            }
+
+            rowWidget->bounds = { startX, currentY, availW, rowH };
+            rowWidget->layoutDirty = false;
+
+            currentY += rowH;
+        }
+
+        if (!s.height.isSet() && !heightProvidedByParentFlex) {
+            bounds.h = std::max(bounds.h, currentY - bounds.y + s.padding.bottom);
+        }
+        contentHeight = currentY - bounds.y + s.padding.bottom;
+    } else {
+        float cy = bounds.y + s.padding.top;
+        struct ActiveFloat {
+            float x;
+            float y;
+            float w;
+            float h;
+            bool isLeft;
+        };
+        std::vector<ActiveFloat> floats;
+
+        for (auto& child : children) {
+            if (!child->visible) continue;
+            if (isDisplayNone(child.get())) continue;
+            if (isOutOfFlow(child.get())) continue;
+
+            auto& cs = child->computedStyle;
+            if (cs.cssClear == CSSClear::Left || cs.cssClear == CSSClear::Both) {
+                for (const auto& f : floats) {
+                    if (f.isLeft) cy = std::max(cy, f.y + f.h);
+                }
+            }
+            if (cs.cssClear == CSSClear::Right || cs.cssClear == CSSClear::Both) {
+                for (const auto& f : floats) {
+                    if (!f.isLeft) cy = std::max(cy, f.y + f.h);
+                }
+            }
+
+            if (cs.cssFloat == CSSFloat::Left) {
+                float currentLeftX = bounds.x + s.padding.left;
+                for (const auto& f : floats) {
+                    if (f.isLeft && f.y + f.h > cy && f.y <= cy) {
+                        currentLeftX = std::max(currentLeftX, f.x + f.w);
+                    }
+                }
+                float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
+                Rect childArea = { currentLeftX, cy, targetW, 10000.0f };
+                child->layout(childArea);
+                floats.push_back({ currentLeftX, cy, child->bounds.w, child->bounds.h, true });
+            } else if (cs.cssFloat == CSSFloat::Right) {
+                float currentRightX = bounds.x + bounds.w - s.padding.right;
+                for (const auto& f : floats) {
+                    if (!f.isLeft && f.y + f.h > cy && f.y <= cy) {
+                        currentRightX = std::min(currentRightX, f.x);
+                    }
+                }
+                float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
+                float cellX = currentRightX - targetW;
+                Rect childArea = { cellX, cy, targetW, 10000.0f };
+                child->layout(childArea);
+                floats.push_back({ cellX, cy, child->bounds.w, child->bounds.h, false });
+            } else {
+                float currentLeftX = bounds.x + s.padding.left;
+                float currentRightX = bounds.x + bounds.w - s.padding.right;
+                for (const auto& f : floats) {
+                    if (f.y + f.h > cy && f.y <= cy) {
+                        if (f.isLeft) {
+                            currentLeftX = std::max(currentLeftX, f.x + f.w);
+                        } else {
+                            currentRightX = std::min(currentRightX, f.x);
+                        }
+                    }
+                }
+                float availChildW = std::max(0.0f, currentRightX - currentLeftX);
+                Rect childArea = {
+                    currentLeftX,
+                    cy,
+                    availChildW,
+                    bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000
+                };
+                child->layout(childArea);
+                cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
+            }
+        }
+
+        float maxFloatY = cy;
+        for (const auto& f : floats) {
+            maxFloatY = std::max(maxFloatY, f.y + f.h);
+        }
+        cy = maxFloatY;
+
+        if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty()) {
+            bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
         }
         contentHeight = cy - bounds.y + s.padding.bottom;
     }

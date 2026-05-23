@@ -1,5 +1,6 @@
 // FluxUI CSS Parser Implementation
 #include "fluxui/css_parser.h"
+#include "fluxui/widgets.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -7,6 +8,8 @@
 #include <utility>
 
 namespace FluxUI {
+
+static bool supportsConditionMatches(std::string_view cond);
 
 StyleSheet::StyleSheet() {
 #if FLUXUI_FAST_STARTUP
@@ -290,10 +293,148 @@ static bool selectorPseudoMatches(std::string_view pseudoName,
     return false;
 }
 
+static void splitSelectorChain(const std::string& selector,
+                               std::vector<std::string>& parts,
+                               std::vector<char>& combinators);
+
+static bool parseNth(std::string_view inner, int& a, int& b) {
+    // Trim spaces
+    while (!inner.empty() && std::isspace((unsigned char)inner.front())) inner.remove_prefix(1);
+    while (!inner.empty() && std::isspace((unsigned char)inner.back())) inner.remove_suffix(1);
+    if (inner == "even") {
+        a = 2; b = 0;
+        return true;
+    }
+    if (inner == "odd") {
+        a = 2; b = 1;
+        return true;
+    }
+    a = 0; b = 0;
+    size_t nPos = inner.find('n');
+    if (nPos == std::string_view::npos) {
+        int val = 0;
+        bool neg = false;
+        size_t idx = 0;
+        if (idx < inner.size() && inner[idx] == '+') idx++;
+        else if (idx < inner.size() && inner[idx] == '-') { neg = true; idx++; }
+        while (idx < inner.size() && std::isdigit((unsigned char)inner[idx])) {
+            val = val * 10 + (inner[idx] - '0');
+            idx++;
+        }
+        b = neg ? -val : val;
+        a = 0;
+        return true;
+    } else {
+        std::string_view aPart = inner.substr(0, nPos);
+        if (aPart.empty()) {
+            a = 1;
+        } else if (aPart == "+") {
+            a = 1;
+        } else if (aPart == "-") {
+            a = -1;
+        } else {
+            int val = 0;
+            bool neg = false;
+            size_t idx = 0;
+            if (idx < aPart.size() && aPart[idx] == '+') idx++;
+            else if (idx < aPart.size() && aPart[idx] == '-') { neg = true; idx++; }
+            while (idx < aPart.size() && std::isdigit((unsigned char)aPart[idx])) {
+                val = val * 10 + (aPart[idx] - '0');
+                idx++;
+            }
+            a = neg ? -val : val;
+        }
+        std::string_view bPart = inner.substr(nPos + 1);
+        while (!bPart.empty() && std::isspace((unsigned char)bPart.front())) bPart.remove_prefix(1);
+        if (bPart.empty()) {
+            b = 0;
+        } else {
+            int val = 0;
+            bool neg = false;
+            size_t idx = 0;
+            if (idx < bPart.size() && bPart[idx] == '+') idx++;
+            else if (idx < bPart.size() && bPart[idx] == '-') { neg = true; idx++; }
+            while (idx < bPart.size() && std::isdigit((unsigned char)bPart[idx])) {
+                val = val * 10 + (bPart[idx] - '0');
+                idx++;
+            }
+            b = neg ? -val : val;
+        }
+        return true;
+    }
+}
+
+static bool matchNthIndex(int index, int a, int b) {
+    if (a == 0) {
+        return index == b;
+    }
+    if (a > 0) {
+        return index >= b && (index - b) % a == 0;
+    }
+    return index <= b && (b - index) % (-a) == 0;
+}
+
+static int getSiblingIndex(const Widget* widget, bool ofType, bool fromEnd) {
+    if (!widget || !widget->parent) return 1;
+    const auto& siblings = widget->parent->children;
+    std::string_view targetType = widget->selectorType();
+    
+    int count = 0;
+    int index = 0;
+    for (const auto& sibling : siblings) {
+        if (!sibling) continue;
+        if (ofType && sibling->selectorType() != targetType) continue;
+        count++;
+        if (sibling.get() == widget) {
+            index = count;
+        }
+    }
+    if (fromEnd) {
+        return count - index + 1;
+    }
+    return index;
+}
+
+static bool widgetHasDescendantMatching(const Widget* root, const std::string& selector) {
+    if (!root) return false;
+    struct Traversal {
+        static bool search(const Widget* current, const std::string& selector, const Widget* limitRoot) {
+            for (const auto& childShared : current->children) {
+                const Widget* child = childShared.get();
+                if (!child) continue;
+                
+                std::vector<CSSSelectorNode> childAncestors;
+                for (const Widget* p = child->parent; p; p = p->parent) {
+                    childAncestors.push_back({p->className, p->id, p->selectorType(), p});
+                }
+                
+                std::vector<std::string> parts;
+                std::vector<char> combinators;
+                splitSelectorChain(selector, parts, combinators);
+                CSSRule rule;
+                rule.selector = selector;
+                rule.parts = parts;
+                rule.combinators = combinators;
+                
+                if (StyleSheet::selectorMatches(rule, child->className, child->id, child->selectorType(), childAncestors, nullptr, child)) {
+                    return true;
+                }
+                
+                if (search(child, selector, limitRoot)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    };
+    return Traversal::search(root, selector, root);
+}
+
 static bool matchCompoundSelector(const std::string& compound,
                                   std::string_view className,
                                   std::string_view id,
-                                  std::string_view type) {
+                                  std::string_view type,
+                                  const Widget* widget) {
     std::string_view s = trimLocal(compound);
     if (s.empty() || s == "*") return s == "*";
 
@@ -334,6 +475,26 @@ static bool matchCompoundSelector(const std::string& compound,
             std::string inner = std::string(s.substr(innerStart, i - innerStart));
             ++i;
 
+            if (pseudoName == "has") {
+                if (!widget) return false;
+                if (!widgetHasDescendantMatching(widget, inner)) return false;
+                hasAnySelector = true;
+                continue;
+            }
+
+            if (pseudoName == "nth-child" || pseudoName == "nth-last-child" ||
+                pseudoName == "nth-of-type" || pseudoName == "nth-last-of-type") {
+                if (!widget) return false;
+                int a = 0, b = 0;
+                if (!parseNth(inner, a, b)) return false;
+                bool ofType = (pseudoName == "nth-of-type" || pseudoName == "nth-last-of-type");
+                bool fromEnd = (pseudoName == "nth-last-child" || pseudoName == "nth-last-of-type");
+                int index = getSiblingIndex(widget, ofType, fromEnd);
+                if (!matchNthIndex(index, a, b)) return false;
+                hasAnySelector = true;
+                continue;
+            }
+
             if (pseudoName != "is" && pseudoName != "where" &&
                 pseudoName != "-webkit-any" && pseudoName != "not") {
                 return false;
@@ -345,7 +506,7 @@ static bool matchCompoundSelector(const std::string& compound,
                 std::vector<char> combinators;
                 splitSelectorChain(selector, parts, combinators);
                 if (parts.size() == 1 &&
-                    matchCompoundSelector(parts[0], className, id, type)) {
+                    matchCompoundSelector(parts[0], className, id, type, widget)) {
                     matchedAny = true;
                     break;
                 }
@@ -498,9 +659,14 @@ static bool extractTrailingStatePseudo(std::string& selector, std::string* pseud
 
     if (colon == std::string::npos) return false;
 
-    std::string name = lowerAscii(trimLocal(selector.substr(colon + 1)));
+    size_t nameStart = colon + 1;
+    if (nameStart < selector.size() && selector[nameStart] == ':') {
+        nameStart++;
+    }
+    std::string name = lowerAscii(trimLocal(selector.substr(nameStart)));
     if (name == "hover" || name == "focus" ||
-        name == "focus-visible" || name == "active") {
+        name == "focus-visible" || name == "active" ||
+        name == "before" || name == "after") {
         if (pseudo) *pseudo = name;
         selector = trimLocal(selector.substr(0, colon));
         return true;
@@ -632,14 +798,15 @@ bool StyleSheet::selectorMatches(const CSSRule& rule,
                                  std::string_view id,
                                  std::string_view type,
                                  const std::vector<CSSSelectorNode>& ancestors,
-                                 std::string_view* pseudo) {
+                                 std::string_view* pseudo,
+                                 const Widget* widget) {
     if (pseudo) {
         *pseudo = rule.pseudoState;
     }
     if (rule.parts.empty()) return false;
 
     int last = (int)rule.parts.size() - 1;
-    if (!matchCompoundSelector(rule.parts[(size_t)last], className, id, type)) return false;
+    if (!matchCompoundSelector(rule.parts[(size_t)last], className, id, type, widget)) return false;
 
     size_t ancestorCursor = 0;
     for (int i = last - 1; i >= 0; --i) {
@@ -650,7 +817,8 @@ bool StyleSheet::selectorMatches(const CSSRule& rule,
             if (!matchCompoundSelector(rule.parts[(size_t)i],
                                        ancestor.className,
                                        ancestor.id,
-                                       ancestor.type)) {
+                                       ancestor.type,
+                                       ancestor.widget)) {
                 return false;
             }
             ancestorCursor++;
@@ -664,7 +832,8 @@ bool StyleSheet::selectorMatches(const CSSRule& rule,
             if (matchCompoundSelector(rule.parts[(size_t)i],
                                       ancestor.className,
                                       ancestor.id,
-                                      ancestor.type)) {
+                                      ancestor.type,
+                                      ancestor.widget)) {
                 found = true;
                 break;
             }
@@ -959,6 +1128,15 @@ void StyleSheet::parseRules(const std::string& css, const std::string& mediaQuer
                     ? query
                     : mediaQuery + " and " + query;
                 parseRules(body, combinedQuery);
+            } else if (lowerSelector.rfind("@supports", 0) == 0) {
+                std::string condition = trim(selector.substr(9));
+                if (supportsConditionMatches(condition)) {
+                    parseRules(body, mediaQuery);
+                }
+            } else if (lowerSelector.rfind("@font-face", 0) == 0) {
+                parseFontFace(body);
+            } else if (lowerSelector.rfind("@layer", 0) == 0) {
+                parseRules(body, mediaQuery);
             } else if (!selector.empty() && selector[0] != '@') {
                 parseRule(selector, body, mediaQuery);
             }
@@ -1212,7 +1390,9 @@ Style StyleSheet::resolve(std::string_view className,
                           std::string_view id,
                           std::string_view type,
                           const std::vector<CSSSelectorNode>& ancestors,
-                          const Style* parentStyle) const {
+                          const Style* parentStyle,
+                          const Widget* widget,
+                          std::string_view targetPseudo) const {
     const auto* inheritedCustomProperties = parentStyle ? &parentStyle->customProperties : nullptr;
     StyleCacheKey key = buildCacheKey(className, id, type, ancestors, parentStyle);
 
@@ -1265,10 +1445,14 @@ Style StyleSheet::resolve(std::string_view className,
         const auto& rule = rules[ruleIndex];
         if (!mediaQueryMatches(rule.mediaQuery)) continue;
         std::string_view pseudo;
-        if (selectorMatches(rule, className, id, type, ancestors, &pseudo)) {
-            if (!pseudo.empty() && pseudo != "hover" &&
-                pseudo != "focus" && pseudo != "focus-visible" &&
-                pseudo != "active") continue;
+        if (selectorMatches(rule, className, id, type, ancestors, &pseudo, widget)) {
+            if (targetPseudo.empty()) {
+                if (!pseudo.empty() && pseudo != "hover" &&
+                    pseudo != "focus" && pseudo != "focus-visible" &&
+                    pseudo != "active") continue;
+            } else {
+                if (pseudo != targetPseudo) continue;
+            }
 
             for (const auto& prop : rule.properties) {
                 std::string value = prop.value;
@@ -2603,8 +2787,18 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.hasLineHeight = true;
     } else if (name == "opacity") {
         style.opacity = parseFloat(value);
+    } else if (name == "float") {
+        if (value == "left") style.cssFloat = CSSFloat::Left;
+        else if (value == "right") style.cssFloat = CSSFloat::Right;
+        else style.cssFloat = CSSFloat::None;
+    } else if (name == "clear") {
+        if (value == "left") style.cssClear = CSSClear::Left;
+        else if (value == "right") style.cssClear = CSSClear::Right;
+        else if (value == "both") style.cssClear = CSSClear::Both;
+        else style.cssClear = CSSClear::None;
     } else if (name == "display") {
         if (value == "flex") style.display = Display::Flex;
+        else if (value == "grid") style.display = Display::Grid;
         else if (value == "none") style.display = Display::None;
         else if (value == "inline-block") style.display = Display::InlineBlock;
         else if (value == "inline") style.display = Display::Inline;
@@ -2732,6 +2926,20 @@ void StyleSheet::mergeProperty(Style& style, const std::string& name, const std:
         style.bottom = parseCSSValue(value);
     } else if (name == "left") {
         style.left = parseCSSValue(value);
+    } else if (name == "grid-template-columns") {
+        style.gridTemplateColumns = value;
+    } else if (name == "grid-template-rows") {
+        style.gridTemplateRows = value;
+    } else if (name == "grid-column") {
+        style.gridColumn = value;
+    } else if (name == "grid-row") {
+        style.gridRow = value;
+    } else if (name == "content") {
+        std::string raw = value;
+        if (raw.size() >= 2 && ((raw.front() == '"' && raw.back() == '"') || (raw.front() == '\'' && raw.back() == '\''))) {
+            raw = raw.substr(1, raw.size() - 2);
+        }
+        style.content = raw;
     } else if (name == "font-family") {
         style.fontFamily = value;
         style.hasFontFamily = true;
@@ -3560,6 +3768,125 @@ float StyleSheet::parseDuration(const std::string& val) {
         return parseFloat(v);
     }
     return parseFloat(v);
+}
+
+static bool supportsFeatureMatches(std::string_view feature) {
+    while (!feature.empty() && feature.front() == '(') {
+        if (feature.back() == ')') {
+            feature.remove_prefix(1);
+            feature.remove_suffix(1);
+        } else {
+            break;
+        }
+    }
+    while (!feature.empty() && std::isspace((unsigned char)feature.front())) feature.remove_prefix(1);
+    while (!feature.empty() && std::isspace((unsigned char)feature.back())) feature.remove_suffix(1);
+    
+    if (feature.empty()) return false;
+    
+    size_t colon = feature.find(':');
+    if (colon == std::string_view::npos) return false;
+    
+    std::string prop = StyleSheet::trim(std::string(feature.substr(0, colon)));
+    std::string val = StyleSheet::trim(std::string(feature.substr(colon + 1)));
+    
+    for (char& c : prop) c = std::tolower((unsigned char)c);
+    for (char& c : val) c = std::tolower((unsigned char)c);
+    
+    if (prop == "display") {
+        return val == "block" || val == "flex" || val == "inline-block" ||
+               val == "inline" || val == "none" || val == "grid" ||
+               val.rfind("table", 0) == 0;
+    }
+    if (prop == "position") {
+        return val == "static" || val == "relative" || val == "absolute" || val == "fixed" || val == "sticky";
+    }
+    if (prop == "grid-template-columns" || prop == "grid-template-rows" || prop == "grid-column" || prop == "grid-row") {
+        return true;
+    }
+    if (prop == "transition" || prop == "animation" || prop == "transform") {
+        return true;
+    }
+    return prop == "color" || prop == "background-color" || prop == "border" ||
+           prop == "border-radius" || prop == "padding" || prop == "margin" ||
+           prop == "font-size" || prop == "font-weight" || prop == "font-style" ||
+           prop == "font-family" || prop == "line-height" || prop == "text-align" ||
+           prop == "width" || prop == "height" || prop == "min-width" || prop == "min-height" ||
+           prop == "max-width" || prop == "max-height" || prop == "gap" || prop == "row-gap" ||
+           prop == "column-gap" || prop == "flex-grow" || prop == "flex-shrink" || prop == "flex-basis";
+}
+
+static bool supportsConditionMatches(std::string_view cond) {
+    while (!cond.empty() && std::isspace((unsigned char)cond.front())) cond.remove_prefix(1);
+    while (!cond.empty() && std::isspace((unsigned char)cond.back())) cond.remove_suffix(1);
+    
+    if (cond.empty()) return false;
+    
+    if (cond.rfind("not ", 0) == 0 || cond.rfind("not(", 0) == 0) {
+        size_t skip = cond[3] == '(' ? 3 : 4;
+        return !supportsConditionMatches(cond.substr(skip));
+    }
+    
+    int depth = 0;
+    for (size_t i = 0; i < cond.size(); ++i) {
+        if (cond[i] == '(') depth++;
+        else if (cond[i] == ')') depth--;
+        else if (depth == 0) {
+            if (i + 5 < cond.size() && cond.substr(i, 5) == " and ") {
+                return supportsConditionMatches(cond.substr(0, i)) &&
+                       supportsConditionMatches(cond.substr(i + 5));
+            }
+            if (i + 4 < cond.size() && cond.substr(i, 4) == " or ") {
+                return supportsConditionMatches(cond.substr(0, i)) ||
+                       supportsConditionMatches(cond.substr(i + 4));
+            }
+        }
+    }
+    
+    if (cond.front() == '(' && cond.back() == ')') {
+        return supportsConditionMatches(cond.substr(1, cond.size() - 2));
+    }
+    
+    return supportsFeatureMatches(cond);
+}
+
+void StyleSheet::parseFontFace(const std::string& body) {
+    std::string fontFamily;
+    std::string src;
+    for (std::string line : splitDeclarations(body)) {
+        line = trim(line);
+        auto colon = line.find(':');
+        if (colon == std::string::npos) continue;
+        std::string name = lowerAscii(trim(line.substr(0, colon)));
+        std::string val = trim(line.substr(colon + 1));
+        if (name == "font-family") {
+            if (val.size() >= 2 && (val.front() == '"' || val.front() == '\'') && val.front() == val.back()) {
+                fontFamily = val.substr(1, val.size() - 2);
+            } else {
+                fontFamily = val;
+            }
+        } else if (name == "src") {
+            size_t urlStart = val.find("url(");
+            if (urlStart != std::string::npos) {
+                size_t start = urlStart + 4;
+                size_t end = val.find(')', start);
+                if (end != std::string::npos) {
+                    std::string urlPath = trim(val.substr(start, end - start));
+                    if (urlPath.size() >= 2 && (urlPath.front() == '"' || urlPath.front() == '\'') && urlPath.front() == urlPath.back()) {
+                        src = urlPath.substr(1, urlPath.size() - 2);
+                    } else {
+                        src = urlPath;
+                    }
+                }
+            } else {
+                src = val;
+            }
+        }
+    }
+    
+    if (!fontFamily.empty() && !src.empty()) {
+        fontFaces.push_back({fontFamily, src});
+    }
 }
 
 } // namespace FluxUI

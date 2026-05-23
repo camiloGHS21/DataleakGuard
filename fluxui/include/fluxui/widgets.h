@@ -116,8 +116,11 @@ public:
     Widget* parent = nullptr;
     std::shared_ptr<std::pmr::memory_resource> childArena;
     std::vector<std::shared_ptr<Widget>> children;
+    std::shared_ptr<Widget> beforePseudoNode;
+    std::shared_ptr<Widget> afterPseudoNode;
     std::function<void()> onClick;
     std::function<void()> onHover;
+    const std::string& selectorType() const;
     Widget() = default;
     virtual ~Widget() = default;
     Widget* addChild(std::shared_ptr<Widget> child) {

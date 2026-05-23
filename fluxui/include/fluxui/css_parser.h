@@ -21,6 +21,11 @@ struct CSSProperty {
     uint32_t sourceOrder = 0;
 };
 
+struct CSSFontFace {
+    std::string fontFamily;
+    std::string src;
+};
+
 struct CSSRule {
     std::string selector; // e.g. ".sidebar", "#dashboard", "button"
     std::vector<CSSProperty> properties;
@@ -34,10 +39,13 @@ struct CSSRule {
     std::vector<char> combinators;
 };
 
+class Widget;
+
 struct CSSSelectorNode {
     std::string_view className;
     std::string_view id;
     std::string_view type;
+    const Widget* widget = nullptr;
 };
 
 enum class CSSRuleBucket {
@@ -76,6 +84,7 @@ public:
     StyleSheet();
 
     std::vector<CSSRule> rules;
+    std::vector<CSSFontFace> fontFaces;
 
     // Load and parse a CSS file
     bool loadFile(const std::string& path);
@@ -96,7 +105,9 @@ public:
                   std::string_view id,
                   std::string_view type,
                   const std::vector<CSSSelectorNode>& ancestors,
-                  const Style* parentStyle) const;
+                  const Style* parentStyle,
+                  const Widget* widget = nullptr,
+                  std::string_view targetPseudo = "") const;
     template <typename F>
     Style resolveLazy(std::string_view className,
                       std::string_view id,
@@ -104,7 +115,8 @@ public:
                       uint64_t ancestorH1,
                       uint64_t ancestorH2,
                       const Style* parentStyle,
-                      F&& getAncestors) const {
+                      F&& getAncestors,
+                      const Widget* widget = nullptr) const {
         uint64_t h1 = ancestorH1;
         uint64_t h2 = ancestorH2;
 
@@ -139,7 +151,7 @@ public:
 #endif
 
         const auto& ancestors = getAncestors();
-        return resolve(className, id, type, ancestors, parentStyle);
+        return resolve(className, id, type, ancestors, parentStyle, widget);
     }
     std::string resolveValue(const std::string& value,
                              const std::unordered_map<std::string, std::string>& customProperties,
@@ -147,6 +159,15 @@ public:
 
     // Merge a resolved style onto a base style
     static void mergeProperty(Style& style, const std::string& name, const std::string& value);
+    static std::string trim(const std::string& s);
+
+    static bool selectorMatches(const CSSRule& rule,
+                                std::string_view className,
+                                std::string_view id,
+                                std::string_view type,
+                                const std::vector<CSSSelectorNode>& ancestors,
+                                std::string_view* pseudo = nullptr,
+                                const Widget* widget = nullptr);
 
 private:
     std::unordered_map<std::string, std::string> variables_;
@@ -167,6 +188,7 @@ private:
 
     void parseRules(const std::string& css, const std::string& mediaQuery);
     void parseRule(const std::string& selector, const std::string& body, const std::string& mediaQuery = "");
+    void parseFontFace(const std::string& body);
     void indexRule(size_t ruleIndex);
     std::string resolveValueInternal(const std::string& value,
                                      const std::unordered_map<std::string, std::string>* customProperties,
@@ -177,14 +199,7 @@ private:
                                        std::string_view type,
                                        const std::vector<CSSSelectorNode>& ancestors,
                                        const Style* parentStyle);
-    static std::string trim(const std::string& s);
     static std::vector<std::string> splitTopLevel(const std::string& value, char delimiter);
-    static bool selectorMatches(const CSSRule& rule,
-                                std::string_view className,
-                                std::string_view id,
-                                std::string_view type,
-                                const std::vector<CSSSelectorNode>& ancestors,
-                                std::string_view* pseudo = nullptr);
     static int selectorSpecificity(const std::string& selector);
     static CSSRuleIndexKey selectorIndexKey(const std::string& selector);
     static void appendClassTokens(std::string_view className, std::vector<std::string_view>& out);
