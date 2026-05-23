@@ -61,22 +61,22 @@ static bool reportScheduler = true;
 static bool cloudSync = true;
 static std::array<bool, 5> ruleEnabled = {true, true, true, false, true};
 static const char* navItems[] = {
-    "Dashboard", "Scanner", "Alerts", "Rules", "Reports", "Settings"
+    "Dashboard", "Scanner", "Alerts", "Rules", "Reports", "Settings", "Blink UI"
 };
 static const char* navRoutes[] = {
-    "/dashboard", "/scanner", "/alerts", "/rules", "/reports", "/settings"
+    "/dashboard", "/scanner", "/alerts", "/rules", "/reports", "/settings", "/blink"
 };
 static const char* navIcons[] = {
-    "dashboard", "scanner", "alert", "rules", "report", "settings"
+    "dashboard", "scanner", "alert", "rules", "report", "settings", "rules"
 };
 struct RetainedShell {
     bool initialized = false;
     Panel* sidebar = nullptr;
     Panel* contentArea = nullptr;
     Panel* statusBar = nullptr;
-    Button* navButtons[6] = {};
-    Icon*   navIcons[6] = {};
-    Text*   navTexts[6] = {};
+    Button* navButtons[7] = {};
+    Icon*   navIcons[7] = {};
+    Text*   navTexts[7] = {};
     Text* postureTitle = nullptr;
     ProgressBar* scanProgressBar = nullptr;
     Text*        scanCaption = nullptr;
@@ -89,7 +89,7 @@ struct RetainedShell {
         scanOrbIcon = nullptr;
     }
     void updateNavHighlights(const std::string& activeRoute) {
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             if (!navButtons[i]) continue;
             bool active = (activeRoute == navRoutes[i]);
             navButtons[i]->className = active ? "nav-item active" : "nav-item";
@@ -264,10 +264,10 @@ static void buildSidebar(Widget* root, Application& app) {
     auto* logoCopy = logoRow->panel("logo-copy", 2);
     logoCopy->text("DataLeak Guard", "sidebar-logo");
     logoCopy->text("Enterprise DLP Console", "sidebar-subtitle");
-    auto* nav = sidebar->panel("nav-section", 7);
+    auto* nav = sidebar->panel("nav-section", 8);
     nav->text("WORKSPACE", "nav-label");
     const std::string activeRoute = app.currentRoute();
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 7; i++) {
         std::string cls = "nav-item";
         bool active = activeRoute == navRoutes[i];
         if (active) cls += " active";
@@ -565,6 +565,103 @@ static void buildSettings(Widget* content) {
     addTableRow(privacy, "table-row", "Evidence retention", "365 days", "All incidents", "Legal");
     addTableRow(privacy, "table-row", "Low-risk telemetry", "30 days", "Endpoints", "IT Ops");
     addTableRow(privacy, "table-row", "PII masking", "Enabled", "Reports", "Compliance");
+}
+static void buildBlinkParity(Application& app, Widget* content) {
+    buildTopBar(content, "Blink UI", "Testing native Chromium Blink user-agent element behaviors", false);
+    auto* main = content->add<Panel>("main-scroll");
+    
+    auto* grid = main->panel("blink-showcase-grid", 2);
+    
+    auto* col1 = grid->panel("blink-showcase-column", 2);
+    
+    // Disclosure Widgets
+    auto* cardDetails = col1->panel("blink-section-card", 3);
+    cardDetails->text("Disclosure Widgets (<details> & <summary>)", "blink-section-title");
+    
+    auto* details1 = cardDetails->add<Details>(false);
+    details1->summary("Technical Specifications");
+    details1->text("This widget operates in high fidelity parity with Chrome's native Blink engine disclosure element. Expanding this item triggers a dynamic layout pass where child nodes are set to visible/invisible.");
+    
+    auto* details2 = cardDetails->add<Details>(true);
+    details2->summary("Enforcement Engine Architecture");
+    details2->text("The engine intercepts file modification and memory allocation streams on target endpoints. Real-time classification models verify standard compliance parameters.");
+    
+    // Hyperlinks
+    auto* cardLinks = col1->panel("blink-section-card", 6);
+    cardLinks->text("Hyperlinks (<a> Anchor)", "blink-section-title");
+    cardLinks->a("Go to Chromium Blink Engine Source", "https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/");
+    cardLinks->br();
+    cardLinks->a("Go to FluxUI Documentation Portal", "https://github.com/camiloGHS21/FluxUI");
+    cardLinks->br();
+    cardLinks->a("Go to Google DeepMind Official Site", "https://deepmind.google");
+
+    // Progress Bars
+    auto* cardProgress = col1->panel("blink-section-card", 5);
+    cardProgress->text("Progress Bars (<progress>)", "blink-section-title");
+    
+    cardProgress->text("Determinate (65%):", "page-subtitle");
+    cardProgress->progress(0.65f, 1.0f, "progress");
+
+    cardProgress->text("Indeterminate (Animated):", "page-subtitle");
+    cardProgress->progress(-1.0f, 1.0f, "progress");
+
+    auto* col2 = grid->panel("blink-showcase-column", 3);
+    
+    // Progress Meters
+    auto* cardMeters = col2->panel("blink-section-card", 7);
+    cardMeters->text("Progress Meters (<meter>)", "blink-section-title");
+    
+    cardMeters->text("Optimal Range (Green):", "page-subtitle");
+    auto* m1 = cardMeters->meter(0.6f, 0.0f, 1.0f, "meter");
+    m1->low = 0.1f;
+    m1->high = 0.9f;
+    m1->optimum = 0.5f;
+
+    cardMeters->text("Sub-optimal Warning (Yellow):", "page-subtitle");
+    auto* m2 = cardMeters->meter(0.7f, 0.0f, 1.0f, "meter");
+    m2->low = 0.3f;
+    m2->high = 0.9f;
+    m2->optimum = 0.1f;
+
+    cardMeters->text("Out-of-bounds Alert (Red):", "page-subtitle");
+    auto* m3 = cardMeters->meter(0.15f, 0.0f, 1.0f, "meter");
+    m3->low = 0.3f;
+    m3->high = 0.8f;
+    m3->optimum = 0.5f;
+
+    // Horizontal Rules & Breaks
+    auto* cardSeparators = col2->panel("blink-section-card", 5);
+    cardSeparators->text("Horizontal Rules & Breaks (<hr> & <br>)", "blink-section-title");
+    cardSeparators->text("Line 1 above break", "page-subtitle");
+    cardSeparators->br();
+    cardSeparators->text("Line 2 below break", "page-subtitle");
+    cardSeparators->hr();
+    cardSeparators->text("Content below horizontal divider rule", "page-subtitle");
+
+    // Dialog Box Trigger Card
+    auto* cardDialog = col2->panel("blink-section-card", 3);
+    cardDialog->text("Overlay Dialogs (<dialog>)", "blink-section-title");
+    cardDialog->text("Click the button below to display a modal dialog overlay styled with custom positions, borders, and shadows.", "page-subtitle");
+    
+    // Dialog modal widget
+    auto* dl = main->dialog("dialog");
+    dl->text("System Access Requested", "dialog-title");
+    dl->text("An external process is attempting to load system assets for rendering evaluation. Confirm authorization to proceed.", "dialog-text");
+    
+    auto* dialogButtons = dl->panel("posture-pills", 2);
+    addButton(dialogButtons, "Authorize", "shield", "btn btn-primary btn-small", [dl]() {
+        std::cout << "[Blink UI] Dialog Authorized" << std::endl;
+        dl->close();
+    });
+    addButton(dialogButtons, "Decline", "alert", "btn btn-danger btn-small", [dl]() {
+        std::cout << "[Blink UI] Dialog Declined" << std::endl;
+        dl->close();
+    });
+
+    addButton(cardDialog, "Show Dialog", "alert", "btn btn-primary", [dl]() {
+        std::cout << "[Blink UI] Showing Modal Dialog" << std::endl;
+        dl->showModal();
+    });
 }
 static void runKeymapBenchmark(Application& app) {
     std::cout << "\n==================================================" << std::endl;
@@ -893,6 +990,7 @@ int main(int argc, char** argv) {
     app.addRoute("/rules", [](Application&, Widget* content) { buildRules(content); });
     app.addRoute("/reports", [](Application&, Widget* content) { buildReports(content); });
     app.addRoute("/settings", [](Application&, Widget* content) { buildSettings(content); });
+    app.addRoute("/blink", [](Application& appRef, Widget* content) { buildBlinkParity(appRef, content); });
     app.setNotFoundRoute([](Application&, Widget* content) {
         buildTopBar(content, "Page Not Found", "The requested console view is not registered", false);
         auto* main = content->add<Panel>("main-scroll");
@@ -920,6 +1018,9 @@ int main(int argc, char** argv) {
     });
     app.registerAction("nav:settings", [](Application& a, const std::string&) {
         a.navigate("/settings");
+    });
+    app.registerAction("nav:blink", [](Application& a, const std::string&) {
+        a.navigate("/blink");
     });
     app.registerAction("policy:toggle-block", [](Application& a, const std::string&) {
         blockMode = !blockMode;

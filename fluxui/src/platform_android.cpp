@@ -249,6 +249,12 @@ std::string Platform::getClipboardText() {
     return "";
 }
 
+void Platform::openSystemURL(const std::string& url) {
+    // Open system URL on Android requires JNI. We log it for now.
+    FLUXUI_LOGI("FluxUI: Open URL '%s' (not implemented, JNI required)", url.c_str());
+}
+
+
 NativeCursorHandle Platform::createSystemCursor(CursorType type) {
     return nullptr; // Android doesn't use hardware cursors for touch
 }

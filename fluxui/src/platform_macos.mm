@@ -316,6 +316,16 @@ std::string Platform::getClipboardText() {
     return "";
 }
 
+void Platform::openSystemURL(const std::string& url) {
+    if (url.empty()) return;
+    @autoreleasepool {
+        NSString* nsUrlStr = [NSString stringWithUTF8String:url.c_str()];
+        NSURL* nsUrl = [NSURL URLWithString:nsUrlStr];
+        [[NSWorkspace sharedWorkspace] openURL:nsUrl];
+    }
+}
+
+
 NativeCursorHandle Platform::createSystemCursor(CursorType type) {
     NSCursor* cursor = [NSCursor arrowCursor];
     switch (type) {

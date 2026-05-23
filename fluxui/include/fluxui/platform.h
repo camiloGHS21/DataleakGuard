@@ -65,6 +65,7 @@ public:
     
     static void setClipboardText(const char* text);
     static std::string getClipboardText();
+    static void openSystemURL(const std::string& url);
     
     static NativeCursorHandle createSystemCursor(CursorType type);
     static void setCursor(NativeCursorHandle cursor);

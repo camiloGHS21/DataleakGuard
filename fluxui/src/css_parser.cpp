@@ -1873,6 +1873,38 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         style.border = Border(0.0f, Color(0, 0, 0, 0));
         style.color = Color(0.565f, 0.565f, 0.565f, 1.0f);
         style.hasColor = true;
+    } else if (t == "details") {
+        block();
+    } else if (t == "summary") {
+        block();
+        style.padding.left = 20.0f;
+        style.cursor = CursorType::Pointer;
+    } else if (t == "dialog") {
+        style.display = Display::None;
+        style.position = Position::Absolute;
+        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
+        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
+        style.hasColor = true;
+        style.border = Border(1.0f, Color(0.0f, 0.0f, 0.0f, 1.0f));
+        style.padding = EdgeInsets(20.0f);
+    } else if (t == "meter") {
+        inlineBox();
+        style.width = CSSValue::px(80.0f);
+        style.height = CSSValue::px(16.0f);
+        style.backgroundColor = Color(0.9f, 0.9f, 0.9f, 1.0f);
+        style.border = Border(1.0f, Color(0.7f, 0.7f, 0.7f, 1.0f));
+        style.borderRadius = BorderRadius(4.0f);
+    } else if (t == "progress") {
+        inlineBox();
+        style.width = CSSValue::px(160.0f);
+        style.height = CSSValue::px(16.0f);
+        style.backgroundColor = Color(0.1f, 0.1f, 0.1f, 0.1f);
+        style.border = Border(1.0f, Color(0.3f, 0.3f, 0.3f, 0.3f));
+        style.borderRadius = BorderRadius(8.0f);
+    } else if (t == "br") {
+        style.display = Display::Block;
+        style.width = CSSValue::pct(100.0f);
+        style.height = CSSValue::px(0.0f);
     }
 }
 

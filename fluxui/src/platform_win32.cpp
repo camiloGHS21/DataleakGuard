@@ -1,7 +1,8 @@
-#ifdef _WIN32
+#ifdef _WIN32
 #include "fluxui/platform.h"
 #include <windows.h>
 #include <windowsx.h>
+#include <shellapi.h>
 #include <iostream>
 
 #ifndef DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
@@ -180,6 +181,12 @@ std::string Platform::getClipboardText() {
     CloseClipboard();
     return result;
 }
+
+void Platform::openSystemURL(const std::string& url) {
+    if (url.empty()) return;
+    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 
 NativeCursorHandle Platform::createSystemCursor(CursorType type) {
     LPCWSTR id = (LPCWSTR)32512; // IDC_ARROW

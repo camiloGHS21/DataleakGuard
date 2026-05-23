@@ -410,6 +410,14 @@ std::string Platform::getClipboardText() {
     return result;
 }
 
+void Platform::openSystemURL(const std::string& url) {
+    if (url.empty()) return;
+    std::string cmd = "xdg-open \"" + url + "\" &";
+    int ret = std::system(cmd.c_str());
+    (void)ret;
+}
+
+
 NativeCursorHandle Platform::createSystemCursor(CursorType type) {
     if (!g_display) return nullptr;
     unsigned int shape = XC_left_ptr;

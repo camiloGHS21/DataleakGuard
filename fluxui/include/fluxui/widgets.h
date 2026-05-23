@@ -68,6 +68,14 @@ class Placeholder;
 class Canvas;
 class LazyPanel;
 class VirtualList;
+class Anchor;
+class Details;
+class Summary;
+class Dialog;
+class Meter;
+class Progress;
+class Hr;
+class Br;
 enum class VirtualListScrollStrategy {
     Start = 0,
     Center = 1,
@@ -212,13 +220,22 @@ public:
                      const std::string& placeholder,
                      const std::string& cls);
     TextInput* textarea(const std::string& placeholder = "", const std::string& cls = "");
+    Anchor* anchor(const std::string& content, const std::string& href = "", const std::string& cls = "");
+    Anchor* a(const std::string& content, const std::string& href = "", const std::string& cls = "");
+    Details* details(const std::string& cls = "");
+    Summary* summary(const std::string& content = "", const std::string& cls = "");
+    Dialog* dialog(const std::string& cls = "");
+    Meter* meter(float value = 0.0f, float min = 0.0f, float max = 1.0f, const std::string& cls = "");
+    Progress* progress(float value = -1.0f, float max = 1.0f, const std::string& cls = "");
+    Widget* hr(const std::string& cls = "");
+    Widget* br(const std::string& cls = "");
     Widget* setId(const std::string& value);
     Widget* classes(const std::string& value);
     Widget* addClass(const std::string& value);
     Widget* removeClass(const std::string& value);
     Widget* toggleClass(const std::string& value, bool enabled);
     Widget* css(const std::string& declarations);
-    void resolveStyles(const StyleSheet& sheet);
+    virtual void resolveStyles(const StyleSheet& sheet);
     void markLayoutDirty();
     void markStyleDirty();
     void markStyleDirtyRecursive();
@@ -494,8 +511,97 @@ private:
     float lastBuildWidth_ = -1.0f;
     float lastBuildItemHeight_ = -1.0f;
     bool forceRebuild_ = true;
-
     void rebuildVisibleItems();
+};
+class Anchor : public Text {
+public:
+    std::string href;
+    Anchor() { type = "a"; style.cursor = CursorType::Pointer; }
+    Anchor(const std::string& txt, const std::string& hrefUrl = "", const std::string& cls = "")
+        : Text(txt, cls), href(hrefUrl) {
+        type = "a";
+        style.cursor = CursorType::Pointer;
+    }
+    void update(const InputState& input) override;
+};
+class Details : public Widget {
+public:
+    bool open = false;
+    Details() { type = "details"; }
+    Details(bool isOpen, const std::string& cls = "") : open(isOpen) {
+        type = "details";
+        className = cls;
+    }
+    void layout(const Rect& parentBounds) override;
+};
+class Summary : public Text {
+public:
+    Summary() { type = "summary"; style.cursor = CursorType::Pointer; }
+    Summary(const std::string& text, const std::string& cls = "")
+        : Text(text, cls) {
+        type = "summary";
+        style.cursor = CursorType::Pointer;
+    }
+    void update(const InputState& input) override;
+    void render(Renderer& renderer) override;
+};
+class Dialog : public Widget {
+public:
+    bool open = false;
+    Dialog() { type = "dialog"; }
+    Dialog(const std::string& cls) { type = "dialog"; className = cls; }
+    void show();
+    void showModal();
+    void close();
+    void resolveStyles(const StyleSheet& sheet) override;
+};
+class Meter : public Widget {
+public:
+    float value = 0.0f;
+    float min = 0.0f;
+    float max = 1.0f;
+    float low = 0.0f;
+    float high = 1.0f;
+    float optimum = 0.0f;
+    Meter() { type = "meter"; }
+    Meter(float val, float minValue, float maxValue, const std::string& cls = "")
+        : value(val), min(minValue), max(maxValue) {
+        type = "meter";
+        className = cls;
+        low = minValue;
+        high = maxValue;
+        optimum = (minValue + maxValue) * 0.5f;
+    }
+    void render(Renderer& renderer) override;
+};
+class Progress : public Widget {
+public:
+    float value = -1.0f; // negative value represents indeterminate state
+    float max = 1.0f;
+    Progress() { type = "progress"; }
+    Progress(float val, float maxVal, const std::string& cls = "")
+        : value(val), max(maxVal) {
+        type = "progress";
+        className = cls;
+    }
+    void render(Renderer& renderer) override;
+};
+class Hr : public Widget {
+public:
+    Hr() { type = "hr"; }
+    Hr(const std::string& cls) { type = "hr"; className = cls; }
+};
+class Br : public Widget {
+public:
+    Br() {
+        type = "br";
+        style.display = Display::Block;
+        style.width = CSSValue::pct(100.0f);
+        style.height = CSSValue::px(0.0f);
+    }
+    Br(const std::string& cls) : Br() {
+        className = cls;
+    }
 };
 inline Panel* Widget::panel(const std::string& cls, size_t reserve) {
     auto* widget = add<Panel>(cls);
@@ -757,6 +863,33 @@ inline TextInput* Widget::textarea(const std::string& placeholder, const std::st
     auto* widget = textInput(placeholder, cls);
     widget->type = "textarea";
     return widget;
+}
+inline Anchor* Widget::anchor(const std::string& content, const std::string& href, const std::string& cls) {
+    return add<Anchor>(content, href, cls);
+}
+inline Anchor* Widget::a(const std::string& content, const std::string& href, const std::string& cls) {
+    return anchor(content, href, cls);
+}
+inline Details* Widget::details(const std::string& cls) {
+    return add<Details>(false, cls);
+}
+inline Summary* Widget::summary(const std::string& content, const std::string& cls) {
+    return add<Summary>(content, cls);
+}
+inline Dialog* Widget::dialog(const std::string& cls) {
+    return add<Dialog>(cls);
+}
+inline Meter* Widget::meter(float value, float min, float max, const std::string& cls) {
+    return add<Meter>(value, min, max, cls);
+}
+inline Progress* Widget::progress(float value, float max, const std::string& cls) {
+    return add<Progress>(value, max, cls);
+}
+inline Widget* Widget::hr(const std::string& cls) {
+    return add<Hr>(cls);
+}
+inline Widget* Widget::br(const std::string& cls) {
+    return add<Br>(cls);
 }
 inline Widget* Widget::setId(const std::string& value) {
     id = value;

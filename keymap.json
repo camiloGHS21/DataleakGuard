@@ -8,6 +8,7 @@
       "ctrl-4": "nav:rules",
       "ctrl-5": "nav:reports",
       "ctrl-6": "nav:settings",
+      "ctrl-7": "nav:blink",
       "ctrl-t": "policy:toggle-block",
       "escape": "input:blur-search"
     }
