@@ -185,12 +185,26 @@ static float approximateGlyphAdvance(unsigned char c, float fontSize) {
     if (c >= 128) return fontSize * 0.72f;
     return fontSize * 0.55f;
 }
+static std::string approximateLigatures(const std::string& text) {
+    std::string result = text;
+    const std::vector<std::string> ligs = {"ffi", "ffl", "ff", "fi", "fl", "ft", "st"};
+    for (const auto& lig : ligs) {
+        size_t pos = 0;
+        while ((pos = result.find(lig, pos)) != std::string::npos) {
+            result.replace(pos, lig.length(), "_");
+            pos += 1;
+        }
+    }
+    return result;
+}
+
 static float approximateTextWidth(const std::string& text, float fontSize) {
+    std::string temp = approximateLigatures(text);
     float width = 0.0f;
-    for (size_t i = 0; i < text.size(); ) {
-        unsigned char c = (unsigned char)text[i];
+    for (size_t i = 0; i < temp.size(); ) {
+        unsigned char c = (unsigned char)temp[i];
         width += approximateGlyphAdvance(c, fontSize);
-        i = nextCodepoint(text, i);
+        i = nextCodepoint(temp, i);
     }
     return width;
 }

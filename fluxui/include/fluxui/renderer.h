@@ -74,6 +74,27 @@ struct FontData {
     float fontSize = 0;
     float ascent = 0, descent = 0, lineGap = 0;
     GlyphInfo glyphs[1024]; // Packed range defaults to Latin + Latin Extended-A.
+    std::unordered_map<uint32_t, GlyphInfo> extendedGlyphs;
+    std::unordered_map<uint64_t, float> kerningPairs;
+    std::vector<std::pair<std::string, uint32_t>> supportedLigatures;
+
+    const GlyphInfo& getGlyph(uint32_t c) const {
+        if (c < 1024) return glyphs[c];
+        auto it = extendedGlyphs.find(c);
+        if (it != extendedGlyphs.end()) return it->second;
+        static GlyphInfo emptyGlyph = {};
+        return emptyGlyph;
+    }
+
+    float getKerning(uint32_t left, uint32_t right, float scale) const {
+        uint64_t key = ((uint64_t)left << 32) | (uint64_t)right;
+        auto it = kerningPairs.find(key);
+        if (it != kerningPairs.end()) {
+            return it->second * scale;
+        }
+        return 0.0f;
+    }
+
     std::vector<unsigned char> sourceData;
     std::vector<unsigned char> atlasPixels;
     bool loaded = false;

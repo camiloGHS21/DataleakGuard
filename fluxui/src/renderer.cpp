@@ -132,6 +132,8 @@ extern "C" size_t __stdcall __std_find_last_not_of_trivial_pos_1(
 
 namespace FluxUI {
 
+static std::string substituteLigatures(const std::string& text, const FontData& font);
+
 struct VulkanRendererState {
 #if FLUXUI_HAS_VULKAN_SDK
     struct DynamicPage {
@@ -4555,14 +4557,17 @@ void Renderer::drawSoftwareText(const std::string& text,
         }
     };
 
-    for (size_t i = 0; i < text.size();) {
-        uint32_t codepoint = softwareNextCodepoint(text, i);
-        if (codepoint >= 1024) {
-            continue;
-        }
-        const GlyphInfo& glyph = font.glyphs[codepoint];
+    std::string processedText = substituteLigatures(text, font);
+    uint32_t prevCp = 0;
+    for (size_t i = 0; i < processedText.size();) {
+        uint32_t codepoint = softwareNextCodepoint(processedText, i);
+        const GlyphInfo& glyph = font.getGlyph(codepoint);
         if (glyph.xadvance == 0.0f && codepoint != ' ') {
             continue;
+        }
+
+        if (prevCp != 0) {
+            cursorX += font.getKerning(prevCp, codepoint, glyphScale);
         }
 
         float x = std::floor(cursorX + glyph.xoff * glyphScale + 0.5f);
@@ -4572,6 +4577,7 @@ void Renderer::drawSoftwareText(const std::string& text,
             drawGlyph(glyph, x + boldOffset, y);
         }
         cursorX += glyph.xadvance * glyphScale;
+        prevCp = codepoint;
     }
 }
 
@@ -4934,11 +4940,16 @@ void Renderer::drawVulkanText(const std::string& text,
         return (uint32_t)s[i++];
     };
 
-    for (size_t i = 0; i < text.size(); ) {
-        uint32_t c = getNextCodepoint(text, i);
-        if (c >= 1024) continue;
-        const auto& g = font.glyphs[c];
+    std::string processedText = substituteLigatures(text, font);
+    uint32_t prevCp = 0;
+    for (size_t i = 0; i < processedText.size(); ) {
+        uint32_t c = getNextCodepoint(processedText, i);
+        const auto& g = font.getGlyph(c);
         if (g.xadvance == 0 && c != ' ') continue;
+
+        if (prevCp != 0) {
+            cursorX += font.getKerning(prevCp, c, fontScale);
+        }
 
         float w = g.width * fontScale;
         float h = g.height * fontScale;
@@ -4951,6 +4962,7 @@ void Renderer::drawVulkanText(const std::string& text,
             }
         }
         cursorX += g.xadvance * fontScale;
+        prevCp = c;
     }
 
     if (vertices.empty()) {
@@ -5635,13 +5647,35 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
     for (int i = 0; i < maxGlyphs; ++i) {
         font.glyphs[i] = {};
     }
+    font.extendedGlyphs.clear();
+    font.kerningPairs.clear();
+    font.supportedLigatures.clear();
+
+    const std::vector<std::pair<std::string, uint32_t>> possibleLigatures = {
+        {"ffi", 0xFB03}, {"ffl", 0xFB04}, {"ff", 0xFB00},
+        {"fi",  0xFB01}, {"fl",  0xFB02}, {"ft", 0xFB05},
+        {"st",  0xFB06}
+    };
+
+    std::vector<uint32_t> codepointsToLoad;
+    for (int i = firstGlyph; i < glyphLimit; ++i) {
+        codepointsToLoad.push_back((uint32_t)i);
+    }
+    for (const auto& lig : possibleLigatures) {
+        FT_UInt glyphIndex = FT_Get_Char_Index(face, lig.second);
+        if (glyphIndex != 0) {
+            codepointsToLoad.push_back(lig.second);
+            font.supportedLigatures.push_back(lig);
+        }
+    }
 
     int currentX = 1;
     int currentY = 1;
     int rowHeight = 0;
     bool packedOk = true;
 
-    for (int i = firstGlyph; i < glyphLimit; ++i) {
+    for (size_t idx = 0; idx < codepointsToLoad.size(); ++idx) {
+        uint32_t i = codepointsToLoad[idx];
         FT_UInt glyphIndex = FT_Get_Char_Index(face, i);
         if (FT_Load_Glyph(face, glyphIndex, FLUXUI_FT_LOAD_FLAGS)) {
             continue;
@@ -5664,7 +5698,8 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
                 currentX = 1;
                 currentY = 1;
                 rowHeight = 0;
-                for (int j = firstGlyph; j <= i; ++j) {
+                for (size_t j_idx = 0; j_idx <= idx; ++j_idx) {
+                    uint32_t j = codepointsToLoad[j_idx];
                     FT_UInt reGlyphIndex = FT_Get_Char_Index(face, j);
                     if (FT_Load_Glyph(face, reGlyphIndex, FLUXUI_FT_LOAD_FLAGS)) {
                         continue;
@@ -5692,15 +5727,16 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
                         }
                     }
 
-                    font.glyphs[j].x0 = (float)currentX / atlasSize;
-                    font.glyphs[j].y0 = (float)currentY / atlasSize;
-                    font.glyphs[j].x1 = (float)(currentX + reW) / atlasSize;
-                    font.glyphs[j].y1 = (float)(currentY + reH) / atlasSize;
-                    font.glyphs[j].xoff = (float)reSlot->bitmap_left;
-                    font.glyphs[j].yoff = (float)-reSlot->bitmap_top;
-                    font.glyphs[j].xadvance = (float)(reSlot->advance.x >> 6);
-                    font.glyphs[j].width = (float)reW;
-                    font.glyphs[j].height = (float)reH;
+                    GlyphInfo& gj = (j < 1024) ? font.glyphs[j] : font.extendedGlyphs[j];
+                    gj.x0 = (float)currentX / atlasSize;
+                    gj.y0 = (float)currentY / atlasSize;
+                    gj.x1 = (float)(currentX + reW) / atlasSize;
+                    gj.y1 = (float)(currentY + reH) / atlasSize;
+                    gj.xoff = (float)reSlot->bitmap_left;
+                    gj.yoff = (float)-reSlot->bitmap_top;
+                    gj.xadvance = (float)(reSlot->advance.x >> 6);
+                    gj.width = (float)reW;
+                    gj.height = (float)reH;
 
                     currentX += reW + 1;
                 }
@@ -5725,15 +5761,16 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
             }
         }
 
-        font.glyphs[i].x0 = (float)currentX / atlasSize;
-        font.glyphs[i].y0 = (float)currentY / atlasSize;
-        font.glyphs[i].x1 = (float)(currentX + w) / atlasSize;
-        font.glyphs[i].y1 = (float)(currentY + h) / atlasSize;
-        font.glyphs[i].xoff = (float)slot->bitmap_left;
-        font.glyphs[i].yoff = (float)-slot->bitmap_top;
-        font.glyphs[i].xadvance = (float)(slot->advance.x >> 6);
-        font.glyphs[i].width = (float)w;
-        font.glyphs[i].height = (float)h;
+        GlyphInfo& gi = (i < 1024) ? font.glyphs[i] : font.extendedGlyphs[i];
+        gi.x0 = (float)currentX / atlasSize;
+        gi.y0 = (float)currentY / atlasSize;
+        gi.x1 = (float)(currentX + w) / atlasSize;
+        gi.y1 = (float)(currentY + h) / atlasSize;
+        gi.xoff = (float)slot->bitmap_left;
+        gi.yoff = (float)-slot->bitmap_top;
+        gi.xadvance = (float)(slot->advance.x >> 6);
+        gi.width = (float)w;
+        gi.height = (float)h;
 
         currentX += w + 1;
     }
@@ -5742,6 +5779,26 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
         FT_Done_Face(face);
         FT_Done_FreeType(library);
         return false;
+    }
+
+    // Cache kerning pairs:
+    if (FT_HAS_KERNING(face)) {
+        for (uint32_t left : codepointsToLoad) {
+            FT_UInt left_glyph = FT_Get_Char_Index(face, left);
+            if (left_glyph == 0) continue;
+            for (uint32_t right : codepointsToLoad) {
+                FT_UInt right_glyph = FT_Get_Char_Index(face, right);
+                if (right_glyph == 0) continue;
+                FT_Vector delta;
+                if (FT_Get_Kerning(face, left_glyph, right_glyph, FT_KERNING_DEFAULT, &delta) == 0) {
+                    if (delta.x != 0) {
+                        float kernX = (float)delta.x / 64.0f;
+                        uint64_t key = ((uint64_t)left << 32) | (uint64_t)right;
+                        font.kerningPairs[key] = kernX;
+                    }
+                }
+            }
+        }
     }
 
     float sharpenStrength = std::clamp((24.0f - pixelSize) / (24.0f - 13.0f), 0.0f, 1.0f);
@@ -6097,6 +6154,36 @@ void Renderer::drawBoxShadow(const Rect& rect, const BoxShadow& shadow,
     glDrawArrays(GL_TRIANGLES, 0, 6);
 }
 
+static std::string substituteLigatures(const std::string& text, const FontData& font) {
+    if (font.supportedLigatures.empty()) return text;
+    std::string result = text;
+    for (const auto& lig : font.supportedLigatures) {
+        size_t pos = 0;
+        while ((pos = result.find(lig.first, pos)) != std::string::npos) {
+            std::string utf8Lig;
+            uint32_t cp = lig.second;
+            if (cp < 0x80) {
+                utf8Lig.push_back((char)cp);
+            } else if (cp < 0x800) {
+                utf8Lig.push_back((char)(0xC0 | (cp >> 6)));
+                utf8Lig.push_back((char)(0x80 | (cp & 0x3F)));
+            } else if (cp < 0x10000) {
+                utf8Lig.push_back((char)(0xE0 | (cp >> 12)));
+                utf8Lig.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+                utf8Lig.push_back((char)(0x80 | (cp & 0x3F)));
+            } else {
+                utf8Lig.push_back((char)(0xF0 | (cp >> 18)));
+                utf8Lig.push_back((char)(0x80 | ((cp >> 12) & 0x3F)));
+                utf8Lig.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+                utf8Lig.push_back((char)(0x80 | (cp & 0x3F)));
+            }
+            result.replace(pos, lig.first.length(), utf8Lig);
+            pos += utf8Lig.length();
+        }
+    }
+    return result;
+}
+
 static bool isRtlCodepoint(uint32_t cp) {
     return (cp >= 0x0590 && cp <= 0x08FF) || 
            (cp >= 0xFB50 && cp <= 0xFDFF) || 
@@ -6317,11 +6404,16 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
         return (uint32_t)s[i++];
     };
 
-    for (size_t i = 0; i < text.size(); ) {
-        uint32_t c = getNextCodepoint(text, i);
-        if (c >= 1024) continue;
-        auto& g = font.glyphs[c];
+    std::string finalProcessedText = substituteLigatures(processedText, font);
+    uint32_t prevCp = 0;
+    for (size_t i = 0; i < finalProcessedText.size(); ) {
+        uint32_t c = getNextCodepoint(finalProcessedText, i);
+        const auto& g = font.getGlyph(c);
         if (g.xadvance == 0 && c != ' ') continue;
+
+        if (prevCp != 0) {
+            cursorX += font.getKerning(prevCp, c, scale);
+        }
 
         float w = g.width * scale;
         float h = g.height * scale;
@@ -6355,6 +6447,7 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
             }
         }
         cursorX += g.xadvance * scale;
+        prevCp = c;
     }
 
     if (vertices.empty()) return;
@@ -6545,11 +6638,18 @@ Vec2 Renderer::measureText(const std::string& text, float fontSize,
         return (uint32_t)s[i++];
     };
 
-    for (size_t i = 0; i < text.size(); ) {
-        uint32_t c = getNextCodepoint(text, i);
-        if (c < 1024) {
-            width += font.glyphs[c].xadvance * scale;
+    std::string processedText = substituteLigatures(text, font);
+    uint32_t prevCp = 0;
+    for (size_t i = 0; i < processedText.size(); ) {
+        uint32_t c = getNextCodepoint(processedText, i);
+        const auto& g = font.getGlyph(c);
+        if (g.xadvance == 0 && c != ' ') continue;
+
+        if (prevCp != 0) {
+            width += font.getKerning(prevCp, c, scale);
         }
+        width += g.xadvance * scale;
+        prevCp = c;
     }
     Vec2 measured = {width, fontSize};
 #if FLUXUI_TEXT_MEASURE_CACHE_SIZE > 0
