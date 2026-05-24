@@ -591,7 +591,9 @@ const std::string& Widget::selectorType() const {
         return cachedSelectorType;
     }
     std::string type;
-    if (auto* input = dynamic_cast<const TextInput*>(this)) {
+    if (dynamic_cast<const TextArea*>(this)) {
+        type = "textarea";
+    } else if (auto* input = dynamic_cast<const TextInput*>(this)) {
         if (this->type == "textarea") type = "textarea";
         else type = std::string("input|type=") + textInputTypeSelector(input->inputType);
     } else if (auto* checkbox = dynamic_cast<const Checkbox*>(this)) {
@@ -3331,6 +3333,470 @@ void TextInput::render(Renderer& renderer) {
     }
     renderChildren(renderer);
 }
+
+void TextArea::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    auto& s = computedStyle;
+    float charW = approximateGlyphAdvance('m', s.fontSize);
+    float lineH = s.fontSize * 1.2f;
+    if (!s.width.isSet()) {
+        bounds.w = cols * charW + s.padding.horizontal() + s.margin.horizontal();
+    }
+    if (!s.height.isSet()) {
+        bounds.h = rows * lineH + s.padding.vertical() + s.margin.vertical();
+    }
+}
+
+bool TextArea::hasSelection() const {
+    return selectionAnchor_ != selectionFocus_;
+}
+
+size_t TextArea::selectionStart() const {
+    return std::min(selectionAnchor_, selectionFocus_);
+}
+
+size_t TextArea::selectionEnd() const {
+    return std::max(selectionAnchor_, selectionFocus_);
+}
+
+std::vector<TextArea::LineInfo> TextArea::layoutLines(float fontSize, float maxWidth) const {
+    std::vector<LineInfo> lines;
+    if (value.empty()) {
+        lines.push_back({0, 0, 0.0f});
+        return lines;
+    }
+    size_t start = 0;
+    while (start < value.size()) {
+        size_t nextNewline = value.find('\n', start);
+        size_t paragraphEnd = (nextNewline == std::string::npos) ? value.size() : nextNewline;
+        if (wrap && maxWidth > 0) {
+            size_t curr = start;
+            while (curr < paragraphEnd) {
+                size_t step = curr;
+                float accumulatedWidth = 0.0f;
+                size_t lastSpace = std::string::npos;
+                while (step < paragraphEnd) {
+                    size_t nextCp = clampToUtf8Boundary(value, step + 1);
+                    if (nextCp <= step) nextCp = step + 1;
+                    float advance = 0.0f;
+                    for (size_t k = step; k < nextCp; ++k) {
+                        advance += approximateGlyphAdvance(static_cast<unsigned char>(value[k]), fontSize);
+                    }
+                    if (accumulatedWidth + advance > maxWidth) {
+                        break;
+                    }
+                    accumulatedWidth += advance;
+                    if (value[step] == ' ' || value[step] == '\t') {
+                        lastSpace = step;
+                    }
+                    step = nextCp;
+                }
+                size_t lineEnd = step;
+                if (lineEnd < paragraphEnd && lastSpace != std::string::npos && lastSpace > curr) {
+                    lineEnd = lastSpace + 1;
+                }
+                if (lineEnd == curr) {
+                    lineEnd = clampToUtf8Boundary(value, curr + 1);
+                    if (lineEnd <= curr) lineEnd = curr + 1;
+                }
+                float finalW = 0.0f;
+                for (size_t k = curr; k < lineEnd; ++k) {
+                    finalW += approximateGlyphAdvance(static_cast<unsigned char>(value[k]), fontSize);
+                }
+                lines.push_back({curr, lineEnd, finalW});
+                curr = lineEnd;
+            }
+        } else {
+            float finalW = 0.0f;
+            for (size_t k = start; k < paragraphEnd; ++k) {
+                finalW += approximateGlyphAdvance(static_cast<unsigned char>(value[k]), fontSize);
+            }
+            lines.push_back({start, paragraphEnd, finalW});
+        }
+        start = paragraphEnd + 1;
+    }
+    if (!value.empty() && value.back() == '\n') {
+        lines.push_back({value.size(), value.size(), 0.0f});
+    }
+    return lines;
+}
+
+void TextArea::getLineAndColumnOfOffset(const std::vector<LineInfo>& lines, size_t offset, size_t& outLine, size_t& outCol) const {
+    outLine = 0;
+    outCol = 0;
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (offset >= lines[i].start && offset <= lines[i].end) {
+            outLine = i;
+            outCol = offset - lines[i].start;
+            return;
+        }
+    }
+    if (!lines.empty()) {
+        outLine = lines.size() - 1;
+        outCol = lines.back().end - lines.back().start;
+    }
+}
+
+void TextArea::update(const InputState& input) {
+    Widget::update(input);
+    caretIndex_ = clampToUtf8Boundary(value, caretIndex_);
+    selectionAnchor_ = clampToUtf8Boundary(value, selectionAnchor_);
+    selectionFocus_ = clampToUtf8Boundary(value, selectionFocus_);
+    
+    auto updateFocusAnimation = [&]() {
+        float focusTarget = focused ? 1.0f : 0.0f;
+        float focusSpeed = 16.0f;
+        if (focusAnim_ < focusTarget) {
+            focusAnim_ = std::min(focusAnim_ + input.deltaTime * focusSpeed, focusTarget);
+        }
+        if (focusAnim_ > focusTarget) {
+            focusAnim_ = std::max(focusAnim_ - input.deltaTime * focusSpeed, focusTarget);
+        }
+    };
+    
+    auto setCaret = [&](size_t index, bool extendSelection) {
+        caretIndex_ = clampToUtf8Boundary(value, index);
+        if (extendSelection) {
+            selectionFocus_ = caretIndex_;
+        } else {
+            selectionAnchor_ = caretIndex_;
+            selectionFocus_ = caretIndex_;
+        }
+        caretBlinkTime_ = 0;
+    };
+    
+    auto eraseSelection = [&]() -> bool {
+        if (!hasSelection()) return false;
+        size_t start = selectionStart();
+        size_t end = selectionEnd();
+        value.erase(start, end - start);
+        caretIndex_ = start;
+        selectionAnchor_ = start;
+        selectionFocus_ = start;
+        caretBlinkTime_ = 0;
+        return true;
+    };
+    
+    auto insertText = [&](const std::string& text) {
+        if (text.empty()) return;
+        eraseSelection();
+        value.insert(caretIndex_, text);
+        caretIndex_ += text.size();
+        selectionAnchor_ = caretIndex_;
+        selectionFocus_ = caretIndex_;
+        caretBlinkTime_ = 0;
+    };
+    
+    auto indexAtMouse = [&]() {
+        float localX = input.mousePos.x - bounds.x - computedStyle.padding.left + scrollX_;
+        float localY = input.mousePos.y - bounds.y - computedStyle.padding.top + scrollY_;
+        float lineHeight = computedStyle.fontSize * 1.2f;
+        float maxWidth = std::max(0.0f, bounds.w - computedStyle.padding.horizontal());
+        auto lines = layoutLines(computedStyle.fontSize, maxWidth);
+        int lineIdx = static_cast<int>(localY / lineHeight);
+        if (lineIdx < 0) lineIdx = 0;
+        if (lineIdx >= static_cast<int>(lines.size())) lineIdx = static_cast<int>(lines.size()) - 1;
+        if (lines.empty()) return static_cast<size_t>(0);
+        const auto& line = lines[lineIdx];
+        std::string lineStr = value.substr(line.start, line.end - line.start);
+        size_t relativeIndex = approximateTextIndexAtX(lineStr, localX, computedStyle.fontSize);
+        return line.start + relativeIndex;
+    };
+    
+    bool shift = (input.modifiers & MOD_SHIFT) != 0;
+    bool ctrl = (input.modifiers & MOD_CTRL) != 0;
+    int keyCode = normalizeTextEditingKey(input.keyCode);
+    int commandKey = keyCode;
+    if (commandKey >= 'a' && commandKey <= 'z') {
+        commandKey = commandKey - 'a' + 'A';
+    }
+    
+    if (hovered && input.mouseClicked[0]) {
+        focused = true;
+        size_t index = indexAtMouse();
+        if (!shift && input.mouseClickCount[0] >= 2) {
+            size_t start = 0;
+            size_t end = 0;
+            wordRangeAt(value, index, start, end);
+            selectionAnchor_ = start;
+            selectionFocus_ = end;
+            caretIndex_ = end;
+            caretBlinkTime_ = 0;
+            selecting_ = false;
+        } else {
+            selecting_ = true;
+            if (!shift) {
+                selectionAnchor_ = index;
+            }
+            setCaret(index, shift);
+        }
+    } else if (!hovered && input.mouseClicked[0]) {
+        focused = false;
+        selecting_ = false;
+        selectionAnchor_ = caretIndex_;
+        selectionFocus_ = caretIndex_;
+    }
+    
+    if (selecting_ && focused && input.mouseDown[0]) {
+        setCaret(indexAtMouse(), true);
+    }
+    if (input.mouseReleased[0]) {
+        selecting_ = false;
+    }
+    
+    updateFocusAnimation();
+    if (!focused) return;
+    caretBlinkTime_ += input.deltaTime;
+    
+    if (keyCode != 0) {
+        if (ctrl && commandKey == 'A') {
+            selectionAnchor_ = 0;
+            selectionFocus_ = value.size();
+            caretIndex_ = value.size();
+            caretBlinkTime_ = 0;
+            return;
+        }
+        if (ctrl && (commandKey == 'C' || commandKey == 'X')) {
+            if (hasSelection()) {
+                std::string selected = value.substr(selectionStart(), selectionEnd() - selectionStart());
+                Platform::setClipboardText(selected.c_str());
+                if (commandKey == 'X') eraseSelection();
+            }
+            return;
+        }
+        if (ctrl && commandKey == 'V') {
+            std::string clip = Platform::getClipboardText();
+            if (!clip.empty()) {
+                insertText(clip);
+            }
+            return;
+        }
+        
+        switch (keyCode) {
+        case 0x08: // Backspace
+            if (!eraseSelection() && caretIndex_ > 0) {
+                size_t prev = ctrl ? previousWordBoundary(value, caretIndex_) :
+                    previousCodepoint(value, caretIndex_);
+                value.erase(prev, caretIndex_ - prev);
+                setCaret(prev, false);
+            }
+            return;
+        case 0x2E: // Delete
+            if (!eraseSelection() && caretIndex_ < value.size()) {
+                size_t next = ctrl ? nextWordBoundary(value, caretIndex_) :
+                    nextCodepoint(value, caretIndex_);
+                value.erase(caretIndex_, next - caretIndex_);
+                setCaret(caretIndex_, false);
+            }
+            return;
+        case 0x25: // Left Arrow
+        {
+            size_t target = hasSelection() && !shift ? selectionStart() :
+                (ctrl ? previousWordBoundary(value, caretIndex_) : previousCodepoint(value, caretIndex_));
+            setCaret(target, shift);
+            return;
+        }
+        case 0x27: // Right Arrow
+        {
+            size_t target = hasSelection() && !shift ? selectionEnd() :
+                (ctrl ? nextWordBoundary(value, caretIndex_) : nextCodepoint(value, caretIndex_));
+            setCaret(target, shift);
+            return;
+        }
+        case 0x26: // Up Arrow
+        {
+            float maxWidth = std::max(0.0f, bounds.w - computedStyle.padding.horizontal());
+            auto lines = layoutLines(computedStyle.fontSize, maxWidth);
+            size_t currLine = 0, currCol = 0;
+            getLineAndColumnOfOffset(lines, caretIndex_, currLine, currCol);
+            if (currLine > 0) {
+                size_t targetLine = currLine - 1;
+                size_t targetCol = std::min(currCol, lines[targetLine].end - lines[targetLine].start);
+                setCaret(lines[targetLine].start + targetCol, shift);
+            } else {
+                setCaret(0, shift);
+            }
+            return;
+        }
+        case 0x28: // Down Arrow
+        {
+            float maxWidth = std::max(0.0f, bounds.w - computedStyle.padding.horizontal());
+            auto lines = layoutLines(computedStyle.fontSize, maxWidth);
+            size_t currLine = 0, currCol = 0;
+            getLineAndColumnOfOffset(lines, caretIndex_, currLine, currCol);
+            if (currLine + 1 < lines.size()) {
+                size_t targetLine = currLine + 1;
+                size_t targetCol = std::min(currCol, lines[targetLine].end - lines[targetLine].start);
+                setCaret(lines[targetLine].start + targetCol, shift);
+            } else {
+                setCaret(value.size(), shift);
+            }
+            return;
+        }
+        case 0x24: // Home
+            setCaret(0, shift);
+            return;
+        case 0x23: // End
+            setCaret(value.size(), shift);
+            return;
+        case 0x1B: // Escape
+            focused = false;
+            selecting_ = false;
+            selectionAnchor_ = caretIndex_;
+            selectionFocus_ = caretIndex_;
+            return;
+        case 0x0D: // Enter
+            insertText("\n");
+            return;
+        default:
+            break;
+        }
+    }
+    if (!ctrl && !input.text.empty()) {
+        insertText(input.text);
+    }
+    float maxWidth = std::max(0.0f, bounds.w - computedStyle.padding.horizontal());
+    auto lines = layoutLines(computedStyle.fontSize, maxWidth);
+    size_t caretLine = 0, caretCol = 0;
+    getLineAndColumnOfOffset(lines, caretIndex_, caretLine, caretCol);
+    float lineHeight = computedStyle.fontSize * 1.2f;
+    float caretY = caretLine * lineHeight;
+    float clipH = std::max(0.0f, bounds.h - computedStyle.padding.vertical());
+    if (caretY - scrollY_ > clipH - lineHeight) {
+        scrollY_ = caretY - clipH + lineHeight;
+    } else if (caretY - scrollY_ < 0) {
+        scrollY_ = caretY;
+    }
+    float maxScrollY = std::max(0.0f, static_cast<float>(lines.size()) * lineHeight - clipH);
+    scrollY_ = std::clamp(scrollY_, 0.0f, maxScrollY);
+}
+
+CursorType TextArea::cursorAt(Vec2 point) const {
+    if (!canHitTestWidget(this) || !bounds.contains(point)) {
+        return CursorType::Default;
+    }
+    return CursorType::Text;
+}
+
+void TextArea::render(Renderer& renderer) {
+    if (!canPaintWidget(this)) return;
+    renderBackground(renderer);
+    auto& s = computedStyle;
+    caretIndex_ = clampToUtf8Boundary(value, caretIndex_);
+    selectionAnchor_ = clampToUtf8Boundary(value, selectionAnchor_);
+    selectionFocus_ = clampToUtf8Boundary(value, selectionFocus_);
+    bool cssHandlesFocus = s.hasFocusOutline || s.hasFocusBorder || s.hasFocusBg;
+    bool cssHandlesHover = s.hasHoverBorder || s.hasHoverBg;
+    if (!cssHandlesFocus && focusAnim_ > 0.001f) {
+        Rect ring = {bounds.x - focusAnim_, bounds.y - focusAnim_,
+                     bounds.w + focusAnim_ * 2.0f, bounds.h + focusAnim_ * 2.0f};
+        Color focusColor = Color(0.54f, 0.70f, 0.98f, 0.42f + focusAnim_ * 0.42f);
+        renderer.drawBorder(ring, Border(1.0f + focusAnim_, focusColor), s.borderRadius);
+    } else if (!cssHandlesHover && hoverAnim > 0.001f) {
+        renderer.drawBorder(bounds, Border(1.0f, Color(0.50f, 0.53f, 0.57f, 0.44f * hoverAnim)),
+                            s.borderRadius);
+    }
+    Rect clipRect = {
+        bounds.x + s.padding.left,
+        bounds.y + s.padding.top,
+        std::max(0.0f, bounds.w - s.padding.horizontal()),
+        std::max(0.0f, bounds.h - s.padding.vertical())
+    };
+    std::string fontName = renderFontName(s);
+    float lineHeight = s.fontSize * 1.2f;
+    auto lines = layoutLines(s.fontSize, clipRect.w);
+    renderer.pushScissor(clipRect);
+    if (hasSelection() && !value.empty()) {
+        size_t start = selectionStart();
+        size_t end = selectionEnd();
+        for (size_t i = 0; i < lines.size(); ++i) {
+            const auto& line = lines[i];
+            float lineY = bounds.y + s.padding.top + i * lineHeight - scrollY_;
+            if (lineY + lineHeight < bounds.y || lineY > bounds.y + bounds.h) {
+                continue;
+            }
+            if (end > line.start && start < line.end) {
+                size_t s_in_line = std::max(start, line.start);
+                size_t e_in_line = std::min(end, line.end);
+                std::string lineStr = value.substr(line.start, line.end - line.start);
+                std::string prefix = lineStr.substr(0, s_in_line - line.start);
+                std::string selectionText = lineStr.substr(s_in_line - line.start, e_in_line - s_in_line);
+                float startX = renderer.measureText(prefix, s.fontSize, fontName).x;
+                float width = renderer.measureText(selectionText, s.fontSize, fontName).x;
+                if (e_in_line == line.end && e_in_line < end) {
+                    width += approximateGlyphAdvance(' ', s.fontSize);
+                }
+                Rect selectionRect = {
+                    clipRect.x + startX,
+                    lineY + (lineHeight - s.fontSize) * 0.5f,
+                    width,
+                    s.fontSize + 2.0f
+                };
+                renderer.drawRoundedRect(selectionRect, Color(0.54f, 0.70f, 0.98f, 0.56f), BorderRadius(2));
+            }
+        }
+    }
+    float bgLum = s.backgroundColor.r * 0.2126f +
+                  s.backgroundColor.g * 0.7152f +
+                  s.backgroundColor.b * 0.0722f;
+    Color placeholderColor = bgLum > 0.45f
+        ? Color(0.459f, 0.459f, 0.459f, 1.0f)
+        : Color(0.604f, 0.627f, 0.659f, 0.92f);
+    if (value.empty()) {
+        Rect textRect = {
+            clipRect.x,
+            clipRect.y,
+            clipRect.w,
+            lineHeight
+        };
+        renderer.drawTextInRect(placeholder, textRect, placeholderColor,
+                                s.fontSize, TextAlign::Left, s.fontWeight, fontName,
+                                s.fontStyle, s.direction, s.unicodeBidi);
+    } else {
+        Color textColor = s.color;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            const auto& line = lines[i];
+            float lineY = bounds.y + s.padding.top + i * lineHeight - scrollY_;
+            if (lineY + lineHeight < bounds.y || lineY > bounds.y + bounds.h) {
+                continue;
+            }
+            std::string lineStr = value.substr(line.start, line.end - line.start);
+            if (s.textTransform != TextTransform::None) {
+                lineStr = applyTextTransform(lineStr, s.textTransform);
+            }
+            Rect textRect = {
+                clipRect.x - scrollX_,
+                lineY,
+                std::max(clipRect.w + scrollX_, line.width + 8.0f),
+                lineHeight
+            };
+            renderer.drawTextInRect(lineStr, textRect, textColor,
+                                    s.fontSize, TextAlign::Left, s.fontWeight, fontName,
+                                    s.fontStyle, s.direction, s.unicodeBidi);
+            renderTextDecoration(renderer, lineStr, textRect, textColor, s);
+        }
+    }
+    if (focused) {
+        size_t caretLine = 0, caretCol = 0;
+        getLineAndColumnOfOffset(lines, caretIndex_, caretLine, caretCol);
+        const auto& line = lines[caretLine];
+        std::string lineStr = value.substr(line.start, line.end - line.start);
+        std::string prefix = lineStr.substr(0, caretCol);
+        float caretX = clipRect.x + renderer.measureText(prefix, s.fontSize, fontName).x - scrollX_;
+        float caretY = bounds.y + s.padding.top + caretLine * lineHeight - scrollY_;
+        float cursorH = s.fontSize + 4.0f;
+        float cursorY = caretY + (lineHeight - cursorH) * 0.5f;
+        float blink = std::fmod(caretBlinkTime_, 1.0f);
+        if ((blink < 0.55f || selecting_) && caretX >= clipRect.x - 1 && caretX <= clipRect.x + clipRect.w + 1 &&
+            caretY + lineHeight >= clipRect.y && caretY <= clipRect.y + clipRect.h) {
+            renderer.drawRoundedRect({caretX, cursorY, 1.5f, cursorH},
+                                     Color(0.54f, 0.70f, 0.98f, 1.0f), BorderRadius(1));
+        }
+    }
+    renderer.popScissor();
+    renderChildren(renderer);
+}
+
 void Checkbox::setChecked(bool value) {
     if (checked == value) return;
     checked = value;
@@ -4745,7 +5211,7 @@ void Application::dispatchMouseDown(int button, float x, float y, int clickCount
         while (focusTarget) {
             if (focusTarget->type == "button" || focusTarget->computedStyle.cursor == CursorType::Pointer ||
                 focusTarget->type == "textarea" || focusTarget->type == "input" ||
-                dynamic_cast<TextInput*>(focusTarget) || dynamic_cast<Checkbox*>(focusTarget) ||
+                dynamic_cast<TextInput*>(focusTarget) || dynamic_cast<TextArea*>(focusTarget) || dynamic_cast<Checkbox*>(focusTarget) ||
                 dynamic_cast<Radio*>(focusTarget) || dynamic_cast<RangeInput*>(focusTarget) ||
                 dynamic_cast<Select*>(focusTarget)) {
                 break;

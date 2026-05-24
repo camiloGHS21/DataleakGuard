@@ -26,6 +26,7 @@ int main() {
         ".alpha-list { list-style-type: lower-alpha; }"
         ".none-list { list-style-type: none; }"
         ".button { width: 140px; height: 44px; border-radius: 8px; background-color: #37c6a3; color: #06100d; margin-top: 12px; }"
+        ".my-textarea { width: 450px; height: 120px; font-size: 14px; color: #edf3f8; background-color: #1c232b; border: 1px solid #3d4a57; border-radius: 6px; padding: 8px; }"
     );
 
     auto* root = app.root();
@@ -76,6 +77,9 @@ int main() {
     auto* ulNone = root->element("ul", "", "none-list");
     ulNone->element("li", "No bullet item 1");
     ulNone->element("li", "No bullet item 2");
+
+    root->add<FluxUI::Text>("TextArea Multiline Input Widget:", "body");
+    auto* textarea = root->add<FluxUI::TextArea>("Type something here...\nLine 2\nLine 3", "my-textarea");
 
     auto* button = root->add<FluxUI::Button>("Close", "button");
     button->onClick = [&]() { app.running = false; };

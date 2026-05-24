@@ -84,6 +84,7 @@ class Panel;
 class Text;
 class Button;
 class TextInput;
+class TextArea;
 class Checkbox;
 class Radio;
 class RangeInput;
@@ -385,6 +386,45 @@ private:
     size_t selectionStart() const;
     size_t selectionEnd() const;
     Rect clearButtonRect() const;
+};
+class TextArea : public Widget {
+public:
+    std::string value;
+    std::string placeholder;
+    int rows = 3;
+    int cols = 20;
+    bool wrap = true;
+
+    TextArea() { type = "textarea"; }
+    TextArea(const std::string& ph, const std::string& cls = "")
+        : placeholder(ph) { type = "textarea"; className = cls; }
+
+    void layout(const Rect& parentBounds) override;
+    void update(const InputState& input) override;
+    CursorType cursorAt(Vec2 point) const override;
+    void render(Renderer& renderer) override;
+
+private:
+    size_t caretIndex_ = 0;
+    size_t selectionAnchor_ = 0;
+    size_t selectionFocus_ = 0;
+    bool selecting_ = false;
+    float scrollY_ = 0;
+    float scrollX_ = 0;
+    float focusAnim_ = 0;
+    float caretBlinkTime_ = 0;
+
+    struct LineInfo {
+        size_t start;
+        size_t end;
+        float width;
+    };
+    std::vector<LineInfo> layoutLines(float fontSize, float maxWidth) const;
+    void getLineAndColumnOfOffset(const std::vector<LineInfo>& lines, size_t offset, size_t& outLine, size_t& outCol) const;
+    
+    bool hasSelection() const;
+    size_t selectionStart() const;
+    size_t selectionEnd() const;
 };
 class Checkbox : public Widget {
 public:
