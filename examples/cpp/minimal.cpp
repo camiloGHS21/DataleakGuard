@@ -27,6 +27,8 @@ int main() {
         ".none-list { list-style-type: none; }"
         ".button { width: 140px; height: 44px; border-radius: 8px; background-color: #37c6a3; color: #06100d; margin-top: 12px; }"
         ".my-textarea { width: 450px; height: 120px; font-size: 14px; color: #edf3f8; background-color: #1c232b; border: 1px solid #3d4a57; border-radius: 6px; padding: 8px; }"
+        ".wrap-container { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; width: 450px; background-color: #1c232b; border: 1px solid #3d4a57; border-radius: 6px; padding: 12px; }"
+        ".wrap-item { display: flex; width: 100px; height: 32px; background-color: #37c6a3; color: #06100d; border-radius: 4px; justify-content: center; align-items: center; font-size: 13px; font-weight: 600; }"
     );
 
     auto* root = app.root();
@@ -80,6 +82,15 @@ int main() {
 
     root->add<FluxUI::Text>("TextArea Multiline Input Widget:", "body");
     auto* textarea = root->add<FluxUI::TextArea>("Type something here...\nLine 2\nLine 3", "my-textarea");
+
+    root->add<FluxUI::Text>("CSS Flexbox Wrapping Test (width limit 450px):", "body");
+    auto* wrapContainer = root->element("div", "", "wrap-container");
+    wrapContainer->element("div", "Item 1", "wrap-item");
+    wrapContainer->element("div", "Item 2", "wrap-item");
+    wrapContainer->element("div", "Item 3", "wrap-item");
+    wrapContainer->element("div", "Item 4", "wrap-item");
+    wrapContainer->element("div", "Item 5", "wrap-item");
+    wrapContainer->element("div", "Item 6", "wrap-item");
 
     auto* button = root->add<FluxUI::Button>("Close", "button");
     button->onClick = [&]() { app.running = false; };
