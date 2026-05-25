@@ -22,8 +22,8 @@ public final class AutoClose {
             app.releaseFontSources();
             app.addStylesheet(
                 ".root { display: flex; flex-direction: column; background-color: #101418; padding: 28px; gap: 14px; }" +
-                ".title { height: 32px; font-size: 24px; font-weight: 700; color: #edf3f8; }" +
-                ".body { height: 24px; font-size: 14px; color: rgba(237, 243, 248, 0.72); }"
+                ".title { font-size: 24px; font-weight: 700; color: #edf3f8; }" +
+                ".body { font-size: 14px; color: rgba(237, 243, 248, 0.72); }"
             );
 
             Widget root = app.root();

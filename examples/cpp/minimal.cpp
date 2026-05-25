@@ -16,8 +16,8 @@ int main() {
     app.renderer().releaseFontSources();
     app.addStylesheet(
         ".root { display: flex; flex-direction: column; background-color: #101418; padding: 32px; gap: 12px; }"
-        ".title { height: 36px; font-size: 26px; font-weight: 700; color: #edf3f8; }"
-        ".body { height: 24px; font-size: 14px; color: rgba(237, 243, 248, 0.68); }"
+        ".title { font-size: 26px; font-weight: 700; color: #edf3f8; }"
+        ".body { font-size: 14px; color: rgba(237, 243, 248, 0.68); }"
         "ul, ol { display: flex; flex-direction: column; gap: 4px; padding-inline-start: 40px; }"
         "li { font-size: 15px; color: #edf3f8; }"
         ".square-list { list-style-type: square; }"
