@@ -425,6 +425,18 @@ private:
     int softwareWidth_ = 0;
     int softwareHeight_ = 0;
     bool softwareFrameActive_ = false;
+
+    // Blink-parity GPU Composited Layer / Sub-Render Pass members
+    unsigned int blurFBO_ = 0;
+    unsigned int blurTex_ = 0;
+    unsigned int blurTexTemp_ = 0;
+    unsigned int blurShaderHoriz_ = 0;
+    unsigned int blurShaderVert_ = 0;
+
+    // Reusable fast CPU blur buffers to avoid heap thrashing
+    mutable std::vector<uint32_t> softwareBlurBuffer1_;
+    mutable std::vector<uint32_t> softwareBlurBuffer2_;
+    mutable std::vector<uint32_t> softwareBlurBuffer3_;
 };
 
 } // namespace FluxUI
