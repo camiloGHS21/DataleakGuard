@@ -42,6 +42,8 @@
 #include <sstream>
 #include <cctype>
 #include <unordered_map>
+#include <thread>
+#include "fluxui/widgets.h"
 
 #define STBI_NO_STDIO
 #define STB_IMAGE_IMPLEMENTATION
@@ -5529,6 +5531,69 @@ void Renderer::releaseFontSources() {
     }
 }
 
+void Renderer::registerCustomFont(const std::string& family, const std::string& path) {
+    if (family.empty() || path.empty()) return;
+    auto it = customFontRegistry_.find(family);
+    if (it != customFontRegistry_.end()) {
+        if (it->second.path != path) {
+            it->second.path = path;
+            it->second.loaded = false;
+            it->second.loading = false;
+        }
+        return;
+    }
+    CustomFontFaceInfo info;
+    info.family = family;
+    info.path = path;
+    info.loading = false;
+    info.loaded = false;
+    customFontRegistry_[family] = info;
+}
+
+void Renderer::triggerCustomFontLoad(const std::string& family) {
+    auto it = customFontRegistry_.find(family);
+    if (it == customFontRegistry_.end() || it->second.loading || it->second.loaded) return;
+    
+    it->second.loading = true;
+    std::string path = it->second.path;
+    
+    std::thread([this, family, path]() {
+        std::vector<unsigned char> data;
+        if (!readFontFile(path, data)) {
+            Application::instance()->runOnMainThread([this, family]() {
+                auto it = customFontRegistry_.find(family);
+                if (it != customFontRegistry_.end()) {
+                    it->second.loading = false;
+                }
+            });
+            return;
+        }
+        
+        FontData baseFont;
+        baseFont.sourceData = data;
+        if (!buildFontAtlas(baseFont, data.data(), (int)data.size(), 16.0f, true)) {
+            Application::instance()->runOnMainThread([this, family]() {
+                auto it = customFontRegistry_.find(family);
+                if (it != customFontRegistry_.end()) {
+                    it->second.loading = false;
+                }
+            });
+            return;
+        }
+        
+        Application::instance()->runOnMainThread([this, family, baseFont = std::move(baseFont)]() mutable {
+            fonts_[family] = std::move(baseFont);
+            auto it = customFontRegistry_.find(family);
+            if (it != customFontRegistry_.end()) {
+                it->second.loaded = true;
+                it->second.loading = false;
+            }
+            textMeasureCache_.clear();
+            Application::instance()->requestRedraw();
+        });
+    }).detach();
+}
+
 bool Renderer::ensureImageTexture(const std::string& key, ImageData& image) {
     if (!image.loaded) return false;
     if (activeBackend_ == RenderBackendType::Compatibility) {
@@ -5611,7 +5676,7 @@ bool Renderer::ensureFontTexture(FontData& font) {
     #define FLUXUI_FT_LOAD_FLAGS (FT_LOAD_RENDER | FT_LOAD_TARGET_LIGHT)
 #endif
 
-bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size) {
+bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size, bool isBackground) {
     if (!data || dataSize <= 0) return false;
 
     FT_Library library;
@@ -5827,7 +5892,8 @@ bool Renderer::buildFontAtlas(FontData& font, const unsigned char* data, int dat
     FT_Done_Face(face);
     FT_Done_FreeType(library);
 
-    if (activeBackend_ == RenderBackendType::Vulkan ||
+    if (isBackground ||
+        activeBackend_ == RenderBackendType::Vulkan ||
         activeBackend_ == RenderBackendType::Compatibility) {
         font.atlasPixels = std::move(atlas);
         font.textureId = 0;
@@ -5898,6 +5964,24 @@ FontData* Renderer::getFontForSize(const std::string& fontName, float fontSize) 
 const std::string& Renderer::resolveFontName(const std::string& fontName, FontWeight weight) const {
     static const std::string s_defaultFont = "default";
     const std::string* baseName = fontName.empty() ? &s_defaultFont : &fontName;
+
+    auto customIt = const_cast<Renderer*>(this)->customFontRegistry_.find(*baseName);
+    if (customIt != const_cast<Renderer*>(this)->customFontRegistry_.end()) {
+        if (!customIt->second.loaded && !customIt->second.loading) {
+            const_cast<Renderer*>(this)->triggerCustomFontLoad(*baseName);
+        }
+        if (customIt->second.loaded) {
+            if (weight == FontWeight::Bold) {
+                std::string boldName = *baseName + "-bold";
+                auto boldIt = fonts_.find(boldName);
+                if (boldIt != fonts_.end() && boldIt->second.loaded) {
+                    return boldIt->first;
+                }
+            }
+            return *baseName;
+        }
+    }
+
     auto baseIt = fonts_.find(*baseName);
     if ((baseIt == fonts_.end() || !baseIt->second.loaded) && *baseName != "default") {
         baseIt = fonts_.find(s_defaultFont);

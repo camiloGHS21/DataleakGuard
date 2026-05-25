@@ -202,6 +202,7 @@ public:
     void warmFontCache(float size, const std::string& name = "default");
     void warmFontCache(const std::vector<float>& sizes, const std::string& name = "default");
     void releaseFontSources();
+    void registerCustomFont(const std::string& family, const std::string& path);
 
     // Image loading. Raster formats use stb_image; SVG is rasterized by FluxUI.
     bool loadImage(const std::string& path, const std::string& name = "");
@@ -363,7 +364,15 @@ private:
     void cacheUniformLocations();
     void useShader(uint32_t shader);
     void drawQuadWithShader(uint32_t shader, const Rect& rect);
-    bool buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size);
+    bool buildFontAtlas(FontData& font, const unsigned char* data, int dataSize, float size, bool isBackground = false);
+    struct CustomFontFaceInfo {
+        std::string family;
+        std::string path;
+        bool loading = false;
+        bool loaded = false;
+    };
+    std::unordered_map<std::string, CustomFontFaceInfo> customFontRegistry_;
+    void triggerCustomFontLoad(const std::string& family);
     FontData* getFontForSize(const std::string& fontName, float fontSize);
     const FontData* findFontForMeasure(const std::string& fontName, float fontSize) const;
     const std::string& resolveFontName(const std::string& fontName, FontWeight weight) const;

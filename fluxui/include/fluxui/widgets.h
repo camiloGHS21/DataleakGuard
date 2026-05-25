@@ -13,6 +13,7 @@
 #include <future>
 #include <thread>
 #include <atomic>
+#include <mutex>
 #include <unordered_map>
 #include <sstream>
 #include <cctype>
@@ -1272,6 +1273,7 @@ public:
         return std::async(std::launch::async, std::move(task));
     }
     void lazyLoad(std::function<void()> loader, std::function<void()> onComplete = nullptr);
+    void runOnMainThread(std::function<void()> task);
 private:
     void* window_ = nullptr;
     void* defaultCursor_ = nullptr;
@@ -1316,6 +1318,9 @@ private:
     };
     std::vector<KeymapEntry> keymapEntries_;
     std::unordered_map<std::string, ActionCallback> actionHandlers_;
+    std::vector<std::function<void()>> mainThreadTasks_;
+    std::mutex mainThreadTasksMutex_;
+    void processMainThreadTasks();
     void processEvents();
     void updateCursor(CursorType cursor);
 };

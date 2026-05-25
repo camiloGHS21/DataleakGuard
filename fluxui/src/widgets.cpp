@@ -5523,6 +5523,21 @@ void Application::setBackend(RenderBackendType backend) {
     backendPreference_ = backend;
     renderer_.setBackend(backend);
 }
+void Application::runOnMainThread(std::function<void()> task) {
+    std::lock_guard<std::mutex> lock(mainThreadTasksMutex_);
+    mainThreadTasks_.push_back(std::move(task));
+}
+void Application::processMainThreadTasks() {
+    std::vector<std::function<void()>> tasks;
+    {
+        std::lock_guard<std::mutex> lock(mainThreadTasksMutex_);
+        tasks = std::move(mainThreadTasks_);
+        mainThreadTasks_.clear();
+    }
+    for (const auto& task : tasks) {
+        if (task) task();
+    }
+}
 void Application::processEvents() {
     input_.mouseClicked[0] = input_.mouseClicked[1] = input_.mouseClicked[2] = false;
     input_.mouseReleased[0] = input_.mouseReleased[1] = input_.mouseReleased[2] = false;
@@ -5532,6 +5547,7 @@ void Application::processEvents() {
     input_.text.clear();
     input_.keyCode = 0;
     Platform::processEvents(running);
+    processMainThreadTasks();
 }
 void Application::updateCursor(CursorType cursor) {
     if (cursor == activeCursor_) return;
@@ -5543,12 +5559,29 @@ void Application::updateCursor(CursorType cursor) {
 }
 bool Application::loadStylesheet(const std::string& path) {
     bool ok = stylesheet_.loadFile(path);
+    if (ok) {
+        std::string dir;
+        size_t lastSlash = path.find_last_of("/\\");
+        if (lastSlash != std::string::npos) {
+            dir = path.substr(0, lastSlash + 1);
+        }
+        for (const auto& ff : stylesheet_.fontFaces) {
+            std::string fontPath = ff.src;
+            if (!fontPath.empty() && fontPath[0] != '/' && fontPath[0] != '\\' && (fontPath.size() < 2 || fontPath[1] != ':')) {
+                fontPath = dir + fontPath;
+            }
+            renderer_.registerCustomFont(ff.fontFamily, fontPath);
+        }
+    }
     if (ok && root_) root_->markStyleDirtyRecursive();
     if (ok) needsRedraw_ = true;
     return ok;
 }
 void Application::addStylesheet(const std::string& css) {
     stylesheet_.parse(css);
+    for (const auto& ff : stylesheet_.fontFaces) {
+        renderer_.registerCustomFont(ff.fontFamily, ff.src);
+    }
     if (root_) root_->markStyleDirtyRecursive();
     needsRedraw_ = true;
 }
