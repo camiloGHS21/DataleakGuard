@@ -113,6 +113,39 @@ enum class VirtualListScrollStrategy {
     End = 2,
     Nearest = 3
 };
+
+enum class DocumentLifecycle {
+    Uninitialized = 0,
+    InStyleRecalc,
+    StyleClean,
+    InLayout,
+    LayoutClean,
+    InPrePaint,
+    PrePaintClean,
+    InPaint,
+    PaintClean
+};
+
+enum class WidgetLifecycle {
+    Uninitialized = 0,
+    StyleDirty,
+    StyleClean,
+    LayoutDirty,
+    LayoutClean,
+    PrePaintDirty,
+    PrePaintClean,
+    PaintDirty,
+    PaintClean
+};
+
+struct PaintProperties {
+    Vec2 translation{0.0f, 0.0f};
+    float scale = 1.0f;
+    Rect clipRect{0.0f, 0.0f, 0.0f, 0.0f};
+    bool hasClip = false;
+    float opacity = 1.0f;
+};
+
 class Widget {
 public:
     std::string id;
@@ -137,6 +170,8 @@ public:
     bool layoutDirty = true;
     bool styleDirty = true;
     bool subtreeStyleDirty = true;
+    WidgetLifecycle lifecycleState = WidgetLifecycle::Uninitialized;
+    PaintProperties paintProperties;
     StyleCacheKey lastResolveKey;
     uint32_t lastStyleSheetEpoch = 0;
     bool hasLastResolveKey = false;
@@ -303,6 +338,7 @@ public:
     void invalidateStyleOnClassListChange(const std::string& oldClassName, const std::string& newClassName);
     void invalidateStyleOnIdChange(const std::string& oldId, const std::string& newId);
     virtual void layout(const Rect& parentBounds);
+    virtual void prePaint(const PaintProperties& parentProps);
     void translateLayout(float dx, float dy);
     bool hasActiveAnimations() const;
     void resetTransientMotion();
@@ -1313,6 +1349,7 @@ public:
     void requestRedraw() { needsRedraw_ = true; }
     bool needsRedraw() const { return needsRedraw_; }
     bool running = true;
+    DocumentLifecycle documentLifecycle = DocumentLifecycle::Uninitialized;
     template<typename T>
     std::future<T> async(std::function<T()> task) {
         return std::async(std::launch::async, std::move(task));

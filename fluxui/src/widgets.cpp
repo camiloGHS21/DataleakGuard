@@ -1011,6 +1011,7 @@ void Widget::dispatchEvent(Event& event) {
 void Widget::markLayoutDirty() {
     if (layoutDirty && (!parent || parent->layoutDirty)) return;
     layoutDirty = true;
+    lifecycleState = WidgetLifecycle::LayoutDirty;
     if (parent) parent->markLayoutDirty();
     if (auto* app = Application::instance()) {
         app->requestRedraw();
@@ -1019,17 +1020,22 @@ void Widget::markLayoutDirty() {
 void Widget::markSubtreeStyleDirty() {
     if (subtreeStyleDirty && (!parent || parent->subtreeStyleDirty)) return;
     subtreeStyleDirty = true;
+    if (lifecycleState < WidgetLifecycle::StyleDirty) {
+        lifecycleState = WidgetLifecycle::StyleDirty;
+    }
     if (parent) parent->markSubtreeStyleDirty();
 }
 void Widget::markStyleDirty() {
     styleDirty = true;
     subtreeStyleDirty = true;
+    lifecycleState = WidgetLifecycle::StyleDirty;
     markLayoutDirty();
     if (parent) parent->markSubtreeStyleDirty();
 }
 void Widget::markStyleDirtyRecursive() {
     styleDirty = true;
     subtreeStyleDirty = true;
+    lifecycleState = WidgetLifecycle::StyleDirty;
     markLayoutDirty();
     for (auto& child : children) {
         child->markStyleDirtyRecursive();
@@ -1772,7 +1778,45 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         }
     }
     subtreeStyleDirty = false;
+    lifecycleState = WidgetLifecycle::StyleClean;
 }
+
+void Widget::prePaint(const PaintProperties& parentProps) {
+    paintProperties.translation = parentProps.translation;
+    paintProperties.scale = parentProps.scale;
+    paintProperties.clipRect = parentProps.clipRect;
+    paintProperties.hasClip = parentProps.hasClip;
+    paintProperties.opacity = parentProps.opacity * computedStyle.opacity;
+
+    bool scrollable = scrollsOverflowY(computedStyle, contentHeight, bounds.h);
+    if (scrollable) {
+        paintProperties.translation.y -= scrollY;
+    }
+
+    bool clip = clipsOverflow(computedStyle);
+    if (clip) {
+        Rect localClip = bounds;
+        if (paintProperties.hasClip) {
+            float x1 = std::max(paintProperties.clipRect.x, localClip.x);
+            float y1 = std::max(paintProperties.clipRect.y, localClip.y);
+            float x2 = std::min(paintProperties.clipRect.x + paintProperties.clipRect.w, localClip.x + localClip.w);
+            float y2 = std::min(paintProperties.clipRect.y + paintProperties.clipRect.h, localClip.y + localClip.h);
+            paintProperties.clipRect = { x1, y1, std::max(0.0f, x2 - x1), std::max(0.0f, y2 - y1) };
+        } else {
+            paintProperties.clipRect = localClip;
+            paintProperties.hasClip = true;
+        }
+    }
+
+    lifecycleState = WidgetLifecycle::PrePaintClean;
+
+    for (auto& child : children) {
+        if (child) {
+            child->prePaint(paintProperties);
+        }
+    }
+}
+
 void Widget::translateLayout(float dx, float dy) {
     bounds.x += dx;
     bounds.y += dy;
@@ -2046,6 +2090,7 @@ void Widget::layout(const Rect& parentBounds) {
     }
     layoutPositionedChildren();
     layoutDirty = false;
+    lifecycleState = WidgetLifecycle::LayoutClean;
 }
 void Widget::layoutFlexChildren() {
     float vpW = 1920.0f;
@@ -5223,6 +5268,7 @@ void VirtualList::layout(const Rect& parentBounds) {
     rebuildVisibleItems();
     layoutPositionedChildren();
     layoutDirty = false;
+    lifecycleState = WidgetLifecycle::LayoutClean;
 }
 void VirtualList::update(const InputState& input) {
     float previousScroll = scrollY;
@@ -6301,8 +6347,15 @@ void Application::renderFrame() {
     if (stylesheet_.setViewportSize((float)w, (float)h)) {
         root_->markStyleDirtyRecursive();
     }
+
+    // High-Fidelity chromium style rendering pipeline
+    documentLifecycle = DocumentLifecycle::InStyleRecalc;
     root_->resolveStyles(stylesheet_);
+    documentLifecycle = DocumentLifecycle::StyleClean;
+
+    documentLifecycle = DocumentLifecycle::InLayout;
     root_->layout({0, 0, (float)w, (float)h});
+    documentLifecycle = DocumentLifecycle::LayoutClean;
 
     // ResizeObserver processing cycle (matches Chromium Blink high-fidelity resize observations)
     int resizeIteration = 0;
@@ -6321,14 +6374,31 @@ void Application::renderFrame() {
             }
         }
 
-        // If a callback dirty-marked the style or layout, re-resolve and re-layout
+        // If a callback dirty-marked the style or layout, re-resolve and re-layout sequentially
         if (root_->layoutDirty || root_->styleDirty || root_->subtreeStyleDirty) {
+            documentLifecycle = DocumentLifecycle::InStyleRecalc;
             root_->resolveStyles(stylesheet_);
+            documentLifecycle = DocumentLifecycle::StyleClean;
+
+            documentLifecycle = DocumentLifecycle::InLayout;
             root_->layout({0, 0, (float)w, (float)h});
+            documentLifecycle = DocumentLifecycle::LayoutClean;
+
             sizeChanged = true;
             resizeIteration++;
         }
     }
+
+    // Pre-Paint Phase: Compute paint property tree
+    documentLifecycle = DocumentLifecycle::InPrePaint;
+    PaintProperties rootProps;
+    rootProps.translation = {0.0f, 0.0f};
+    rootProps.scale = 1.0f;
+    rootProps.clipRect = {0.0f, 0.0f, (float)w, (float)h};
+    rootProps.hasClip = true;
+    rootProps.opacity = 1.0f;
+    root_->prePaint(rootProps);
+    documentLifecycle = DocumentLifecycle::PrePaintClean;
     int documentKeyCode = normalizeTextEditingKey(input_.keyCode);
     if (documentKeyCode == 0x09) {
         bool backwards = (input_.modifiers & MOD_SHIFT) != 0;
@@ -6394,6 +6464,7 @@ void Application::renderFrame() {
     }
     updateCursor(currentCursor);
 
+    documentLifecycle = DocumentLifecycle::InPaint;
     renderer_.beginFrame(w, h);
     root_->render(renderer_);
     for (auto* fw : fixedWidgets) {
@@ -6401,6 +6472,7 @@ void Application::renderFrame() {
     }
     if (onRender) onRender();
     renderer_.endFrame();
+    documentLifecycle = DocumentLifecycle::PaintClean;
 }
 
 void Application::run() {
