@@ -156,6 +156,10 @@ struct EdgeInsets {
     EdgeInsets(float t, float r, float b, float l) : top(t), right(r), bottom(b), left(l) {}
     float horizontal() const { return left + right; }
     float vertical() const { return top + bottom; }
+    bool operator==(const EdgeInsets& o) const {
+        return top == o.top && right == o.right && bottom == o.bottom && left == o.left;
+    }
+    bool operator!=(const EdgeInsets& o) const { return !(*this == o); }
 };
 
 struct BorderRadius {
@@ -164,6 +168,10 @@ struct BorderRadius {
     BorderRadius(float all) : tl(all), tr(all), br(all), bl(all) {}
     float maxRadius() const { return std::max({tl, tr, br, bl}); }
     float uniform() const { return tl; } // assumes all same
+    bool operator==(const BorderRadius& o) const {
+        return tl == o.tl && tr == o.tr && br == o.br && bl == o.bl;
+    }
+    bool operator!=(const BorderRadius& o) const { return !(*this == o); }
 };
 
 struct BoxShadow {
@@ -171,6 +179,12 @@ struct BoxShadow {
     float blur = 0, spread = 0;
     Color color = Color(0, 0, 0, 0.0f);
     bool inset = false;
+    bool operator==(const BoxShadow& o) const {
+        return offsetX == o.offsetX && offsetY == o.offsetY &&
+               blur == o.blur && spread == o.spread &&
+               color == o.color && inset == o.inset;
+    }
+    bool operator!=(const BoxShadow& o) const { return !(*this == o); }
 };
 
 struct Border {
@@ -178,6 +192,10 @@ struct Border {
     Color color;
     Border() = default;
     Border(float w, Color c) : width(w), color(c) {}
+    bool operator==(const Border& o) const {
+        return width == o.width && color == o.color;
+    }
+    bool operator!=(const Border& o) const { return !(*this == o); }
 };
 
 struct Gradient {
@@ -353,6 +371,13 @@ struct CSSValue {
     bool isAuto() const { return unit == Auto; }
     bool isSet() const { return unit != None; }
     bool isIntrinsic() const { return unit == MinContent || unit == MaxContent || unit == FitContent; }
+
+    bool operator==(const CSSValue& o) const {
+        return value == o.value && unit == o.unit && calcOp == o.calcOp &&
+               calcValue2 == o.calcValue2 && calcUnit2 == o.calcUnit2 &&
+               calcValue3 == o.calcValue3 && calcUnit3 == o.calcUnit3;
+    }
+    bool operator!=(const CSSValue& o) const { return !(*this == o); }
 
 private:
     static float resolveUnit(float val, Unit u, float parentSize, float vpW, float vpH, float emBase) {

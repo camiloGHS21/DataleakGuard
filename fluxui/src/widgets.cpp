@@ -1294,6 +1294,63 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         return;
     }
     if (styleDirty) {
+        // High-Fidelity Sibling Style Sharing (inspired by Chromium Blink's Peer ComputedStyle Sharing)
+        // If an already-resolved sibling shares identical classes, inline styles, and constraints,
+        // we can copy its computedStyle directly, completely bypassing expensive stylesheet matches.
+        if (parent) {
+            std::string_view selectorType = widgetSelectorType(this);
+            for (const auto& sibling : parent->children) {
+                if (sibling.get() == this) break;
+                if (!sibling->styleDirty &&
+                    sibling->className == className &&
+                    sibling->id == id &&
+                    widgetSelectorType(sibling.get()) == selectorType &&
+                    sibling->style.width == style.width &&
+                    sibling->style.height == style.height &&
+                    sibling->style.minWidth == style.minWidth &&
+                    sibling->style.minHeight == style.minHeight &&
+                    sibling->style.maxWidth == style.maxWidth &&
+                    sibling->style.maxHeight == style.maxHeight &&
+                    sibling->style.top == style.top &&
+                    sibling->style.right == style.right &&
+                    sibling->style.bottom == style.bottom &&
+                    sibling->style.left == style.left &&
+                    sibling->style.padding == style.padding &&
+                    sibling->style.margin == style.margin &&
+                    sibling->style.position == style.position &&
+                    sibling->style.flexGrow == style.flexGrow &&
+                    sibling->style.flexShrink == style.flexShrink &&
+                    sibling->style.flexBasis == style.flexBasis &&
+                    sibling->style.aspectRatio == style.aspectRatio &&
+                    sibling->style.backgroundColor == style.backgroundColor &&
+                    sibling->style.color == style.color &&
+                    sibling->style.fontSize == style.fontSize &&
+                    sibling->style.fontFamily == style.fontFamily &&
+                    sibling->inlineProperties.size() == inlineProperties.size() &&
+                    sibling->inlinePropertyEpoch == inlinePropertyEpoch) {
+                    
+                    bool inlinePropsMatch = true;
+                    for (size_t i = 0; i < inlineProperties.size(); ++i) {
+                        if (inlineProperties[i].name != sibling->inlineProperties[i].name ||
+                            inlineProperties[i].value != sibling->inlineProperties[i].value) {
+                            inlinePropsMatch = false;
+                            break;
+                        }
+                    }
+                    
+                    if (inlinePropsMatch) {
+                        computedStyle = sibling->computedStyle;
+                        lastResolveKey = sibling->lastResolveKey;
+                        lastStyleSheetEpoch = sibling->lastStyleSheetEpoch;
+                        hasLastResolveKey = sibling->hasLastResolveKey;
+                        styleDirty = false;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (styleDirty) {
         cachedSelectorType.clear();
         if (parent) {
             uint64_t h1 = parent->ancestorH1;
