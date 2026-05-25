@@ -489,7 +489,7 @@ static int getSiblingIndex(const Widget* widget, bool ofType, bool fromEnd) {
     int index = 0;
     for (const auto& sibling : siblings) {
         if (!sibling) continue;
-        if (ofType && sibling->selectorType() != targetType) continue;
+        if (ofType && std::string_view(sibling->selectorType()) != targetType) continue;
         count++;
         if (sibling.get() == widget) {
             index = count;

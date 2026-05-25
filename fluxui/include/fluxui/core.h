@@ -5,6 +5,7 @@
 #include "fluxui/config.h"
 
 #include <string>
+#include "fluxui/atomic_string.h"
 #include <vector>
 #include <unordered_map>
 #include <functional>

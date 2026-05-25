@@ -17,7 +17,7 @@ namespace FluxUI {
 // ============================================================
 
 struct CSSProperty {
-    std::string name;
+    AtomicString name;
     std::string value;
     uint32_t sourceOrder = 0;
 };

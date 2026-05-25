@@ -148,10 +148,10 @@ struct PaintProperties {
 
 class Widget {
 public:
-    std::string id;
-    std::string className;
-    std::string type = "widget";
-    std::string dir;
+    AtomicString id;
+    AtomicString className;
+    AtomicString type = "widget";
+    AtomicString dir;
     Style style;
     Style computedStyle;
     std::vector<CSSProperty> inlineProperties;
@@ -1104,20 +1104,22 @@ inline Widget* Widget::classes(const std::string& value) {
 }
 inline Widget* Widget::addClass(const std::string& value) {
     if (value.empty()) return this;
-    std::istringstream stream(className);
+    std::istringstream stream(className.getString());
     std::string cls;
     while (stream >> cls) {
         if (cls == value) return this;
     }
-    std::string oldClassName = className;
-    if (!className.empty()) className += ' ';
-    className += value;
-    invalidateStyleOnClassListChange(oldClassName, className);
+    std::string oldClassName = className.getString();
+    std::string newClassName = className.getString();
+    if (!newClassName.empty()) newClassName += ' ';
+    newClassName += value;
+    className = newClassName;
+    invalidateStyleOnClassListChange(oldClassName, className.getString());
     return this;
 }
 inline Widget* Widget::removeClass(const std::string& value) {
     if (value.empty() || className.empty()) return this;
-    std::istringstream stream(className);
+    std::istringstream stream(className.getString());
     std::string next;
     std::string updated;
     while (stream >> next) {
@@ -1125,10 +1127,10 @@ inline Widget* Widget::removeClass(const std::string& value) {
         if (!updated.empty()) updated += ' ';
         updated += next;
     }
-    if (updated != className) {
-        std::string oldClassName = className;
+    if (updated != className.getString()) {
+        std::string oldClassName = className.getString();
         className = std::move(updated);
-        invalidateStyleOnClassListChange(oldClassName, className);
+        invalidateStyleOnClassListChange(oldClassName, className.getString());
     }
     return this;
 }
@@ -1138,17 +1140,21 @@ inline Widget* Widget::toggleClass(const std::string& value, bool enabled) {
 inline Widget* Widget::css(const std::string& declarations) {
     inlineProperties.clear();
     ++inlinePropertyEpoch;
-    auto trimLocal = [](const std::string& s) {
+
+    auto trimSV = [](std::string_view s) -> std::string_view {
         size_t start = s.find_first_not_of(" \t\n\r");
+        if (start == std::string_view::npos) return {};
         size_t end = s.find_last_not_of(" \t\n\r");
-        return (start == std::string::npos) ? std::string() : s.substr(start, end - start + 1);
+        return s.substr(start, end - start + 1);
     };
+
+    std::string_view decls = declarations;
     size_t start = 0;
     int depth = 0;
     char quote = 0;
     bool escaped = false;
-    for (size_t i = 0; i <= declarations.size(); ++i) {
-        char c = (i < declarations.size()) ? declarations[i] : ';';
+    for (size_t i = 0; i <= decls.size(); ++i) {
+        char c = (i < decls.size()) ? decls[i] : ';';
         if (quote != 0) {
             if (escaped) escaped = false;
             else if (c == '\\') escaped = true;
@@ -1161,29 +1167,43 @@ inline Widget* Widget::css(const std::string& declarations) {
         }
         if (c == '(' || c == '[' || c == '{') depth++;
         else if ((c == ')' || c == ']' || c == '}') && depth > 0) depth--;
-        if ((c == ';' && depth == 0) || i == declarations.size()) {
-            std::string decl = trimLocal(declarations.substr(start, i - start));
+
+        if ((c == ';' && depth == 0) || i == decls.size()) {
+            std::string_view decl = trimSV(decls.substr(start, i - start));
             start = i + 1;
             if (decl.empty()) continue;
+
             auto colon = decl.find(':');
-            if (colon == std::string::npos) continue;
-            std::string name = trimLocal(decl.substr(0, colon));
-            std::string value = trimLocal(decl.substr(colon + 1));
-            for (char& ch : name) {
-                ch = (char)std::tolower((unsigned char)ch);
+            if (colon == std::string_view::npos) continue;
+
+            std::string_view nameView = trimSV(decl.substr(0, colon));
+            std::string_view valueView = trimSV(decl.substr(colon + 1));
+
+            char localNameBuf[64];
+            size_t nameLen = std::min(nameView.size(), sizeof(localNameBuf) - 1);
+            for (size_t k = 0; k < nameLen; ++k) {
+                localNameBuf[k] = (char)std::tolower((unsigned char)nameView[k]);
             }
-            std::string loweredValue = value;
-            for (char& ch : loweredValue) {
-                ch = (char)std::tolower((unsigned char)ch);
-            }
-            size_t bang = loweredValue.rfind('!');
-            if (bang != std::string::npos) {
-                std::string tail = trimLocal(loweredValue.substr(bang + 1));
-                if (tail == "important") {
-                    value = trimLocal(value.substr(0, bang));
+            localNameBuf[nameLen] = '\0';
+            std::string_view lowName(localNameBuf, nameLen);
+
+            std::string_view cleanValue = valueView;
+            if (valueView.size() > 10) {
+                size_t bang = valueView.rfind('!');
+                if (bang != std::string_view::npos) {
+                    std::string_view tail = trimSV(valueView.substr(bang + 1));
+                    if (tail.size() == 9) {
+                        char importantBuf[10];
+                        for (int k = 0; k < 9; ++k) importantBuf[k] = (char)std::tolower((unsigned char)tail[k]);
+                        importantBuf[9] = '\0';
+                        if (std::string_view(importantBuf, 9) == "important") {
+                            cleanValue = trimSV(valueView.substr(0, bang));
+                        }
+                    }
                 }
             }
-            inlineProperties.push_back({name, value, 0});
+
+            inlineProperties.push_back({AtomicString(lowName), std::string(cleanValue), 0});
         }
     }
     markStyleDirtyRecursive();

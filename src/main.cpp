@@ -481,9 +481,9 @@ static void buildAlerts(Widget* content) {
         {"database", "SQL export exceeded permitted row count", "Unassigned", "High", "41 min"}
     };
     for (auto& rowData : rows) {
-        auto* row = queue->panel("incident-row");
+        auto* row = queue->panel("incident-row", 4);
         row->panel("activity-icon alert-danger", 1)->addIcon(rowData[0], "activity-mark mark-danger");
-        auto* copy = row->panel("incident-copy");
+        auto* copy = row->panel("incident-copy", 2);
         copy->text(rowData[1], "incident-title");
         copy->text(std::string(rowData[2]) + " - " + rowData[4] + " ago", "incident-meta");
         addPill(row, rowData[3], std::string(rowData[3]) == "Critical" ? "danger" : "warning");

@@ -1304,7 +1304,7 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
                 if (!sibling->styleDirty &&
                     sibling->className == className &&
                     sibling->id == id &&
-                    widgetSelectorType(sibling.get()) == selectorType &&
+                    std::string_view(widgetSelectorType(sibling.get())) == selectorType &&
                     sibling->style.width == style.width &&
                     sibling->style.height == style.height &&
                     sibling->style.minWidth == style.minWidth &&
@@ -1343,6 +1343,15 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
                         lastResolveKey = sibling->lastResolveKey;
                         lastStyleSheetEpoch = sibling->lastStyleSheetEpoch;
                         hasLastResolveKey = sibling->hasLastResolveKey;
+                        ancestorH1 = sibling->ancestorH1;
+                        ancestorH2 = sibling->ancestorH2;
+                        
+                        size_t nextLayoutSignature = layoutStyleSignature(computedStyle);
+                        if (nextLayoutSignature != layoutSignature) {
+                            layoutSignature = nextLayoutSignature;
+                            markLayoutDirty();
+                        }
+                        
                         styleDirty = false;
                         break;
                     }
@@ -5928,8 +5937,9 @@ static bool widgetMatchesContext(const Widget* widget, const std::string& contex
     if (!widget) return false;
     
     if (context[0] == '#') {
-        return widget->id.size() == context.size() - 1 && 
-               widget->id.compare(0, widget->id.size(), context.data() + 1, context.size() - 1) == 0;
+        std::string_view id(widget->id);
+        return id.size() == context.size() - 1 && 
+               id.compare(0, id.size(), context.data() + 1, context.size() - 1) == 0;
     }
     
     if (context[0] == '.') {
