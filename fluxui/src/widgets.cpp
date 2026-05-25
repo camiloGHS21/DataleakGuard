@@ -1,5 +1,6 @@
 #include "fluxui/widgets.h"
 #include "fluxui/compositor.h"
+#include "fluxui/layout.h"
 #include <unordered_set>
 #include <iostream>
 #include <algorithm>
@@ -1728,93 +1729,31 @@ void Widget::layout(const Rect& parentBounds) {
     }
     bounds = {x, y, w, h};
     if (s.display == Display::Flex) {
-        layoutFlexChildren();
+        LayoutConstraints constraints;
+        constraints.availableWidth = parentBounds.w;
+        constraints.availableHeight = parentBounds.h;
+        constraints.parentWidth = vpW;
+        constraints.parentHeight = vpH;
+        constraints.emBase = 16.0f;
+
+        FlexLayoutAlgorithm algorithm;
+        LayoutResult res = algorithm.layout(this, constraints);
+        bounds.w = res.width;
+        bounds.h = res.height;
+        contentHeight = res.contentHeight;
     } else if (s.display == Display::Grid) {
-        int cols = 1;
-        if (!s.gridTemplateColumns.empty()) {
-            auto repeatPos = s.gridTemplateColumns.find("repeat(");
-            if (repeatPos != std::string::npos) {
-                auto comma = s.gridTemplateColumns.find(',', repeatPos);
-                if (comma != std::string::npos) {
-                    try {
-                        cols = std::stoi(s.gridTemplateColumns.substr(repeatPos + 7, comma - (repeatPos + 7)));
-                    } catch (...) {}
-                }
-            } else {
-                std::istringstream iss(s.gridTemplateColumns);
-                std::string token;
-                int count = 0;
-                while (iss >> token) {
-                    count++;
-                }
-                if (count > 0) cols = count;
-            }
-        }
-        if (cols < 1) cols = 1;
+        LayoutConstraints constraints;
+        constraints.availableWidth = parentBounds.w;
+        constraints.availableHeight = parentBounds.h;
+        constraints.parentWidth = vpW;
+        constraints.parentHeight = vpH;
+        constraints.emBase = 16.0f;
 
-        float gap = s.columnGap > 0 ? s.columnGap : (s.gap > 0 ? s.gap : 0.0f);
-        float rGap = s.rowGap > 0 ? s.rowGap : (s.gap > 0 ? s.gap : 0.0f);
-        float availW = bounds.w - s.padding.horizontal();
-        float totalGaps = (cols - 1) * gap;
-        float colW = std::max(0.0f, (availW - totalGaps) / cols);
-
-        float startX = bounds.x + s.padding.left;
-        float startY = bounds.y + s.padding.top;
-        float currentRowY = startY;
-        std::vector<Widget*> rowChildren;
-
-        for (auto& child : children) {
-            if (!child->visible) continue;
-            if (isDisplayNone(child.get())) continue;
-            if (isOutOfFlow(child.get())) continue;
-
-            rowChildren.push_back(child.get());
-
-            if (rowChildren.size() == static_cast<size_t>(cols)) {
-                float maxRowH = 0.0f;
-                for (size_t i = 0; i < rowChildren.size(); ++i) {
-                    Widget* c = rowChildren[i];
-                    float cellX = startX + i * (colW + gap);
-                    Rect childArea = { cellX, currentRowY, colW, 10000.0f };
-                    c->layout(childArea);
-                    maxRowH = std::max(maxRowH, c->bounds.h);
-                }
-                for (size_t i = 0; i < rowChildren.size(); ++i) {
-                    Widget* c = rowChildren[i];
-                    float cellX = startX + i * (colW + gap);
-                    Rect childArea = { cellX, currentRowY, colW, maxRowH };
-                    c->layout(childArea);
-                }
-                currentRowY += maxRowH + rGap;
-                rowChildren.clear();
-            }
-        }
-        if (!rowChildren.empty()) {
-            float maxRowH = 0.0f;
-            for (size_t i = 0; i < rowChildren.size(); ++i) {
-                Widget* c = rowChildren[i];
-                float cellX = startX + i * (colW + gap);
-                Rect childArea = { cellX, currentRowY, colW, 10000.0f };
-                c->layout(childArea);
-                maxRowH = std::max(maxRowH, c->bounds.h);
-            }
-            for (size_t i = 0; i < rowChildren.size(); ++i) {
-                Widget* c = rowChildren[i];
-                float cellX = startX + i * (colW + gap);
-                Rect childArea = { cellX, currentRowY, colW, maxRowH };
-                c->layout(childArea);
-            }
-            currentRowY += maxRowH + rGap;
-        }
-
-        if (!s.height.isSet() && !heightProvidedByParentFlex && parent != nullptr) {
-            float totalH = currentRowY - startY + s.padding.vertical();
-            if (currentRowY > startY) {
-                totalH -= rGap;
-            }
-            bounds.h = std::max(bounds.h, totalH);
-        }
-        contentHeight = currentRowY - bounds.y + s.padding.bottom;
+        GridLayoutAlgorithm algorithm;
+        LayoutResult res = algorithm.layout(this, constraints);
+        bounds.w = res.width;
+        bounds.h = res.height;
+        contentHeight = res.contentHeight;
     } else if (s.display == Display::Table) {
         std::vector<Widget*> rows;
         std::function<void(Widget*)> collectRows = [&](Widget* w) {
@@ -2004,6 +1943,28 @@ void Widget::layout(const Rect& parentBounds) {
     layoutDirty = false;
 }
 void Widget::layoutFlexChildren() {
+    float vpW = 1920.0f;
+    float vpH = 1080.0f;
+    const Widget* r = this;
+    while (r->parent) r = r->parent;
+    if (r) {
+        vpW = r->bounds.w;
+        vpH = r->bounds.h;
+    }
+    LayoutConstraints constraints;
+    constraints.availableWidth = bounds.w;
+    constraints.availableHeight = bounds.h;
+    constraints.parentWidth = vpW;
+    constraints.parentHeight = vpH;
+    constraints.emBase = 16.0f;
+    
+    FlexLayoutAlgorithm algorithm;
+    LayoutResult res = algorithm.layout(this, constraints);
+    bounds.w = res.width;
+    bounds.h = res.height;
+    contentHeight = res.contentHeight;
+    return;
+
     auto& s = computedStyle;
     bool isRow = (s.flexDirection == FlexDirection::Row ||
                   s.flexDirection == FlexDirection::RowReverse);
