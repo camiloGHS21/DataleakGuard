@@ -3810,14 +3810,19 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
         return parseCSSValue(inner);
     }
 
-    // min() / max() / clamp() - evaluate with fixed viewport for now
+    // min() / max() / clamp() - evaluate dynamically
     if (lower.rfind("min(", 0) == 0) {
         auto parts = splitTopLevel(functionInner(v), ',');
         if (parts.size() >= 2) {
             CSSValue a = parseCSSValue(trim(parts[0]));
             CSSValue b = parseCSSValue(trim(parts[1]));
-            float va = a.resolve(0), vb = b.resolve(0);
-            return va < vb ? a : b;
+            CSSValue result;
+            result.value = a.value;
+            result.unit = a.unit;
+            result.calcOp = CSSValue::CalcMin;
+            result.calcValue2 = b.value;
+            result.calcUnit2 = b.unit;
+            return result;
         }
     }
     if (lower.rfind("max(", 0) == 0) {
@@ -3825,8 +3830,13 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
         if (parts.size() >= 2) {
             CSSValue a = parseCSSValue(trim(parts[0]));
             CSSValue b = parseCSSValue(trim(parts[1]));
-            float va = a.resolve(0), vb = b.resolve(0);
-            return va > vb ? a : b;
+            CSSValue result;
+            result.value = a.value;
+            result.unit = a.unit;
+            result.calcOp = CSSValue::CalcMax;
+            result.calcValue2 = b.value;
+            result.calcUnit2 = b.unit;
+            return result;
         }
     }
     if (lower.rfind("clamp(", 0) == 0) {
@@ -3835,8 +3845,15 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
             CSSValue lo = parseCSSValue(trim(parts[0]));
             CSSValue val2 = parseCSSValue(trim(parts[1]));
             CSSValue hi = parseCSSValue(trim(parts[2]));
-            // Return the preferred value - clamping needs runtime resolution
-            return val2;
+            CSSValue result;
+            result.value = val2.value;
+            result.unit = val2.unit;
+            result.calcOp = CSSValue::CalcClamp;
+            result.calcValue2 = lo.value;
+            result.calcUnit2 = lo.unit;
+            result.calcValue3 = hi.value;
+            result.calcUnit3 = hi.unit;
+            return result;
         }
     }
 

@@ -275,11 +275,13 @@ struct CSSValue {
     float value = 0;
     Unit unit = None;
 
-    // For calc() support: stores calc operands
-    enum CalcOp { CalcNone, CalcAdd, CalcSub, CalcMul, CalcDiv };
+    // For calc(), min(), max(), clamp() support: stores operands
+    enum CalcOp { CalcNone, CalcAdd, CalcSub, CalcMul, CalcDiv, CalcMin, CalcMax, CalcClamp };
     CalcOp calcOp = CalcNone;
     float calcValue2 = 0;
     Unit calcUnit2 = None;
+    float calcValue3 = 0;
+    Unit calcUnit3 = None;
 
     CSSValue() = default;
     CSSValue(float v, Unit u = Px) : value(v), unit(u) {}
@@ -304,6 +306,13 @@ struct CSSValue {
             case CalcSub: return primary - secondary;
             case CalcMul: return primary * secondary;
             case CalcDiv: return secondary != 0.0f ? primary / secondary : 0.0f;
+            case CalcMin: return std::min(primary, secondary);
+            case CalcMax: return std::max(primary, secondary);
+            case CalcClamp: {
+                float tertiary = resolveUnit(calcValue3, calcUnit3, parentSize, viewportW, viewportH, emBase);
+                // Clamp primary (preferred) between secondary (min) and tertiary (max)
+                return primary < secondary ? secondary : (primary > tertiary ? tertiary : primary);
+            }
             default: return primary;
         }
     }
