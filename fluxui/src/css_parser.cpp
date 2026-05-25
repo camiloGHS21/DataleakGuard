@@ -29,69 +29,170 @@ std::string StyleSheet::trim(const std::string& s) {
     return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
 }
 
+std::vector<StyleSheet::CSSToken> StyleSheet::tokenizeCSS(const std::string& css) {
+    std::vector<CSSToken> tokens;
+    size_t i = 0;
+    size_t n = css.size();
+
+    while (i < n) {
+        char c = css[i];
+
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f') {
+            size_t start = i;
+            while (i < n && (css[i] == ' ' || css[i] == '\t' || css[i] == '\n' || css[i] == '\r' || css[i] == '\f')) {
+                i++;
+            }
+            tokens.push_back({CSSToken::Whitespace, " "});
+            continue;
+        }
+
+        if (c == '/' && i + 1 < n && css[i + 1] == '*') {
+            i += 2;
+            while (i < n && !(css[i] == '*' && i + 1 < n && css[i + 1] == '/')) {
+                i++;
+            }
+            if (i < n) i += 2;
+            continue;
+        }
+
+        if (c == '{') { tokens.push_back({CSSToken::LeftBrace, "{"}); i++; continue; }
+        if (c == '}') { tokens.push_back({CSSToken::RightBrace, "}"}); i++; continue; }
+        if (c == '(') { tokens.push_back({CSSToken::LeftParenthesis, "("}); i++; continue; }
+        if (c == ')') { tokens.push_back({CSSToken::RightParenthesis, ")"}); i++; continue; }
+        if (c == '[') { tokens.push_back({CSSToken::LeftBracket, "["}); i++; continue; }
+        if (c == ']') { tokens.push_back({CSSToken::RightBracket, "]"}); i++; continue; }
+        if (c == ':') { tokens.push_back({CSSToken::Colon, ":"}); i++; continue; }
+        if (c == ';') { tokens.push_back({CSSToken::Semicolon, ";"}); i++; continue; }
+        if (c == ',') { tokens.push_back({CSSToken::Comma, ","}); i++; continue; }
+
+        if (c == '"' || c == '\'') {
+            char quoteChar = c;
+            std::string strVal;
+            strVal += c;
+            i++;
+            bool escaped = false;
+            while (i < n) {
+                char nextC = css[i];
+                strVal += nextC;
+                i++;
+                if (escaped) {
+                    escaped = false;
+                } else if (nextC == '\\') {
+                    escaped = true;
+                } else if (nextC == quoteChar) {
+                    break;
+                }
+            }
+            tokens.push_back({CSSToken::String, strVal});
+            continue;
+        }
+
+        if (c == '@') {
+            std::string keyword = "@";
+            i++;
+            while (i < n && (std::isalnum(static_cast<unsigned char>(css[i])) || css[i] == '-' || css[i] == '_')) {
+                keyword += css[i];
+                i++;
+            }
+            tokens.push_back({CSSToken::AtKeyword, keyword});
+            continue;
+        }
+
+        std::string text;
+        while (i < n &&
+               css[i] != '{' && css[i] != '}' &&
+               css[i] != '(' && css[i] != ')' &&
+               css[i] != '[' && css[i] != ']' &&
+               css[i] != ':' && css[i] != ';' &&
+               css[i] != ',' && css[i] != '"' && css[i] != '\'' &&
+               css[i] != '@' &&
+               !(css[i] == '/' && i + 1 < n && css[i + 1] == '*') &&
+               !(css[i] == ' ' || css[i] == '\t' || css[i] == '\n' || css[i] == '\r' || css[i] == '\f')) {
+            text += css[i];
+            i++;
+        }
+        tokens.push_back({CSSToken::Ident, text});
+    }
+    tokens.push_back({CSSToken::EndOfFile, ""});
+    return tokens;
+}
+
 std::vector<std::string> StyleSheet::splitTopLevel(const std::string& value, char delimiter) {
     std::vector<std::string> parts;
+    auto tokens = tokenizeCSS(value);
+    
     std::string current;
-    int depth = 0;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
 
-    for (char c : value) {
-        if (c == '(') depth++;
-        if (c == ')' && depth > 0) depth--;
+    for (const auto& t : tokens) {
+        if (t.type == CSSToken::EndOfFile) {
+            break;
+        }
 
-        if (c == delimiter && depth == 0) {
+        if (t.type == CSSToken::LeftParenthesis) parenDepth++;
+        else if (t.type == CSSToken::RightParenthesis && parenDepth > 0) parenDepth--;
+        else if (t.type == CSSToken::LeftBracket) bracketDepth++;
+        else if (t.type == CSSToken::RightBracket && bracketDepth > 0) bracketDepth--;
+        else if (t.type == CSSToken::LeftBrace) braceDepth++;
+        else if (t.type == CSSToken::RightBrace && braceDepth > 0) braceDepth--;
+
+        bool isDelimiter = false;
+        if (delimiter == ',' && t.type == CSSToken::Comma) isDelimiter = true;
+        else if (delimiter == ';' && t.type == CSSToken::Semicolon) isDelimiter = true;
+        else if (t.text.size() == 1 && t.text[0] == delimiter && t.type == CSSToken::Ident) isDelimiter = true;
+
+        if (isDelimiter && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
             parts.push_back(trim(current));
             current.clear();
         } else {
-            current += c;
+            current += t.text;
         }
     }
 
-    if (!trim(current).empty()) parts.push_back(trim(current));
+    if (!trim(current).empty()) {
+        parts.push_back(trim(current));
+    }
     return parts;
 }
 
 std::vector<std::string> StyleSheet::splitDeclarations(const std::string& body) {
     std::vector<std::string> declarations;
-    std::string current;
-    int depth = 0;
-    char quote = 0;
-    bool escaped = false;
+    auto tokens = tokenizeCSS(body);
+    
+    std::string currentDecl;
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
 
-    for (char c : body) {
-        if (quote != 0) {
-            current += c;
-            if (escaped) {
-                escaped = false;
-            } else if (c == '\\') {
-                escaped = true;
-            } else if (c == quote) {
-                quote = 0;
+    for (const auto& t : tokens) {
+        if (t.type == CSSToken::EndOfFile) {
+            break;
+        }
+
+        if (t.type == CSSToken::LeftParenthesis) parenDepth++;
+        else if (t.type == CSSToken::RightParenthesis && parenDepth > 0) parenDepth--;
+        else if (t.type == CSSToken::LeftBracket) bracketDepth++;
+        else if (t.type == CSSToken::RightBracket && bracketDepth > 0) bracketDepth--;
+        else if (t.type == CSSToken::LeftBrace) braceDepth++;
+        else if (t.type == CSSToken::RightBrace && braceDepth > 0) braceDepth--;
+
+        if (t.type == CSSToken::Semicolon && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
+            std::string item = trim(currentDecl);
+            if (!item.empty()) {
+                declarations.push_back(item);
             }
-            continue;
-        }
-
-        if (c == '"' || c == '\'') {
-            quote = c;
-            current += c;
-            continue;
-        }
-        if (c == '(' || c == '[' || c == '{') {
-            depth++;
-        } else if ((c == ')' || c == ']' || c == '}') && depth > 0) {
-            depth--;
-        }
-
-        if (c == ';' && depth == 0) {
-            std::string item = trim(current);
-            if (!item.empty()) declarations.push_back(item);
-            current.clear();
+            currentDecl.clear();
         } else {
-            current += c;
+            currentDecl += t.text;
         }
     }
 
-    std::string item = trim(current);
-    if (!item.empty()) declarations.push_back(item);
+    std::string item = trim(currentDecl);
+    if (!item.empty()) {
+        declarations.push_back(item);
+    }
     return declarations;
 }
 
@@ -1182,27 +1283,8 @@ bool StyleSheet::setViewportSize(float width, float height) {
 
 void StyleSheet::parse(const std::string& css) {
     currentEpoch_++;
-
-    std::string cleaned;
-    cleaned.reserve(css.size());
-
-    // Remove comments
-    bool inComment = false;
-    for (size_t i = 0; i < css.size(); i++) {
-        if (!inComment && i + 1 < css.size() && css[i] == '/' && css[i + 1] == '*') {
-            inComment = true;
-            i++;
-            continue;
-        }
-        if (inComment && i + 1 < css.size() && css[i] == '*' && css[i + 1] == '/') {
-            inComment = false;
-            i++;
-            continue;
-        }
-        if (!inComment) cleaned += css[i];
-    }
-
-    parseRules(cleaned, "");
+    auto tokens = tokenizeCSS(css);
+    parseRulesFromTokens(tokens, "");
     buildInvalidationSets();
 }
 
@@ -1226,80 +1308,150 @@ int StyleSheet::getLayerPriority(const std::string& layerName) const {
 }
 
 void StyleSheet::parseRules(const std::string& css, const std::string& mediaQuery, const std::string& currentLayer) {
-    // Parse rules
-    size_t pos = 0;
-    while (pos < css.size()) {
-        size_t nextChar = css.find_first_of(";{", pos);
-        if (nextChar == std::string::npos) break;
+    auto tokens = tokenizeCSS(css);
+    parseRulesFromTokens(tokens, mediaQuery, currentLayer);
+}
 
-        if (css[nextChar] == ';') {
-            std::string statement = trim(css.substr(pos, nextChar - pos));
-            if (statement.rfind("@layer", 0) == 0) {
-                std::string names = trim(statement.substr(6));
-                size_t start = 0;
-                while (true) {
-                    size_t comma = names.find(',', start);
-                    std::string name = trim(names.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
-                    if (!name.empty()) {
-                        std::string nestedName = currentLayer.empty() ? name : currentLayer + "." + name;
-                        registerLayer(nestedName);
-                    }
-                    if (comma == std::string::npos) break;
-                    start = comma + 1;
-                }
+void StyleSheet::parseRulesFromTokens(const std::vector<CSSToken>& tokens, const std::string& mediaQuery, const std::string& currentLayer) {
+    size_t index = 0;
+    size_t n = tokens.size();
+
+    auto consumeBalancedBlock = [](const std::vector<CSSToken>& tokens, size_t& index) {
+        std::vector<CSSToken> content;
+        if (index >= tokens.size() || tokens[index].type != CSSToken::LeftBrace) {
+            return content;
+        }
+        index++; // consume '{'
+        int depth = 1;
+        while (index < tokens.size() && depth > 0) {
+            const auto& t = tokens[index];
+            if (t.type == CSSToken::LeftBrace) depth++;
+            else if (t.type == CSSToken::RightBrace) depth--;
+            
+            if (depth > 0) {
+                content.push_back(t);
+                index++;
             }
-            pos = nextChar + 1;
+        }
+        if (index < tokens.size()) {
+            index++; // consume '}'
+        }
+        return content;
+    };
+
+    while (index < n) {
+        if (tokens[index].type == CSSToken::Whitespace || tokens[index].type == CSSToken::Semicolon) {
+            index++;
             continue;
         }
-
-        size_t braceOpen = nextChar;
-        std::string selector = trim(css.substr(pos, braceOpen - pos));
-
-        // Find matching close brace (handles nested)
-        int depth = 1;
-        size_t braceClose = braceOpen + 1;
-        while (braceClose < css.size() && depth > 0) {
-            if (css[braceClose] == '{') depth++;
-            if (css[braceClose] == '}') depth--;
-            if (depth > 0) braceClose++;
+        if (tokens[index].type == CSSToken::EndOfFile) {
+            break;
         }
 
-        if (braceClose < css.size()) {
-            std::string body = css.substr(braceOpen + 1, braceClose - braceOpen - 1);
-            std::string lowerSelector = lowerAscii(selector);
-            if (lowerSelector.rfind("@media", 0) == 0) {
-                std::string query = trim(selector.substr(6));
-                std::string combinedQuery = mediaQuery.empty()
-                    ? query
-                    : mediaQuery + " and " + query;
-                parseRules(body, combinedQuery, currentLayer);
-            } else if (lowerSelector.rfind("@supports", 0) == 0) {
-                std::string condition = trim(selector.substr(9));
-                if (supportsConditionMatches(condition)) {
-                    parseRules(body, mediaQuery, currentLayer);
+        std::vector<CSSToken> prelude;
+        bool hasBlock = false;
+        bool foundEnd = false;
+        int parenDepth = 0;
+        int bracketDepth = 0;
+
+        while (index < n) {
+            const auto& t = tokens[index];
+            if (t.type == CSSToken::LeftParenthesis) parenDepth++;
+            else if (t.type == CSSToken::RightParenthesis && parenDepth > 0) parenDepth--;
+            else if (t.type == CSSToken::LeftBracket) bracketDepth++;
+            else if (t.type == CSSToken::RightBracket && bracketDepth > 0) bracketDepth--;
+
+            if (parenDepth == 0 && bracketDepth == 0) {
+                if (t.type == CSSToken::LeftBrace) {
+                    hasBlock = true;
+                    foundEnd = true;
+                    break;
                 }
-            } else if (lowerSelector.rfind("@container", 0) == 0) {
-                parseRules(body, mediaQuery, currentLayer);
-            } else if (lowerSelector.rfind("@font-face", 0) == 0) {
-                parseFontFace(body);
-            } else if (lowerSelector.rfind("@layer", 0) == 0) {
-                std::string layerName = trim(selector.substr(6));
-                std::string nestedLayerName;
-                if (!layerName.empty()) {
-                    nestedLayerName = currentLayer.empty() ? layerName : currentLayer + "." + layerName;
-                    registerLayer(nestedLayerName);
-                } else {
-                    static int anonCount = 0;
-                    nestedLayerName = "::anon_layer_" + std::to_string(++anonCount);
-                    registerLayer(nestedLayerName);
+                if (t.type == CSSToken::Semicolon) {
+                    foundEnd = true;
+                    index++; // consume ';'
+                    break;
                 }
-                parseRules(body, mediaQuery, nestedLayerName);
-            } else if (!selector.empty() && selector[0] != '@') {
-                parseRule(selector, body, mediaQuery, currentLayer);
+            }
+            prelude.push_back(t);
+            index++;
+        }
+
+        if (!foundEnd) {
+            break;
+        }
+
+        std::string preludeStr;
+        for (const auto& t : prelude) {
+            preludeStr += t.text;
+        }
+        preludeStr = trim(preludeStr);
+
+        if (hasBlock) {
+            std::vector<CSSToken> blockContent = consumeBalancedBlock(tokens, index);
+
+            if (!preludeStr.empty() && preludeStr[0] == '@') {
+                std::string lowerPrelude = lowerAscii(preludeStr);
+                if (lowerPrelude.rfind("@media", 0) == 0) {
+                    std::string query = trim(preludeStr.substr(6));
+                    std::string combinedQuery = mediaQuery.empty()
+                        ? query
+                        : mediaQuery + " and " + query;
+                    parseRulesFromTokens(blockContent, combinedQuery, currentLayer);
+                } else if (lowerPrelude.rfind("@supports", 0) == 0) {
+                    std::string condition = trim(preludeStr.substr(9));
+                    if (supportsConditionMatches(condition)) {
+                        parseRulesFromTokens(blockContent, mediaQuery, currentLayer);
+                    }
+                } else if (lowerPrelude.rfind("@container", 0) == 0) {
+                    parseRulesFromTokens(blockContent, mediaQuery, currentLayer);
+                } else if (lowerPrelude.rfind("@font-face", 0) == 0) {
+                    std::string bodyStr;
+                    for (const auto& t : blockContent) {
+                        bodyStr += t.text;
+                    }
+                    parseFontFace(bodyStr);
+                } else if (lowerPrelude.rfind("@layer", 0) == 0) {
+                    std::string layerName = trim(preludeStr.substr(6));
+                    std::string nestedLayerName;
+                    if (!layerName.empty()) {
+                        nestedLayerName = currentLayer.empty() ? layerName : currentLayer + "." + layerName;
+                        registerLayer(nestedLayerName);
+                    } else {
+                        static int anonCount = 0;
+                        nestedLayerName = "::anon_layer_" + std::to_string(++anonCount);
+                        registerLayer(nestedLayerName);
+                    }
+                    parseRulesFromTokens(blockContent, mediaQuery, nestedLayerName);
+                }
+            } else {
+                if (!preludeStr.empty()) {
+                    std::string bodyStr;
+                    for (const auto& t : blockContent) {
+                        bodyStr += t.text;
+                    }
+                    parseRule(preludeStr, bodyStr, mediaQuery, currentLayer);
+                }
+            }
+        } else {
+            if (!preludeStr.empty() && preludeStr[0] == '@') {
+                std::string lowerPrelude = lowerAscii(preludeStr);
+                if (lowerPrelude.rfind("@layer", 0) == 0) {
+                    std::string names = trim(preludeStr.substr(6));
+                    size_t start = 0;
+                    while (true) {
+                        size_t comma = names.find(',', start);
+                        std::string name = trim(names.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+                        if (!name.empty()) {
+                            std::string nestedName = currentLayer.empty() ? name : currentLayer + "." + name;
+                            registerLayer(nestedName);
+                        }
+                        if (comma == std::string::npos) break;
+                        start = comma + 1;
+                    }
+                }
             }
         }
-
-        pos = braceClose + 1;
     }
 }
 

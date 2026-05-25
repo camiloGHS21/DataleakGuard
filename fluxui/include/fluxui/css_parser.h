@@ -211,6 +211,18 @@ private:
     float viewportHeight_ = 1080.0f;
     uint32_t nextPropertyOrder_ = 0;
 
+    struct CSSToken {
+        enum Type {
+            Ident, String, AtKeyword, Colon, Semicolon, Comma,
+            LeftBrace, RightBrace, LeftParenthesis, RightParenthesis, LeftBracket, RightBracket,
+            Delim, Whitespace, EndOfFile
+        };
+        Type type = EndOfFile;
+        std::string text;
+    };
+    static std::vector<CSSToken> tokenizeCSS(const std::string& css);
+    void parseRulesFromTokens(const std::vector<CSSToken>& tokens, const std::string& mediaQuery, const std::string& currentLayer = "");
+
     void registerLayer(const std::string& name);
     int getLayerPriority(const std::string& layerName) const;
     void parseRules(const std::string& css, const std::string& mediaQuery, const std::string& currentLayer = "");
