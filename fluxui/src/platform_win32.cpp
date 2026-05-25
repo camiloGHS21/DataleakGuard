@@ -107,7 +107,7 @@ NativeWindowHandle Platform::createWindow(const PlatformWindowConfig& config) {
     wc.hInstance = hInst;
     wc.lpszClassName = L"FluxUIWindowClass";
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = initialBackgroundBrush();
+    wc.hbrBackground = nullptr;
     wc.style = CS_OWNDC;
     RegisterClassExW(&wc);
 
