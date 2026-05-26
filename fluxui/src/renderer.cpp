@@ -6104,6 +6104,20 @@ static void setProjection(int projectionLocation, int w, int h, float scale = 1.
 
 void Renderer::drawRoundedRect(const Rect& rect, const Color& color,
                                  const BorderRadius& radius, float opacity) {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::RoundedRect;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.color = color;
+        cmd.radius = radius;
+        cmd.opacity = opacity;
+        cmd.hasGradient = false;
+        recording_->push_back(cmd);
+        return;
+    }
+
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanRoundedRect(rect,
                               color,
@@ -6146,6 +6160,20 @@ void Renderer::drawRoundedRect(const Rect& rect, const Color& color,
 void Renderer::drawRoundedRectGradient(const Rect& rect, const Gradient& gradient,
                                         const BorderRadius& radius, float opacity) {
     if (gradient.stops.size() < 2) return;
+
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::RoundedRect;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.radius = radius;
+        cmd.opacity = opacity;
+        cmd.hasGradient = true;
+        cmd.gradient = gradient;
+        recording_->push_back(cmd);
+        return;
+    }
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanRoundedRect(rect,
@@ -6191,6 +6219,18 @@ void Renderer::drawRoundedRectGradient(const Rect& rect, const Gradient& gradien
 void Renderer::drawBorder(const Rect& rect, const Border& border, const BorderRadius& radius) {
     if (border.width <= 0) return;
 
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::Border;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.border = border;
+        cmd.radius = radius;
+        recording_->push_back(cmd);
+        return;
+    }
+
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanRoundedRect(rect,
                               Color(0, 0, 0, 0),
@@ -6234,6 +6274,18 @@ void Renderer::drawBorder(const Rect& rect, const Border& border, const BorderRa
 void Renderer::drawBoxShadow(const Rect& rect, const BoxShadow& shadow,
                               const BorderRadius& radius) {
     if (shadow.blur <= 0 && shadow.spread <= 0) return;
+
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::BoxShadow;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.shadow = shadow;
+        cmd.radius = radius;
+        recording_->push_back(cmd);
+        return;
+    }
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
         drawVulkanBoxShadow(rect, shadow, radius);
@@ -6458,6 +6510,24 @@ void Renderer::drawText(const std::string& text, const Vec2& pos, const Color& c
                          FontStyle style,
                          Direction direction,
                          UnicodeBidi unicodeBidi) {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::Text;
+        cmd.rect = Rect(pos.x + (translation_.x - recordingTranslationStart_.x),
+                        pos.y + (translation_.y - recordingTranslationStart_.y),
+                        0.0f, 0.0f);
+        cmd.text = text;
+        cmd.color = color;
+        cmd.fontSize = fontSize;
+        cmd.fontWeight = weight;
+        cmd.fontName = fontName;
+        cmd.fontStyle = style;
+        cmd.fontDirection = direction;
+        cmd.unicodeBidi = unicodeBidi;
+        recording_->push_back(cmd);
+        return;
+    }
+
     std::string processedText = reorderBidiText(text, direction, unicodeBidi);
 
     if (activeBackend_ == RenderBackendType::Vulkan) {
@@ -6594,6 +6664,20 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
 void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
                          const Rect& sourceUv,
                          float opacity, const Color& tint) {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::TexturedQuad;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.text = nameOrPath;
+        cmd.sourceUv = sourceUv;
+        cmd.opacity = opacity;
+        cmd.color = tint;
+        recording_->push_back(cmd);
+        return;
+    }
+
     if (nameOrPath.empty() || rect.w <= 0.0f || rect.h <= 0.0f ||
         opacity <= 0.0f || tint.a <= 0.0f) {
         return;
@@ -6672,6 +6756,25 @@ void Renderer::drawTextInRect(const std::string& text, const Rect& rect, const C
                                FontStyle style,
                                Direction direction,
                                UnicodeBidi unicodeBidi) {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::Text;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.text = text;
+        cmd.color = color;
+        cmd.fontSize = fontSize;
+        cmd.textAlign = align;
+        cmd.fontWeight = weight;
+        cmd.fontName = fontName;
+        cmd.fontStyle = style;
+        cmd.fontDirection = direction;
+        cmd.unicodeBidi = unicodeBidi;
+        recording_->push_back(cmd);
+        return;
+    }
+
     const std::string& resolvedFontName = resolveFontName(fontName, weight);
     FontData* fontForRect = getFontForSize(resolvedFontName, fontSize);
 
@@ -6785,6 +6888,16 @@ Vec2 Renderer::measureText(const std::string& text, float fontSize,
 // ============================================================
 
 void Renderer::pushScissor(const Rect& rect) {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::Scissor;
+        cmd.scissorRect = rect;
+        cmd.scissorRect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.scissorRect.y += (translation_.y - recordingTranslationStart_.y);
+        recording_->push_back(cmd);
+        return;
+    }
+
     Rect clip = {
         rect.x + translation_.x,
         rect.y + translation_.y,
@@ -6832,6 +6945,13 @@ void Renderer::pushScissor(const Rect& rect) {
 }
 
 void Renderer::popScissor() {
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::ScissorPop;
+        recording_->push_back(cmd);
+        return;
+    }
+
     if (activeBackend_ == RenderBackendType::Vulkan) {
 #if FLUXUI_HAS_VULKAN_SDK
         if (vulkan_) {
@@ -7002,6 +7122,18 @@ void Renderer::applySoftwareBackdropBlur(const Rect& rect, float blurRadius, con
 
 void Renderer::drawBackdropFilterBlur(const Rect& rect, float blurRadius, const BorderRadius& radius) {
     if (blurRadius <= 0.0f) return;
+
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::BackdropFilterBlur;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.blurRadius = blurRadius;
+        cmd.radius = radius;
+        recording_->push_back(cmd);
+        return;
+    }
 
     if (activeBackend_ == RenderBackendType::Compatibility) {
         applySoftwareBackdropBlur(rect, blurRadius, radius);
@@ -7251,6 +7383,51 @@ void Renderer::popScale() {
         scale_ = scaleStack_.back();
         scaleStack_.pop_back();
         scalePivotStack_.pop_back();
+    }
+}
+
+void Renderer::playback(const std::vector<RenderCommand>& commands) {
+    for (const auto& cmd : commands) {
+        switch (cmd.type) {
+            case RenderCommandType::RoundedRect:
+                if (cmd.hasGradient) {
+                    drawRoundedRectGradient(cmd.rect, cmd.gradient, cmd.radius, cmd.opacity);
+                } else {
+                    drawRoundedRect(cmd.rect, cmd.color, cmd.radius, cmd.opacity);
+                }
+                break;
+            case RenderCommandType::Border:
+                drawBorder(cmd.rect, cmd.border, cmd.radius);
+                break;
+            case RenderCommandType::BoxShadow:
+                drawBoxShadow(cmd.rect, cmd.shadow, cmd.radius);
+                break;
+            case RenderCommandType::BackdropFilterBlur:
+                drawBackdropFilterBlur(cmd.rect, cmd.blurRadius, cmd.radius);
+                break;
+            case RenderCommandType::Text:
+                if (cmd.rect.w > 0.0f || cmd.rect.h > 0.0f) {
+                    drawTextInRect(cmd.text, cmd.rect, cmd.color, cmd.fontSize, cmd.textAlign,
+                                   cmd.fontWeight, cmd.fontName, cmd.fontStyle, cmd.fontDirection, cmd.unicodeBidi);
+                } else {
+                    drawText(cmd.text, Vec2(cmd.rect.x, cmd.rect.y), cmd.color, cmd.fontSize, cmd.fontWeight,
+                             cmd.fontName, cmd.fontStyle, cmd.fontDirection, cmd.unicodeBidi);
+                }
+                break;
+            case RenderCommandType::TexturedQuad:
+                if (cmd.sourceUv.w > 0.0f || cmd.sourceUv.h > 0.0f) {
+                    drawImage(cmd.text, cmd.rect, cmd.sourceUv, cmd.opacity, cmd.color);
+                } else {
+                    drawImage(cmd.text, cmd.rect, cmd.opacity, cmd.color);
+                }
+                break;
+            case RenderCommandType::Scissor:
+                pushScissor(cmd.scissorRect);
+                break;
+            case RenderCommandType::ScissorPop:
+                popScissor();
+                break;
+        }
     }
 }
 

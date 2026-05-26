@@ -451,4 +451,20 @@ target_include_directories(minimal_example PRIVATE
 )
 enable_release_lto(minimal_example)
 
+# ============================================================
+#  Paint Invalidation C++ Unit Test
+# ============================================================
+add_executable(paint_invalidation_test
+    examples/cpp/paint_invalidation_test.cpp
+)
+
+target_link_libraries(paint_invalidation_test PRIVATE
+    fluxui
+)
+
+target_include_directories(paint_invalidation_test PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+)
+enable_release_lto(paint_invalidation_test)
+
 

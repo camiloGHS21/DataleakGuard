@@ -32,6 +32,8 @@ namespace FluxUI {
             return;
         }
 
+        markPaintDirty();
+
         // If this is the root layout object (has no parent), we run node_->layout
         // which recursively calculates bounds for all descendants in the DOM tree.
         if (!parent_) {
@@ -150,13 +152,57 @@ namespace FluxUI {
             renderer.pushScale(node_->renderScale, bounds_.center());
         }
 
-        // Temporarily disable DOM children painting so we only paint the element itself
-        bool oldSkip = node_->skipDOMChildrenPaint;
-        node_->skipDOMChildrenPaint = true;
+        if (isPaintDirty()) {
+            cachedCommands_.clear();
+            cachedForegroundCommands_.clear();
 
-        node_->render(renderer);
+            // Record background and node content
+            renderer.startRecording(cachedCommands_);
+            
+            bool oldSkip = node_->skipDOMChildrenPaint;
+            node_->skipDOMChildrenPaint = true;
+            node_->render(renderer);
+            node_->skipDOMChildrenPaint = oldSkip;
 
-        node_->skipDOMChildrenPaint = oldSkip;
+            renderer.stopRecording();
+
+            // Record foreground/scrollbars
+            renderer.startRecording(cachedForegroundCommands_);
+            bool scrollable = node_->isScrollableY();
+            if (scrollable) {
+                Rect track, thumb;
+                if (node_->getScrollBarRects(track, thumb)) {
+                    float active = (node_->scrollbarHovered || node_->scrollbarDragging) ? 1.0f : 0.0f;
+                    float pressed = node_->scrollbarDragging ? 1.0f : 0.0f;
+                    Rect visualTrack = {
+                        track.x,
+                        track.y,
+                        track.w,
+                        track.h
+                    };
+                    Rect visualThumb = thumb;
+                    if (!node_->scrollbarHovered && !node_->scrollbarDragging) {
+                        visualThumb.x += 2.0f;
+                        visualThumb.w -= 4.0f;
+                    }
+                    renderer.drawRoundedRect(visualTrack,
+                                             Color(0.13f, 0.14f, 0.16f, 0.32f + active * 0.22f),
+                                             BorderRadius(0));
+                    renderer.drawRoundedRect(visualThumb,
+                                             Color(0.47f + pressed * 0.16f,
+                                                   0.49f + pressed * 0.16f,
+                                                   0.53f + pressed * 0.16f,
+                                                   0.72f + active * 0.18f),
+                                             BorderRadius(5));
+                }
+            }
+            renderer.stopRecording();
+
+            setPaintClean();
+        }
+
+        // Play back background
+        renderer.playback(cachedCommands_);
 
         // Paint layout tree children, handling scroll offset, clipping, and scrollbars
         bool scrollable = node_->isScrollableY();
@@ -179,38 +225,14 @@ namespace FluxUI {
 
         if (scrollable) {
             renderer.popTranslation();
-
-            // Draw scrollbar
-            Rect track, thumb;
-            if (node_->getScrollBarRects(track, thumb)) {
-                float active = (node_->scrollbarHovered || node_->scrollbarDragging) ? 1.0f : 0.0f;
-                float pressed = node_->scrollbarDragging ? 1.0f : 0.0f;
-                Rect visualTrack = {
-                    track.x,
-                    track.y,
-                    track.w,
-                    track.h
-                };
-                Rect visualThumb = thumb;
-                if (!node_->scrollbarHovered && !node_->scrollbarDragging) {
-                    visualThumb.x += 2.0f;
-                    visualThumb.w -= 4.0f;
-                }
-                renderer.drawRoundedRect(visualTrack,
-                                         Color(0.13f, 0.14f, 0.16f, 0.32f + active * 0.22f),
-                                         BorderRadius(0));
-                renderer.drawRoundedRect(visualThumb,
-                                         Color(0.47f + pressed * 0.16f,
-                                               0.49f + pressed * 0.16f,
-                                               0.53f + pressed * 0.16f,
-                                               0.72f + active * 0.18f),
-                                         BorderRadius(5));
-            }
         }
 
         if (clip) {
             renderer.popScissor();
         }
+
+        // Play back foreground (scrollbars)
+        renderer.playback(cachedForegroundCommands_);
 
         if (hasScale) {
             renderer.popScale();

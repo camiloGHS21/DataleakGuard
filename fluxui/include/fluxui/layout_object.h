@@ -3,6 +3,7 @@
 #include "fluxui/core.h"
 #include "fluxui/css_parser.h"
 #include "fluxui/layout.h"
+#include "fluxui/renderer.h"
 #include <vector>
 #include <memory>
 #include <string>
@@ -10,7 +11,6 @@
 namespace FluxUI {
 
     class Widget;
-    class Renderer;
 
     // Base LayoutObject corresponding to blink::LayoutObject
     class LayoutObject {
@@ -47,10 +47,22 @@ namespace FluxUI {
         // Invalidates layout/geometry cache for LayoutNG parity
         virtual void invalidateCache() {}
 
+        // Paint invalidation/caching methods
+        void markPaintDirty() { paintDirty_ = true; }
+        bool isPaintDirty() const { return paintDirty_; }
+        void setPaintClean() { paintDirty_ = false; }
+        const std::vector<RenderCommand>& cachedCommands() const { return cachedCommands_; }
+        std::vector<RenderCommand>& cachedCommands() { return cachedCommands_; }
+        const std::vector<RenderCommand>& cachedForegroundCommands() const { return cachedForegroundCommands_; }
+        std::vector<RenderCommand>& cachedForegroundCommands() { return cachedForegroundCommands_; }
+
     protected:
         Widget* node_ = nullptr;
         LayoutObject* parent_ = nullptr;
         std::vector<LayoutObject*> children_;
+        bool paintDirty_ = true;
+        std::vector<RenderCommand> cachedCommands_;
+        std::vector<RenderCommand> cachedForegroundCommands_;
     };
 
     // LayoutBox corresponds to blink::LayoutBox (represents elements with sizing bounds)
@@ -75,7 +87,7 @@ namespace FluxUI {
             bool isValid = false;
         };
 
-        void invalidateCache() override { cache_.isValid = false; }
+        void invalidateCache() override { cache_.isValid = false; markPaintDirty(); }
         const LayoutCache& getLayoutCache() const { return cache_; }
 
         void applyPhysicalFragment(const PhysicalFragment& fragment);

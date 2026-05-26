@@ -3165,6 +3165,15 @@ void Widget::resetTransientMotion() {
     }
 }
 void Widget::update(const InputState& input) {
+    bool snapshotHovered = hovered;
+    bool snapshotPressed = pressed;
+    bool snapshotFocused = focused;
+    float snapshotHoverAnim = hoverAnim;
+    float snapshotRenderScale = renderScale;
+    bool snapshotScrollbarHovered = scrollbarHovered;
+    bool snapshotScrollbarDragging = scrollbarDragging;
+    float snapshotScrollY = scrollY;
+
     if (!visible || computedStyle.display == Display::None ||
         computedStyle.visibility != Visibility::Visible) {
         hovered = false;
@@ -3350,6 +3359,21 @@ void Widget::update(const InputState& input) {
             continue;
         }
         child->update(childInput);
+    }
+
+    bool stateChanged = (hovered != snapshotHovered ||
+                         pressed != snapshotPressed ||
+                         focused != snapshotFocused ||
+                         hoverAnim != snapshotHoverAnim ||
+                         renderScale != snapshotRenderScale ||
+                         scrollbarHovered != snapshotScrollbarHovered ||
+                         scrollbarDragging != snapshotScrollbarDragging ||
+                         scrollY != snapshotScrollY);
+    if (stateChanged && layoutObject) {
+        layoutObject->markPaintDirty();
+        if (auto* app = Application::instance()) {
+            app->requestRedraw();
+        }
     }
 }
 CursorType Widget::cursorAt(Vec2 point) const {

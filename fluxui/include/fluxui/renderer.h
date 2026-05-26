@@ -121,7 +121,10 @@ enum class RenderCommandType {
     Text,
     TexturedQuad,
     Scissor,
-    ScissorPop
+    ScissorPop,
+    Border,
+    BoxShadow,
+    BackdropFilterBlur
 };
 
 struct RenderCommand {
@@ -149,6 +152,15 @@ struct RenderCommand {
 
     // Texture
     uint32_t textureId = 0;
+
+    // Extra fields for rich paint invalidation/recording
+    float blurRadius = 0.0f;
+    FontStyle fontStyle = FontStyle::Normal;
+    Direction fontDirection = Direction::Ltr;
+    UnicodeBidi unicodeBidi = UnicodeBidi::Normal;
+    std::string fontName = "default";
+    Rect sourceUv;
+    Color tint = Color(1, 1, 1, 1);
 
     // Property Tree node references (cc::PropertyTrees parity)
     int transformNodeId = 0;
@@ -260,6 +272,25 @@ public:
     // Measurement
     Vec2 measureText(const std::string& text, float fontSize,
                      const std::string& fontName = "default") const;
+
+    // Recording & Playback for Paint Invalidation
+    std::vector<RenderCommand>* recording_ = nullptr;
+    Vec2 recordingTranslationStart_ = {0.0f, 0.0f};
+
+    void startRecording(std::vector<RenderCommand>& dest) {
+        recording_ = &dest;
+        recordingTranslationStart_ = translation_;
+    }
+
+    void stopRecording() {
+        recording_ = nullptr;
+    }
+
+    bool isRecording() const {
+        return recording_ != nullptr;
+    }
+
+    void playback(const std::vector<RenderCommand>& commands);
 
     // Window size
     Vec2 getWindowSize() const { return {(float)windowWidth_, (float)windowHeight_}; }
