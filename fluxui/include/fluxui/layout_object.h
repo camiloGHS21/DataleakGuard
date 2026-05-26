@@ -44,6 +44,9 @@ namespace FluxUI {
         // Recursively synchronizes layout object bounds from DOM widget bounds
         virtual void synchronizeBoundsFromNode();
 
+        // Invalidates layout/geometry cache for LayoutNG parity
+        virtual void invalidateCache() {}
+
     protected:
         Widget* node_ = nullptr;
         LayoutObject* parent_ = nullptr;
@@ -65,8 +68,22 @@ namespace FluxUI {
         void synchronizeBoundsFromNode() override;
         void paint(Renderer& renderer) override;
 
+        // LayoutNG Immutable Geometry cache
+        struct LayoutCache {
+            ConstraintSpace space;
+            LayoutResult result;
+            bool isValid = false;
+        };
+
+        void invalidateCache() override { cache_.isValid = false; }
+        const LayoutCache& getLayoutCache() const { return cache_; }
+
+        void applyPhysicalFragment(const PhysicalFragment& fragment);
+        std::shared_ptr<const PhysicalFragment> createPhysicalFragment() const;
+
     protected:
         Rect bounds_{0.0f, 0.0f, 0.0f, 0.0f};
+        LayoutCache cache_;
     };
 
     // LayoutBlock corresponds to blink::LayoutBlock (block layout containers)

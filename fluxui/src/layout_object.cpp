@@ -25,6 +25,13 @@ namespace FluxUI {
     void LayoutBox::layout(const LayoutConstraints& constraints) {
         if (!node_) return;
 
+        // LayoutNG Cache check: $O(1)$ short-circuit if ConstraintSpace matches!
+        if (cache_.isValid && cache_.space == constraints) {
+            bounds_ = cache_.result.physicalFragment->bounds;
+            applyPhysicalFragment(*cache_.result.physicalFragment);
+            return;
+        }
+
         // If this is the root layout object (has no parent), we run node_->layout
         // which recursively calculates bounds for all descendants in the DOM tree.
         if (!parent_) {
@@ -78,6 +85,20 @@ namespace FluxUI {
                 }
             }
         }
+
+        // Cache the newly resolved immutable layout result and physical fragment
+        LayoutResult result;
+        result.x = bounds_.x;
+        result.y = bounds_.y;
+        result.width = bounds_.w;
+        result.height = bounds_.h;
+        result.contentHeight = node_->contentHeight;
+        result.physicalFragment = createPhysicalFragment();
+        result.isCached = false;
+
+        cache_.space = constraints;
+        cache_.result = result;
+        cache_.isValid = true;
     }
 
     void LayoutBox::synchronizeBoundsFromNode() {
@@ -85,6 +106,40 @@ namespace FluxUI {
             bounds_ = node_->bounds;
         }
         LayoutObject::synchronizeBoundsFromNode();
+    }
+
+    void LayoutBox::applyPhysicalFragment(const PhysicalFragment& fragment) {
+        bounds_ = fragment.bounds;
+        if (node_) {
+            node_->bounds = fragment.bounds;
+            node_->contentHeight = fragment.contentHeight;
+            node_->layoutDirty = false;
+            node_->lifecycleState = WidgetLifecycle::LayoutClean;
+        }
+        
+        size_t childIdx = 0;
+        for (auto* child : children_) {
+            if (auto* childBox = dynamic_cast<LayoutBox*>(child)) {
+                if (childIdx < fragment.children.size()) {
+                    childBox->applyPhysicalFragment(*fragment.children[childIdx]);
+                    childIdx++;
+                }
+            }
+        }
+    }
+
+    std::shared_ptr<const PhysicalFragment> LayoutBox::createPhysicalFragment() const {
+        auto fragment = std::make_shared<PhysicalFragment>();
+        fragment->bounds = bounds_;
+        if (node_) {
+            fragment->contentHeight = node_->contentHeight;
+        }
+        for (const auto* child : children_) {
+            if (const auto* childBox = dynamic_cast<const LayoutBox*>(child)) {
+                fragment->children.push_back(childBox->createPhysicalFragment());
+            }
+        }
+        return fragment;
     }
 
     void LayoutBox::paint(Renderer& renderer) {

@@ -1067,6 +1067,9 @@ void Widget::markLayoutDirty() {
     if (layoutDirty && (!parent || parent->layoutDirty)) return;
     layoutDirty = true;
     lifecycleState = WidgetLifecycle::LayoutDirty;
+    if (layoutObject) {
+        layoutObject->invalidateCache();
+    }
     if (parent) parent->markLayoutDirty();
     if (auto* app = Application::instance()) {
         app->requestRedraw();
