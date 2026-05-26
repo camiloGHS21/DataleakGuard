@@ -4373,6 +4373,10 @@ void Renderer::drawSoftwareRoundedRect(const Rect& rect,
     }
 
     Rect drawRect = transformSoftwareRect(rect, drawScale, pivot);
+    drawRect.x = std::floor(drawRect.x + 0.5f);
+    drawRect.y = std::floor(drawRect.y + 0.5f);
+    drawRect.w = std::floor(drawRect.w + 0.5f);
+    drawRect.h = std::floor(drawRect.h + 0.5f);
     if (drawRect.w <= 0.0f || drawRect.h <= 0.0f) {
         return;
     }
@@ -7563,6 +7567,55 @@ void Renderer::playback(const std::vector<RenderCommand>& commands) {
                 drawBorder(cmd.rect, cmd.border, cmd.radius);
                 break;
             case RenderCommandType::BoxShadow:
+                drawBoxShadow(cmd.rect, cmd.shadow, cmd.radius);
+                break;
+            case RenderCommandType::BackdropFilterBlur:
+                drawBackdropFilterBlur(cmd.rect, cmd.blurRadius, cmd.radius);
+                break;
+            case RenderCommandType::Text:
+                if (cmd.rect.w > 0.0f || cmd.rect.h > 0.0f) {
+                    drawTextInRect(cmd.text, cmd.rect, cmd.color, cmd.fontSize, cmd.textAlign,
+                                   cmd.fontWeight, cmd.fontName, cmd.fontStyle, cmd.fontDirection, cmd.unicodeBidi);
+                } else {
+                    drawText(cmd.text, Vec2(cmd.rect.x, cmd.rect.y), cmd.color, cmd.fontSize, cmd.fontWeight,
+                             cmd.fontName, cmd.fontStyle, cmd.fontDirection, cmd.unicodeBidi);
+                }
+                break;
+            case RenderCommandType::TexturedQuad:
+                if (cmd.sourceUv.w > 0.0f || cmd.sourceUv.h > 0.0f) {
+                    drawImage(cmd.text, cmd.rect, cmd.sourceUv, cmd.opacity, cmd.color);
+                } else {
+                    drawImage(cmd.text, cmd.rect, cmd.opacity, cmd.color);
+                }
+                break;
+            case RenderCommandType::Scissor:
+                pushScissor(cmd.scissorRect);
+                break;
+            case RenderCommandType::ScissorPop:
+                popScissor();
+                break;
+        }
+    }
+}
+
+void Renderer::playback(const std::vector<RenderCommand>& commands, float opacityScale) {
+    for (auto cmd : commands) {
+        cmd.opacity *= opacityScale;
+        cmd.color.a *= opacityScale;
+        switch (cmd.type) {
+            case RenderCommandType::RoundedRect:
+                if (cmd.hasGradient) {
+                    drawRoundedRectGradient(cmd.rect, cmd.gradient, cmd.radius, cmd.opacity);
+                } else {
+                    drawRoundedRect(cmd.rect, cmd.color, cmd.radius, cmd.opacity);
+                }
+                break;
+            case RenderCommandType::Border:
+                cmd.border.color.a *= opacityScale;
+                drawBorder(cmd.rect, cmd.border, cmd.radius);
+                break;
+            case RenderCommandType::BoxShadow:
+                cmd.shadow.color.a *= opacityScale;
                 drawBoxShadow(cmd.rect, cmd.shadow, cmd.radius);
                 break;
             case RenderCommandType::BackdropFilterBlur:

@@ -760,6 +760,65 @@ public:
     void render(Renderer& renderer) override;
     void update(const InputState& input) override;
 };
+class OffscreenCanvas {
+public:
+    int width = 0;
+    int height = 0;
+    std::vector<RenderCommand> commands;
+    uint32_t fbo = 0;
+    uint32_t textureId = 0;
+    bool hardwareInitialized = false;
+
+    OffscreenCanvas(int w, int h) : width(w), height(h) {}
+    ~OffscreenCanvas() {}
+
+    void startPaint() {
+        commands.clear();
+    }
+
+    void drawRoundedRect(const Rect& rect, const Color& color, const BorderRadius& radius) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::RoundedRect;
+        cmd.rect = rect;
+        cmd.color = color;
+        cmd.radius = radius;
+        cmd.opacity = 1.0f;
+        cmd.hasGradient = false;
+        commands.push_back(cmd);
+    }
+
+    void drawText(const std::string& text, const Vec2& pos, const Color& color, float fontSize) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::Text;
+        cmd.rect = {pos.x, pos.y, 0, 0};
+        cmd.text = text;
+        cmd.color = color;
+        cmd.fontSize = fontSize;
+        commands.push_back(cmd);
+    }
+
+    void drawImage(const std::string& key, const Rect& rect) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::TexturedQuad;
+        cmd.rect = rect;
+        cmd.text = key;
+        cmd.opacity = 1.0f;
+        commands.push_back(cmd);
+    }
+
+    void drawTo(Renderer& renderer, const Rect& targetRect) {
+        renderer.pushTranslation({targetRect.x, targetRect.y});
+        float sx = width > 0 ? targetRect.w / (float)width : 1.0f;
+        float sy = height > 0 ? targetRect.h / (float)height : 1.0f;
+        renderer.pushScale(sx, {0, 0});
+        
+        renderer.playback(commands);
+        
+        renderer.popScale();
+        renderer.popTranslation();
+    }
+};
+
 class Canvas : public Widget {
 public:
     std::function<void(Renderer&, const Rect&)> onDraw;
@@ -1452,8 +1511,18 @@ private:
     std::vector<ObservedTarget> observedTargets_;
 };
 
+struct ViewTransition {
+    bool active = false;
+    std::vector<RenderCommand> oldCommands;
+    std::vector<RenderCommand> newCommands;
+    std::chrono::high_resolution_clock::time_point startTime;
+    float duration = 0.25f;
+};
+
 class Application {
 public:
+    void startViewTransition(std::function<void()> mutationCallback);
+
     using EventCallback = std::function<void(UIEvent&)>;
     using RouteBuilder = std::function<void(Application&, Widget*)>;
     using ActionCallback = std::function<void(Application&, const std::string&)>;
@@ -1548,6 +1617,7 @@ private:
     std::unordered_map<std::string, RouteBuilder> routes_;
     RouteBuilder notFoundRoute_;
     std::string currentRoute_;
+    ViewTransition activeViewTransition_;
     bool routeDirty_ = false;
     bool needsRedraw_ = true;
     Widget* lastHoveredWidget_ = nullptr;

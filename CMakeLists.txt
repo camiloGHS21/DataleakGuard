@@ -502,5 +502,21 @@ target_include_directories(accessibility_tree_test PRIVATE
 )
 enable_release_lto(accessibility_tree_test)
 
+# ============================================================
+#  Chromium Blink Engine Features C++ Unit Test
+# ============================================================
+add_executable(blink_features_test
+    examples/cpp/blink_features_test.cpp
+)
+
+target_link_libraries(blink_features_test PRIVATE
+    fluxui
+)
+
+target_include_directories(blink_features_test PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+)
+enable_release_lto(blink_features_test)
+
 
 

@@ -2199,6 +2199,7 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
     if (style.hoverScale >= 0) computedStyle.hoverScale = style.hoverScale;
     if (style.hoverOpacity >= 0) computedStyle.hoverOpacity = style.hoverOpacity;
     if (style.scale != 1.0f) computedStyle.scale = style.scale;
+    if (style.contain != ContainmentFlags::kContainNone) computedStyle.contain = style.contain;
 
     size_t nextLayoutSignature = layoutStyleSignature(computedStyle);
     if (nextLayoutSignature != layoutSignature) {
@@ -2339,6 +2340,19 @@ void Widget::layout(const Rect& parentBounds) {
         if (s.width.isSet()) w += s.padding.horizontal() + usedBorderHorizontal(s);
         if (s.height.isSet()) h += s.padding.vertical() + usedBorderVertical(s);
     }
+    bool hasSizeContainment = (s.contain & kContainSize);
+    if (hasSizeContainment) {
+        if (!s.width.isSet()) {
+            if (s.display == Display::Block) {
+                w = parentBounds.w < 9999 ? parentBounds.w - s.margin.horizontal() : 0;
+            } else {
+                w = s.padding.horizontal() + usedBorderHorizontal(s);
+            }
+        }
+        if (!s.height.isSet()) {
+            h = s.padding.vertical() + usedBorderVertical(s);
+        }
+    }
     bounds = {x, y, w, h};
     if (s.display == Display::Flex) {
         LayoutConstraints constraints;
@@ -2350,9 +2364,9 @@ void Widget::layout(const Rect& parentBounds) {
 
         FlexLayoutAlgorithm algorithm;
         LayoutResult res = algorithm.layout(this, constraints);
-        bounds.w = res.width;
-        bounds.h = res.height;
-        contentHeight = res.contentHeight;
+        bounds.w = hasSizeContainment && !s.width.isSet() ? s.padding.horizontal() + usedBorderHorizontal(s) : res.width;
+        bounds.h = hasSizeContainment && !s.height.isSet() ? s.padding.vertical() + usedBorderVertical(s) : res.height;
+        contentHeight = hasSizeContainment ? s.padding.vertical() + usedBorderVertical(s) : res.contentHeight;
     } else if (s.display == Display::Grid) {
         LayoutConstraints constraints;
         constraints.availableWidth = parentBounds.w;
@@ -2363,9 +2377,9 @@ void Widget::layout(const Rect& parentBounds) {
 
         GridLayoutAlgorithm algorithm;
         LayoutResult res = algorithm.layout(this, constraints);
-        bounds.w = res.width;
-        bounds.h = res.height;
-        contentHeight = res.contentHeight;
+        bounds.w = hasSizeContainment && !s.width.isSet() ? s.padding.horizontal() + usedBorderHorizontal(s) : res.width;
+        bounds.h = hasSizeContainment && !s.height.isSet() ? s.padding.vertical() + usedBorderVertical(s) : res.height;
+        contentHeight = hasSizeContainment ? s.padding.vertical() + usedBorderVertical(s) : res.contentHeight;
     } else if (s.display == Display::Table) {
         std::vector<Widget*> rows;
         std::function<void(Widget*)> collectRows = [&](Widget* w) {
@@ -2462,9 +2476,17 @@ void Widget::layout(const Rect& parentBounds) {
         }
 
         if (!s.height.isSet() && !heightProvidedByParentFlex && parent != nullptr) {
-            bounds.h = std::max(bounds.h, currentY - bounds.y + s.padding.bottom);
+            if (hasSizeContainment) {
+                bounds.h = s.padding.vertical() + usedBorderVertical(s);
+            } else {
+                bounds.h = std::max(bounds.h, currentY - bounds.y + s.padding.bottom);
+            }
         }
-        contentHeight = currentY - bounds.y + s.padding.bottom;
+        if (hasSizeContainment) {
+            contentHeight = s.padding.vertical() + usedBorderVertical(s);
+        } else {
+            contentHeight = currentY - bounds.y + s.padding.bottom;
+        }
     } else {
         if (s.columnCount > 1 || s.columnWidth > 0.0f) {
             float columnGap = s.columnGap > 0.0f ? s.columnGap : 16.0f;
@@ -2535,9 +2557,17 @@ void Widget::layout(const Rect& parentBounds) {
 
             float totalColContainerHeight = targetColumnHeight + s.padding.vertical();
             if (!s.height.isSet() && !heightProvidedByParentFlex && parent != nullptr) {
-                bounds.h = std::max(bounds.h, totalColContainerHeight);
+                if (hasSizeContainment) {
+                    bounds.h = s.padding.vertical() + usedBorderVertical(s);
+                } else {
+                    bounds.h = std::max(bounds.h, totalColContainerHeight);
+                }
             }
-            contentHeight = totalColContainerHeight;
+            if (hasSizeContainment) {
+                contentHeight = s.padding.vertical() + usedBorderVertical(s);
+            } else {
+                contentHeight = totalColContainerHeight;
+            }
         } else {
             float cy = bounds.y + s.padding.top;
             struct ActiveFloat {
@@ -2620,9 +2650,17 @@ void Widget::layout(const Rect& parentBounds) {
             cy = maxFloatY;
 
             if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty() && parent != nullptr) {
-                bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
+                if (hasSizeContainment) {
+                    bounds.h = s.padding.vertical() + usedBorderVertical(s);
+                } else {
+                    bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
+                }
             }
-            contentHeight = cy - bounds.y + s.padding.bottom;
+            if (hasSizeContainment) {
+                contentHeight = s.padding.vertical() + usedBorderVertical(s);
+            } else {
+                contentHeight = cy - bounds.y + s.padding.bottom;
+            }
         }
     }
     layoutPositionedChildren();
@@ -2676,14 +2714,18 @@ void Widget::layoutPositionedChildren() {
         float ch = contentH;
         
         if (child->computedStyle->position == Position::Fixed) {
-            Widget* root = this;
-            while (root->parent) {
-                root = root->parent;
+            Widget* cb = this;
+            while (cb->parent) {
+                const Style& cbs = *cb->computedStyle;
+                if ((cbs.contain & kContainLayout) || (cbs.contain & kContainPaint)) {
+                    break;
+                }
+                cb = cb->parent;
             }
-            cx = root->bounds.x;
-            cy = root->bounds.y;
-            cw = root->bounds.w;
-            ch = root->bounds.h;
+            cx = cb->bounds.x;
+            cy = cb->bounds.y;
+            cw = cb->bounds.w;
+            ch = cb->bounds.h;
         }
         
         const Style& cs = *(child->computedStyle);
@@ -6687,16 +6729,33 @@ void Application::renderFrame() {
 
     documentLifecycle = DocumentLifecycle::InPaint;
     renderer_.beginFrame(w, h);
-    if (root_->layoutObject) {
-        root_->layoutObject->paint(renderer_);
-    } else {
-        root_->render(renderer_);
-    }
-    for (auto* fw : fixedWidgets) {
-        if (fw->layoutObject) {
-            fw->layoutObject->paint(renderer_);
+    if (activeViewTransition_.active) {
+        auto now = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<float> elapsed = now - activeViewTransition_.startTime;
+        float progress = std::clamp(elapsed.count() / activeViewTransition_.duration, 0.0f, 1.0f);
+
+        renderer_.playback(activeViewTransition_.oldCommands, 1.0f - progress);
+        renderer_.playback(activeViewTransition_.newCommands, progress);
+
+        if (progress >= 1.0f) {
+            activeViewTransition_.active = false;
+            activeViewTransition_.oldCommands.clear();
+            activeViewTransition_.newCommands.clear();
         } else {
-            fw->render(renderer_);
+            needsRedraw_ = true;
+        }
+    } else {
+        if (root_->layoutObject) {
+            root_->layoutObject->paint(renderer_);
+        } else {
+            root_->render(renderer_);
+        }
+        for (auto* fw : fixedWidgets) {
+            if (fw->layoutObject) {
+                fw->layoutObject->paint(renderer_);
+            } else {
+                fw->render(renderer_);
+            }
         }
     }
     if (onRender) onRender();
@@ -6983,5 +7042,44 @@ void Application::shutdown() {
         window_ = nullptr;
     }
     Platform::shutdown();
+}
+
+void Application::startViewTransition(std::function<void()> mutationCallback) {
+    if (!root_) return;
+
+    if (root_->layoutDirty || root_->lifecycleState < WidgetLifecycle::LayoutClean) {
+        root_->layout(root_->bounds);
+    }
+
+    std::vector<RenderCommand> oldCommands;
+    renderer_.startRecording(oldCommands);
+    if (root_->layoutObject) {
+        root_->layoutObject->paint(renderer_);
+    } else {
+        root_->render(renderer_);
+    }
+    renderer_.stopRecording();
+
+    mutationCallback();
+
+    root_->markStyleDirtyRecursive();
+    root_->resolveStyles(stylesheet_);
+    root_->layout(root_->bounds);
+
+    std::vector<RenderCommand> newCommands;
+    renderer_.startRecording(newCommands);
+    if (root_->layoutObject) {
+        root_->layoutObject->paint(renderer_);
+    } else {
+        root_->render(renderer_);
+    }
+    renderer_.stopRecording();
+
+    activeViewTransition_.active = true;
+    activeViewTransition_.oldCommands = std::move(oldCommands);
+    activeViewTransition_.newCommands = std::move(newCommands);
+    activeViewTransition_.startTime = std::chrono::high_resolution_clock::now();
+    activeViewTransition_.duration = 0.25f;
+    needsRedraw_ = true;
 }
 }

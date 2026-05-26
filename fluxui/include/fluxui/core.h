@@ -311,6 +311,17 @@ enum class Appearance {
     SquareButton
 };
 
+enum ContainmentFlags : uint8_t {
+    kContainNone = 0,
+    kContainSize = 1 << 0,
+    kContainLayout = 1 << 1,
+    kContainPaint = 1 << 2,
+    kContainStyle = 1 << 3,
+    kContainContent = kContainLayout | kContainPaint | kContainStyle,
+    kContainStrict = kContainSize | kContainLayout | kContainPaint | kContainStyle
+};
+
+
 // ============================================================
 //  CSS Value (supports px, %, auto)
 // ============================================================
@@ -549,6 +560,8 @@ struct Style {
     Vec2 objectPosition = {0.5f, 0.5f};
     Vec2 objectPositionOffset = {0.0f, 0.0f};
     bool hasObjectPosition = false;
+    ContainmentFlags contain = kContainNone;
+
 
     // Dimensions
     CSSValue width, height;

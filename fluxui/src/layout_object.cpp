@@ -164,6 +164,21 @@ namespace FluxUI {
     void LayoutBox::paint(Renderer& renderer) {
         if (!node_ || !node_->visible) return;
 
+        if (node_->computedStyle->contain & kContainPaint) {
+            float vpW = 1920.0f;
+            float vpH = 1080.0f;
+            const Widget* r = node_;
+            while (r->parent) r = r->parent;
+            if (r) {
+                vpW = r->bounds.w;
+                vpH = r->bounds.h;
+            }
+            if (bounds_.x + bounds_.w < 0 || bounds_.x > vpW || bounds_.y + bounds_.h < 0 || bounds_.y > vpH) {
+                return;
+            }
+        }
+
+
         if (node_->useGPUCompositing) {
             int w = std::max(1, (int)std::ceil(bounds_.w));
             int h = std::max(1, (int)std::ceil(bounds_.h));

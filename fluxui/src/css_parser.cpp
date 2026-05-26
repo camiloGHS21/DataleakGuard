@@ -176,7 +176,18 @@ std::vector<std::string> StyleSheet::splitDeclarations(const std::string& body) 
         else if (t.type == CSSToken::LeftBracket) bracketDepth++;
         else if (t.type == CSSToken::RightBracket && bracketDepth > 0) bracketDepth--;
         else if (t.type == CSSToken::LeftBrace) braceDepth++;
-        else if (t.type == CSSToken::RightBrace && braceDepth > 0) braceDepth--;
+        else if (t.type == CSSToken::RightBrace && braceDepth > 0) {
+            braceDepth--;
+            if (braceDepth == 0 && parenDepth == 0 && bracketDepth == 0) {
+                currentDecl += t.text;
+                std::string item = trim(currentDecl);
+                if (!item.empty()) {
+                    declarations.push_back(item);
+                }
+                currentDecl.clear();
+                continue;
+            }
+        }
 
         if (t.type == CSSToken::Semicolon && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
             std::string item = trim(currentDecl);
@@ -1464,11 +1475,18 @@ void StyleSheet::parseRulesFromTokens(const std::vector<CSSToken>& tokens, const
 
 void StyleSheet::parseRule(const std::string& selector, const std::string& body, const std::string& mediaQuery, const std::string& currentLayer) {
     std::vector<CSSProperty> properties;
+    std::vector<std::string> nestedRules;
 
-    // Parse properties
+    // Parse properties and nested rules
     for (std::string line : splitDeclarations(body)) {
         line = trim(line);
         if (line.empty()) continue;
+
+        auto brace = line.find('{');
+        if (brace != std::string::npos) {
+            nestedRules.push_back(line);
+            continue;
+        }
 
         auto colon = line.find(':');
         if (colon == std::string::npos) continue;
@@ -1478,6 +1496,37 @@ void StyleSheet::parseRule(const std::string& selector, const std::string& body,
         prop.value = trim(line.substr(colon + 1));
         prop.sourceOrder = nextPropertyOrder_++;
         properties.push_back(prop);
+    }
+
+    // Process nested rules recursively
+    for (const std::string& nestedStr : nestedRules) {
+        auto brace = nestedStr.find('{');
+        std::string nestedSelector = trim(nestedStr.substr(0, brace));
+        auto rbrace = nestedStr.rfind('}');
+        if (rbrace == std::string::npos || rbrace <= brace) continue;
+        std::string nestedBody = nestedStr.substr(brace + 1, rbrace - brace - 1);
+
+        std::string resolvedSelector;
+        std::vector<std::string> parentParts = splitTopLevel(selector, ',');
+        std::vector<std::string> nestedParts = splitTopLevel(nestedSelector, ',');
+
+        for (size_t i = 0; i < parentParts.size(); ++i) {
+            std::string parentPart = trim(parentParts[i]);
+            for (size_t j = 0; j < nestedParts.size(); ++j) {
+                std::string nestedPart = trim(nestedParts[j]);
+                if (!resolvedSelector.empty()) resolvedSelector += ", ";
+
+                size_t ampPos = nestedPart.find('&');
+                if (ampPos != std::string::npos) {
+                    std::string part = nestedPart;
+                    part.replace(ampPos, 1, parentPart);
+                    resolvedSelector += part;
+                } else {
+                    resolvedSelector += parentPart + " " + nestedPart;
+                }
+            }
+        }
+        parseRule(resolvedSelector, nestedBody, mediaQuery, currentLayer);
     }
 
     for (const auto& sel : splitTopLevel(selector, ',')) {
@@ -3561,6 +3610,32 @@ void StyleSheet::mergePropertyPart2(Style& style, const std::string& name, const
         }
     } else if (name == "opacity") {
         style.opacity = parseFloat(value);
+    } else if (name == "contain") {
+        uint8_t flags = 0;
+        if (value == "none") {
+            style.contain = kContainNone;
+        } else if (value == "strict") {
+            style.contain = kContainStrict;
+        } else if (value == "content") {
+            style.contain = kContainContent;
+        } else {
+            std::vector<std::string> tokens;
+            size_t pos = 0;
+            while (pos < value.size()) {
+                while (pos < value.size() && std::isspace((unsigned char)value[pos])) pos++;
+                if (pos >= value.size()) break;
+                size_t start = pos;
+                while (pos < value.size() && !std::isspace((unsigned char)value[pos])) pos++;
+                tokens.push_back(value.substr(start, pos - start));
+            }
+            for (const auto& tok : tokens) {
+                if (tok == "size") flags |= (uint8_t)kContainSize;
+                else if (tok == "layout") flags |= (uint8_t)kContainLayout;
+                else if (tok == "paint") flags |= (uint8_t)kContainPaint;
+                else if (tok == "style") flags |= (uint8_t)kContainStyle;
+            }
+            style.contain = static_cast<ContainmentFlags>(flags);
+        }
     } else if (name == "float") {
         if (value == "left") style.cssFloat = CSSFloat::Left;
         else if (value == "right") style.cssFloat = CSSFloat::Right;

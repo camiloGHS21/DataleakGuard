@@ -312,6 +312,7 @@ public:
     }
 
     void playback(const std::vector<RenderCommand>& commands);
+    void playback(const std::vector<RenderCommand>& commands, float opacityScale);
 
     struct RenderTargetState {
         uint32_t fbo;
