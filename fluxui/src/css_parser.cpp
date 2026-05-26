@@ -2364,6 +2364,10 @@ static bool applyCSSWideProperty(Style& target,
         target.gap = source.gap;
         target.rowGap = source.rowGap;
         target.columnGap = source.columnGap;
+    } else if (name == "column-count") {
+        target.columnCount = source.columnCount;
+    } else if (name == "column-width") {
+        target.columnWidth = source.columnWidth;
     } else if (name == "flex") {
         target.flexGrow = source.flexGrow;
         target.flexShrink = source.flexShrink;
@@ -3632,6 +3636,14 @@ void StyleSheet::mergePropertyPart2(Style& style, const std::string& name, const
         style.rowGap = parseLengthPixels(value, emBase);
     } else if (name == "column-gap") {
         style.columnGap = parseLengthPixels(value, emBase);
+    } else if (name == "column-count") {
+        std::string v = trim(value);
+        if (v == "auto") style.columnCount = 0;
+        else style.columnCount = (int)parseFloat(v);
+    } else if (name == "column-width") {
+        std::string v = trim(value);
+        if (v == "auto") style.columnWidth = 0.0f;
+        else style.columnWidth = parseLengthPixels(v, emBase);
     } else if (name == "flex") {
         std::string v = trim(value);
         if (v == "none") {
@@ -3856,6 +3868,14 @@ void StyleSheet::mergePropertyPart2(Style& style, const std::string& name, const
         style.rowGap = parseLengthPixels(value, emBase);
     } else if (name == "column-gap") {
         style.columnGap = parseLengthPixels(value, emBase);
+    } else if (name == "column-count") {
+        std::string v = trim(value);
+        if (v == "auto") style.columnCount = 0;
+        else style.columnCount = (int)parseFloat(v);
+    } else if (name == "column-width") {
+        std::string v = trim(value);
+        if (v == "auto") style.columnWidth = 0.0f;
+        else style.columnWidth = parseLengthPixels(v, emBase);
     } else if (name == "word-break") {
         if (value == "break-all") style.wordBreak = WordBreak::BreakAll;
         else if (value == "keep-all") style.wordBreak = WordBreak::KeepAll;

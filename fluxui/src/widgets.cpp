@@ -954,6 +954,8 @@ static size_t layoutStyleSignature(const Style& s) {
     hashFloat(seed, s.gap);
     hashFloat(seed, s.rowGap);
     hashFloat(seed, s.columnGap);
+    hashCombine(seed, std::hash<int>{}(s.columnCount));
+    hashFloat(seed, s.columnWidth);
     hashFloat(seed, s.aspectRatio);
     hashCombine(seed, std::hash<int>{}((int)s.objectFit));
     hashFloat(seed, s.objectPosition.x);
@@ -1757,6 +1759,8 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         if (style.gap > 0) computedStyle.gap = style.gap;
         if (style.rowGap > 0) computedStyle.rowGap = style.rowGap;
         if (style.columnGap > 0) computedStyle.columnGap = style.columnGap;
+        if (style.columnCount > 0) computedStyle.columnCount = style.columnCount;
+        if (style.columnWidth > 0.0f) computedStyle.columnWidth = style.columnWidth;
         if (style.aspectRatio > 0) computedStyle.aspectRatio = style.aspectRatio;
         if (style.hasObjectFit) {
             computedStyle.objectFit = style.objectFit;
@@ -2143,6 +2147,8 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
     if (style.gap > 0) computedStyle.gap = style.gap;
     if (style.rowGap > 0) computedStyle.rowGap = style.rowGap;
     if (style.columnGap > 0) computedStyle.columnGap = style.columnGap;
+    if (style.columnCount > 0) computedStyle.columnCount = style.columnCount;
+    if (style.columnWidth > 0.0f) computedStyle.columnWidth = style.columnWidth;
     if (style.aspectRatio > 0) computedStyle.aspectRatio = style.aspectRatio;
     if (style.hasObjectFit) {
         computedStyle.objectFit = style.objectFit;
@@ -2456,90 +2462,164 @@ void Widget::layout(const Rect& parentBounds) {
         }
         contentHeight = currentY - bounds.y + s.padding.bottom;
     } else {
-        float cy = bounds.y + s.padding.top;
-        struct ActiveFloat {
-            float x;
-            float y;
-            float w;
-            float h;
-            bool isLeft;
-        };
-        std::vector<ActiveFloat> floats;
+        if (s.columnCount > 1 || s.columnWidth > 0.0f) {
+            float columnGap = s.columnGap > 0.0f ? s.columnGap : 16.0f;
+            float availW = bounds.w - s.padding.horizontal();
+            int colCount = s.columnCount;
+            float colWidth = s.columnWidth;
 
-        for (auto& child : children) {
-            if (!child->visible) continue;
-            if (isDisplayNone(child.get())) continue;
-            if (isOutOfFlow(child.get())) continue;
-
-            const Style& cs = *(child->computedStyle);
-            if (cs.cssClear == CSSClear::Left || cs.cssClear == CSSClear::Both) {
-                for (const auto& f : floats) {
-                    if (f.isLeft) cy = std::max(cy, f.y + f.h);
-                }
-            }
-            if (cs.cssClear == CSSClear::Right || cs.cssClear == CSSClear::Both) {
-                for (const auto& f : floats) {
-                    if (!f.isLeft) cy = std::max(cy, f.y + f.h);
-                }
-            }
-
-            if (cs.cssFloat == CSSFloat::Left) {
-                float currentLeftX = bounds.x + s.padding.left;
-                for (const auto& f : floats) {
-                    if (f.isLeft && f.y + f.h > cy && f.y <= cy) {
-                        currentLeftX = std::max(currentLeftX, f.x + f.w);
-                    }
-                }
-                float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
-                Rect childArea = { currentLeftX, cy, targetW, 10000.0f };
-                child->layout(childArea);
-                floats.push_back({ currentLeftX, cy, child->bounds.w, child->bounds.h, true });
-            } else if (cs.cssFloat == CSSFloat::Right) {
-                float currentRightX = bounds.x + bounds.w - s.padding.right;
-                for (const auto& f : floats) {
-                    if (!f.isLeft && f.y + f.h > cy && f.y <= cy) {
-                        currentRightX = std::min(currentRightX, f.x);
-                    }
-                }
-                float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
-                float cellX = currentRightX - targetW;
-                Rect childArea = { cellX, cy, targetW, 10000.0f };
-                child->layout(childArea);
-                floats.push_back({ cellX, cy, child->bounds.w, child->bounds.h, false });
+            if (colWidth > 0.0f && colCount <= 0) {
+                colCount = std::max(1, (int)std::floor((availW + columnGap) / (colWidth + columnGap)));
+            } else if (colCount > 0 && colWidth <= 0.0f) {
+                colWidth = (availW - (colCount - 1) * columnGap) / colCount;
+            } else if (colCount <= 0 && colWidth <= 0.0f) {
+                colCount = 1;
+                colWidth = availW;
             } else {
-                float currentLeftX = bounds.x + s.padding.left;
-                float currentRightX = bounds.x + bounds.w - s.padding.right;
-                for (const auto& f : floats) {
-                    if (f.y + f.h > cy && f.y <= cy) {
-                        if (f.isLeft) {
+                colWidth = (availW - (colCount - 1) * columnGap) / colCount;
+            }
+
+            colCount = std::max(1, colCount);
+            colWidth = std::max(1.0f, colWidth);
+
+            // 1. Column Balancing: Measure content heights in a single column pass
+            float virtualY = 0.0f;
+            std::vector<float> childHeights;
+            for (auto& child : children) {
+                if (!child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) {
+                    childHeights.push_back(0.0f);
+                    continue;
+                }
+                const Style& cs = *(child->computedStyle);
+                float availableChildWidth = colWidth - cs.margin.horizontal();
+                Rect childArea = { 0.0f, virtualY + cs.margin.top, availableChildWidth, 10000.0f };
+                child->layout(childArea);
+                float h = child->bounds.h + cs.margin.vertical();
+                childHeights.push_back(h);
+                virtualY += h;
+            }
+
+            float totalHeight = virtualY;
+            float targetColumnHeight = std::max(100.0f, totalHeight / colCount);
+
+            // 2. Distribute layout fragments across columns
+            float colStartX = bounds.x + s.padding.left;
+            float colStartY = bounds.y + s.padding.top;
+            int currentColumn = 0;
+            float currentColY = 0.0f;
+
+            for (size_t i = 0; i < children.size(); ++i) {
+                auto& child = children[i];
+                if (!child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) continue;
+
+                float childH = childHeights[i];
+                const Style& cs = *(child->computedStyle);
+
+                if (currentColY > 0.0f && currentColY + childH > targetColumnHeight && currentColumn + 1 < colCount) {
+                    currentColumn++;
+                    currentColY = 0.0f;
+                }
+
+                float cx = colStartX + currentColumn * (colWidth + columnGap) + cs.margin.left;
+                float cy = colStartY + currentColY + cs.margin.top;
+
+                Rect childArea = { cx, cy, colWidth - cs.margin.horizontal(), child->bounds.h };
+                child->layout(childArea);
+
+                currentColY += childH;
+            }
+
+            float totalColContainerHeight = targetColumnHeight + s.padding.vertical();
+            if (!s.height.isSet() && !heightProvidedByParentFlex && parent != nullptr) {
+                bounds.h = std::max(bounds.h, totalColContainerHeight);
+            }
+            contentHeight = totalColContainerHeight;
+        } else {
+            float cy = bounds.y + s.padding.top;
+            struct ActiveFloat {
+                float x;
+                float y;
+                float w;
+                float h;
+                bool isLeft;
+            };
+            std::vector<ActiveFloat> floats;
+
+            for (auto& child : children) {
+                if (!child->visible) continue;
+                if (isDisplayNone(child.get())) continue;
+                if (isOutOfFlow(child.get())) continue;
+
+                const Style& cs = *(child->computedStyle);
+                if (cs.cssClear == CSSClear::Left || cs.cssClear == CSSClear::Both) {
+                    for (const auto& f : floats) {
+                        if (f.isLeft) cy = std::max(cy, f.y + f.h);
+                    }
+                }
+                if (cs.cssClear == CSSClear::Right || cs.cssClear == CSSClear::Both) {
+                    for (const auto& f : floats) {
+                        if (!f.isLeft) cy = std::max(cy, f.y + f.h);
+                    }
+                }
+
+                if (cs.cssFloat == CSSFloat::Left) {
+                    float currentLeftX = bounds.x + s.padding.left;
+                    for (const auto& f : floats) {
+                        if (f.isLeft && f.y + f.h > cy && f.y <= cy) {
                             currentLeftX = std::max(currentLeftX, f.x + f.w);
-                        } else {
+                        }
+                    }
+                    float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
+                    Rect childArea = { currentLeftX, cy, targetW, 10000.0f };
+                    child->layout(childArea);
+                    floats.push_back({ currentLeftX, cy, child->bounds.w, child->bounds.h, true });
+                } else if (cs.cssFloat == CSSFloat::Right) {
+                    float currentRightX = bounds.x + bounds.w - s.padding.right;
+                    for (const auto& f : floats) {
+                        if (!f.isLeft && f.y + f.h > cy && f.y <= cy) {
                             currentRightX = std::min(currentRightX, f.x);
                         }
                     }
+                    float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
+                    float cellX = currentRightX - targetW;
+                    Rect childArea = { cellX, cy, targetW, 10000.0f };
+                    child->layout(childArea);
+                    floats.push_back({ cellX, cy, child->bounds.w, child->bounds.h, false });
+                } else {
+                    float currentLeftX = bounds.x + s.padding.left;
+                    float currentRightX = bounds.x + bounds.w - s.padding.right;
+                    for (const auto& f : floats) {
+                        if (f.y + f.h > cy && f.y <= cy) {
+                            if (f.isLeft) {
+                                currentLeftX = std::max(currentLeftX, f.x + f.w);
+                            } else {
+                                currentRightX = std::min(currentRightX, f.x);
+                            }
+                        }
+                    }
+                    float availChildW = std::max(0.0f, currentRightX - currentLeftX);
+                    Rect childArea = {
+                        currentLeftX,
+                        cy,
+                        availChildW,
+                        bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000
+                    };
+                    child->layout(childArea);
+                    cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
                 }
-                float availChildW = std::max(0.0f, currentRightX - currentLeftX);
-                Rect childArea = {
-                    currentLeftX,
-                    cy,
-                    availChildW,
-                    bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000
-                };
-                child->layout(childArea);
-                cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
             }
-        }
 
-        float maxFloatY = cy;
-        for (const auto& f : floats) {
-            maxFloatY = std::max(maxFloatY, f.y + f.h);
-        }
-        cy = maxFloatY;
+            float maxFloatY = cy;
+            for (const auto& f : floats) {
+                maxFloatY = std::max(maxFloatY, f.y + f.h);
+            }
+            cy = maxFloatY;
 
-        if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty() && parent != nullptr) {
-            bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
+            if (!s.height.isSet() && !heightProvidedByParentFlex && !children.empty() && parent != nullptr) {
+                bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
+            }
+            contentHeight = cy - bounds.y + s.padding.bottom;
         }
-        contentHeight = cy - bounds.y + s.padding.bottom;
     }
     layoutPositionedChildren();
     layoutDirty = false;

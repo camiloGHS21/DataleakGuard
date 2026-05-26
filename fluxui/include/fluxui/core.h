@@ -523,6 +523,8 @@ struct Style {
     float gap = 0;
     float rowGap = 0;   // Blink separates row-gap and column-gap
     float columnGap = 0;
+    int columnCount = 0;
+    float columnWidth = 0.0f;
     Overflow overflow = Overflow::Visible;
     Overflow overflowX = Overflow::Visible;
     Overflow overflowY = Overflow::Visible;
