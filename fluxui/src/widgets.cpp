@@ -1347,6 +1347,12 @@ void Widget::invalidateStyleOnIdChange(const std::string& oldId, const std::stri
     }
 }
 
+void Widget::updateStyleAndLayout() {
+    if (auto* app = Application::instance()) {
+        app->updateStyleAndLayout();
+    }
+}
+
 void Widget::resolveStyles(const StyleSheet& sheet) {
     if (!subtreeStyleDirty) {
         return;
@@ -6596,6 +6602,43 @@ bool Application::renderRoute(Widget* container) {
     container->markStyleDirtyRecursive();
     return true;
 }
+void Application::updateStyleAndLayout() {
+    if (documentLifecycle >= DocumentLifecycle::LayoutClean) {
+        return;
+    }
+    // Avoid re-entrancy / infinite recursion
+    if (documentLifecycle == DocumentLifecycle::InStyleRecalc ||
+        documentLifecycle == DocumentLifecycle::InLayout) {
+        return;
+    }
+
+    int w = 0, h = 0;
+    Platform::getWindowSize(window_, w, h);
+    if (w <= 0 || h <= 0) {
+        w = 1920; h = 1080;
+    }
+
+    documentLifecycle = DocumentLifecycle::InStyleRecalc;
+    root_->resolveStyles(stylesheet_);
+    documentLifecycle = DocumentLifecycle::StyleClean;
+
+    root_->attachLayoutTree();
+
+    documentLifecycle = DocumentLifecycle::InLayout;
+    if (root_->layoutObject) {
+        LayoutConstraints constraints;
+        constraints.availableWidth = (float)w;
+        constraints.availableHeight = (float)h;
+        constraints.parentWidth = (float)w;
+        constraints.parentHeight = (float)h;
+        constraints.emBase = 16.0f;
+        root_->layoutObject->layout(constraints);
+    } else {
+        root_->layout({0, 0, (float)w, (float)h});
+    }
+    documentLifecycle = DocumentLifecycle::LayoutClean;
+}
+
 #ifdef _WIN32
 #include <windows.h>
 #endif

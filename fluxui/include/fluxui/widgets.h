@@ -16,6 +16,7 @@
 #include <mutex>
 #include <unordered_map>
 #include <sstream>
+#include <iostream>
 #include <cctype>
 namespace FluxUI {
 namespace detail {
@@ -115,7 +116,7 @@ enum class VirtualListScrollStrategy {
     Nearest = 3
 };
 
-enum class DocumentLifecycle {
+enum class DocumentLifecycleState {
     Uninitialized = 0,
     InStyleRecalc,
     StyleClean,
@@ -125,6 +126,108 @@ enum class DocumentLifecycle {
     PrePaintClean,
     InPaint,
     PaintClean
+};
+
+class DocumentLifecycle {
+public:
+    using State = DocumentLifecycleState;
+
+    DocumentLifecycle() : state_(DocumentLifecycleState::Uninitialized) {}
+    DocumentLifecycle(DocumentLifecycleState state) : state_(state) {}
+
+    operator DocumentLifecycleState() const { return state_; }
+
+    DocumentLifecycle& operator=(DocumentLifecycleState nextState) {
+        checkTransition(nextState);
+        state_ = nextState;
+        return *this;
+    }
+
+    bool operator==(DocumentLifecycleState other) const { return state_ == other; }
+    bool operator!=(DocumentLifecycleState other) const { return state_ != other; }
+    bool operator<(DocumentLifecycleState other) const { return state_ < other; }
+    bool operator<=(DocumentLifecycleState other) const { return state_ <= other; }
+    bool operator>(DocumentLifecycleState other) const { return state_ > other; }
+    bool operator>=(DocumentLifecycleState other) const { return state_ >= other; }
+
+    bool operator==(const DocumentLifecycle& other) const { return state_ == other.state_; }
+    bool operator!=(const DocumentLifecycle& other) const { return state_ != other.state_; }
+
+    const char* toString() const {
+        return toString(state_);
+    }
+
+    static const char* toString(DocumentLifecycleState state) {
+        switch (state) {
+            case DocumentLifecycleState::Uninitialized: return "Uninitialized";
+            case DocumentLifecycleState::InStyleRecalc: return "InStyleRecalc";
+            case DocumentLifecycleState::StyleClean: return "StyleClean";
+            case DocumentLifecycleState::InLayout: return "InLayout";
+            case DocumentLifecycleState::LayoutClean: return "LayoutClean";
+            case DocumentLifecycleState::InPrePaint: return "InPrePaint";
+            case DocumentLifecycleState::PrePaintClean: return "PrePaintClean";
+            case DocumentLifecycleState::InPaint: return "InPaint";
+            case DocumentLifecycleState::PaintClean: return "PaintClean";
+            default: return "Unknown";
+        }
+    }
+
+    // Keep enum compatibility for scopes/constants like DocumentLifecycle::InStyleRecalc
+    static constexpr DocumentLifecycleState Uninitialized = DocumentLifecycleState::Uninitialized;
+    static constexpr DocumentLifecycleState InStyleRecalc = DocumentLifecycleState::InStyleRecalc;
+    static constexpr DocumentLifecycleState StyleClean = DocumentLifecycleState::StyleClean;
+    static constexpr DocumentLifecycleState InLayout = DocumentLifecycleState::InLayout;
+    static constexpr DocumentLifecycleState LayoutClean = DocumentLifecycleState::LayoutClean;
+    static constexpr DocumentLifecycleState InPrePaint = DocumentLifecycleState::InPrePaint;
+    static constexpr DocumentLifecycleState PrePaintClean = DocumentLifecycleState::PrePaintClean;
+    static constexpr DocumentLifecycleState InPaint = DocumentLifecycleState::InPaint;
+    static constexpr DocumentLifecycleState PaintClean = DocumentLifecycleState::PaintClean;
+
+private:
+    void checkTransition(DocumentLifecycleState nextState) {
+        if (state_ == nextState) return;
+        
+        bool valid = false;
+        switch (state_) {
+            case DocumentLifecycleState::Uninitialized:
+                valid = (nextState == DocumentLifecycleState::InStyleRecalc);
+                break;
+            case DocumentLifecycleState::InStyleRecalc:
+                valid = (nextState == DocumentLifecycleState::StyleClean);
+                break;
+            case DocumentLifecycleState::StyleClean:
+                valid = (nextState == DocumentLifecycleState::InLayout || 
+                         nextState == DocumentLifecycleState::InStyleRecalc);
+                break;
+            case DocumentLifecycleState::InLayout:
+                valid = (nextState == DocumentLifecycleState::LayoutClean);
+                break;
+            case DocumentLifecycleState::LayoutClean:
+                valid = (nextState == DocumentLifecycleState::InPrePaint ||
+                         nextState == DocumentLifecycleState::InStyleRecalc);
+                break;
+            case DocumentLifecycleState::InPrePaint:
+                valid = (nextState == DocumentLifecycleState::PrePaintClean);
+                break;
+            case DocumentLifecycleState::PrePaintClean:
+                valid = (nextState == DocumentLifecycleState::InPaint ||
+                         nextState == DocumentLifecycleState::InStyleRecalc);
+                break;
+            case DocumentLifecycleState::InPaint:
+                valid = (nextState == DocumentLifecycleState::PaintClean);
+                break;
+            case DocumentLifecycleState::PaintClean:
+                valid = (nextState == DocumentLifecycleState::InStyleRecalc);
+                break;
+        }
+
+        if (!valid) {
+            std::cerr << "[DocumentLifecycle] WARNING: Strict lifecycle violation! Attempted transition from "
+                      << toString(state_) << " to " << toString(nextState) << " is out-of-order!\n";
+        }
+    }
+
+    DocumentLifecycleState state_;
 };
 
 enum class WidgetLifecycle {
@@ -343,6 +446,7 @@ public:
     void removeEventListener(size_t listenerId);
     void dispatchEvent(Event& event);
     virtual void resolveStyles(const StyleSheet& sheet);
+    void updateStyleAndLayout();
     void markLayoutDirty();
     void markStyleDirty();
     void markStyleDirtyRecursive();
@@ -1382,6 +1486,7 @@ public:
     std::function<void()> onRender;
     void requestRedraw() { needsRedraw_ = true; }
     bool needsRedraw() const { return needsRedraw_; }
+    void updateStyleAndLayout();
     bool running = true;
     DocumentLifecycle documentLifecycle = DocumentLifecycle::Uninitialized;
     template<typename T>
