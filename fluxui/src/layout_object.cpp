@@ -2,11 +2,28 @@
 #include "fluxui/layout_object.h"
 #include "fluxui/widgets.h"
 #include <algorithm>
+#include <glad/gl.h>
+#include <iostream>
 
 namespace FluxUI {
 
+
+
     LayoutObject::LayoutObject(Widget* node) : node_(node) {}
     LayoutObject::~LayoutObject() = default;
+
+    void LayoutObject::markPaintDirty() {
+        paintDirty_ = true;
+        // Walk up to find nearest GPU-composited ancestor
+        LayoutObject* ancestor = parent_;
+        while (ancestor) {
+            if (ancestor->node() && ancestor->node()->useGPUCompositing && ancestor->getPaintLayer()) {
+                ancestor->getPaintLayer()->markDirty();
+                break;
+            }
+            ancestor = ancestor->parent();
+        }
+    }
 
     void LayoutObject::addChild(LayoutObject* child) {
         if (!child) return;
@@ -147,6 +164,47 @@ namespace FluxUI {
     void LayoutBox::paint(Renderer& renderer) {
         if (!node_ || !node_->visible) return;
 
+        if (node_->useGPUCompositing) {
+            int w = std::max(1, (int)std::ceil(bounds_.w));
+            int h = std::max(1, (int)std::ceil(bounds_.h));
+            if (!paintLayer_) {
+                paintLayer_ = std::make_unique<GPUPaintLayer>();
+            }
+            paintLayer_->resize(w, h);
+
+            if (paintLayer_->isDirty() || isPaintDirty()) {
+                // Render into FBO target
+                renderer.pushRenderTarget(paintLayer_->fbo(), w, h);
+
+                // Push translation so (bounds_.x, bounds_.y) maps to (0, 0) in the FBO
+                renderer.pushTranslation({-bounds_.x, -bounds_.y});
+
+                // Clear the FBO surface
+                if (glad_glClearColor != nullptr) {
+                    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                }
+
+                // Paint the actual content, bypassing the compositing check for this node
+                node_->useGPUCompositing = false;
+                paintInternal(renderer);
+                node_->useGPUCompositing = true;
+
+                renderer.popTranslation();
+                renderer.popRenderTarget();
+
+                paintLayer_->markClean();
+            }
+
+            // Draw FBO texture at widget bounds
+            renderer.drawTexture(paintLayer_->textureId(), bounds_, node_->computedStyle.opacity);
+            return;
+        }
+
+        paintInternal(renderer);
+    }
+
+    void LayoutBox::paintInternal(Renderer& renderer) {
         bool hasScale = (node_->renderScale != 1.0f);
         if (hasScale) {
             renderer.pushScale(node_->renderScale, bounds_.center());
@@ -193,7 +251,7 @@ namespace FluxUI {
                                                    0.49f + pressed * 0.16f,
                                                    0.53f + pressed * 0.16f,
                                                    0.72f + active * 0.18f),
-                                             BorderRadius(5));
+                                                   BorderRadius(5));
                 }
             }
             renderer.stopRecording();

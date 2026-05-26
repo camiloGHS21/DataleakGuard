@@ -4,6 +4,7 @@
 #include "fluxui/css_parser.h"
 #include "fluxui/layout.h"
 #include "fluxui/renderer.h"
+#include "fluxui/gpu_paint_layer.h"
 #include <vector>
 #include <memory>
 #include <string>
@@ -17,6 +18,9 @@ namespace FluxUI {
     public:
         LayoutObject(Widget* node);
         virtual ~LayoutObject();
+
+        GPUPaintLayer* getPaintLayer() const { return paintLayer_.get(); }
+        void setPaintLayer(std::unique_ptr<GPUPaintLayer> layer) { paintLayer_ = std::move(layer); }
 
         virtual const char* getName() const = 0;
         
@@ -48,7 +52,7 @@ namespace FluxUI {
         virtual void invalidateCache() {}
 
         // Paint invalidation/caching methods
-        void markPaintDirty() { paintDirty_ = true; }
+        void markPaintDirty();
         bool isPaintDirty() const { return paintDirty_; }
         void setPaintClean() { paintDirty_ = false; }
         const std::vector<RenderCommand>& cachedCommands() const { return cachedCommands_; }
@@ -63,6 +67,7 @@ namespace FluxUI {
         bool paintDirty_ = true;
         std::vector<RenderCommand> cachedCommands_;
         std::vector<RenderCommand> cachedForegroundCommands_;
+        std::unique_ptr<GPUPaintLayer> paintLayer_;
     };
 
     // LayoutBox corresponds to blink::LayoutBox (represents elements with sizing bounds)
@@ -94,6 +99,7 @@ namespace FluxUI {
         std::shared_ptr<const PhysicalFragment> createPhysicalFragment() const;
 
     protected:
+        void paintInternal(Renderer& renderer);
         Rect bounds_{0.0f, 0.0f, 0.0f, 0.0f};
         LayoutCache cache_;
     };

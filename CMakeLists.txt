@@ -467,4 +467,21 @@ target_include_directories(paint_invalidation_test PRIVATE
 )
 enable_release_lto(paint_invalidation_test)
 
+# ============================================================
+#  GPU Paint Layerization C++ Unit Test
+# ============================================================
+add_executable(gpu_composited_layer_test
+    examples/cpp/gpu_composited_layer_test.cpp
+)
+
+target_link_libraries(gpu_composited_layer_test PRIVATE
+    fluxui
+)
+
+target_include_directories(gpu_composited_layer_test PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+)
+enable_release_lto(gpu_composited_layer_test)
+
+
 

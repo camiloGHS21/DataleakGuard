@@ -271,6 +271,7 @@ public:
     bool hovered = false;
     bool pressed = false;
     bool focused = false;
+    bool useGPUCompositing = false;
     float hoverAnim = 0;
     float hoverVelocity = 0;
     float renderScale = 1.0f;

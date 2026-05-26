@@ -7431,4 +7431,89 @@ void Renderer::playback(const std::vector<RenderCommand>& commands) {
     }
 }
 
+void Renderer::pushRenderTarget(uint32_t fbo, int width, int height) {
+    if (activeBackend_ == RenderBackendType::Compatibility || glad_glBindFramebuffer == nullptr) {
+        return;
+    }
+    flushRectBatch();
+    GLint prevFbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFbo);
+    renderTargetStack_.push_back({(uint32_t)prevFbo, windowWidth_, windowHeight_});
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    windowWidth_ = width;
+    windowHeight_ = height;
+    glViewport(0, 0, width, height);
+}
+
+void Renderer::popRenderTarget() {
+    if (activeBackend_ == RenderBackendType::Compatibility || glad_glBindFramebuffer == nullptr) {
+        return;
+    }
+    flushRectBatch();
+    if (!renderTargetStack_.empty()) {
+        auto prev = renderTargetStack_.back();
+        renderTargetStack_.pop_back();
+        glBindFramebuffer(GL_FRAMEBUFFER, prev.fbo);
+        windowWidth_ = prev.width;
+        windowHeight_ = prev.height;
+        glViewport(0, 0, prev.width, prev.height);
+    }
+}
+
+void Renderer::drawTexture(uint32_t textureId, const Rect& rect, float opacity) {
+    if (textureId == 0 || rect.w <= 0.0f || rect.h <= 0.0f || opacity <= 0.0f) {
+        return;
+    }
+
+    if (activeBackend_ == RenderBackendType::Compatibility || glad_glBindTexture == nullptr) {
+        return;
+    }
+
+    Rect drawRect = {
+        rect.x + translation_.x,
+        rect.y + translation_.y,
+        rect.w,
+        rect.h
+    };
+    if (scale_ != 1.0f) {
+        Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+        drawRect.x = pivot.x + (drawRect.x - pivot.x) * scale_;
+        drawRect.y = pivot.y + (drawRect.y - pivot.y) * scale_;
+        drawRect.w *= scale_;
+        drawRect.h *= scale_;
+    }
+
+    float a = opacity;
+    float u0 = 0.0f;
+    float v0 = 1.0f;
+    float u1 = 1.0f;
+    float v1 = 0.0f;
+
+    float vertices[] = {
+        drawRect.x,              drawRect.y,              u0, v0, 1.0f, 1.0f, 1.0f, a,
+        drawRect.x + drawRect.w, drawRect.y,              u1, v0, 1.0f, 1.0f, 1.0f, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, 1.0f, 1.0f, 1.0f, a,
+        drawRect.x,              drawRect.y,              u0, v0, 1.0f, 1.0f, 1.0f, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, 1.0f, 1.0f, 1.0f, a,
+        drawRect.x,              drawRect.y + drawRect.h, u0, v1, 1.0f, 1.0f, 1.0f, a,
+    };
+
+    flushRectBatch();
+    useShader(imageShader_);
+    Vec2 pivot = scalePivotStack_.empty() ? Vec2(0, 0) : scalePivotStack_.back();
+    setProjection(imageUniforms_.projection, windowWidth_, windowHeight_, scale_, pivot);
+
+    glBindVertexArray(textVAO_);
+    glBindBuffer(GL_ARRAY_BUFFER, textVBO_);
+    if (48 > textVBOCapacity_) {
+        textVBOCapacity_ = 48;
+        glBufferData(GL_ARRAY_BUFFER, textVBOCapacity_ * sizeof(float), nullptr, GL_STREAM_DRAW);
+    }
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, textureId);
+    glUniform1i(imageUniforms_.texture, 0);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
 } // namespace FluxUI

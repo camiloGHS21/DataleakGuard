@@ -292,6 +292,17 @@ public:
 
     void playback(const std::vector<RenderCommand>& commands);
 
+    struct RenderTargetState {
+        uint32_t fbo;
+        int width;
+        int height;
+    };
+    std::vector<RenderTargetState> renderTargetStack_;
+
+    void pushRenderTarget(uint32_t fbo, int width, int height);
+    void popRenderTarget();
+    void drawTexture(uint32_t textureId, const Rect& rect, float opacity = 1.0f);
+
     // Window size
     Vec2 getWindowSize() const { return {(float)windowWidth_, (float)windowHeight_}; }
 
