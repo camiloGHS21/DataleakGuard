@@ -1976,19 +1976,41 @@ void StyleSheet::collectCandidateRules(std::string_view className,
                                        std::string_view type,
                                        std::vector<size_t>& out) const {
     out.clear();
-    out.reserve(universalRuleIndex_.size() + 8);
+    
+    // Optimize sorting and deduplication using a thread-local flag array.
+    // Since rule indices are naturally sorted as they are parsed, setting flags
+    // and scanning sequentially guarantees ascending order in linear O(N) time with no heap allocations.
+    thread_local std::vector<uint8_t> flagArray;
+    if (flagArray.size() < rules.size()) {
+        flagArray.resize(rules.size(), 0);
+    } else {
+        std::fill(flagArray.begin(), flagArray.end(), 0);
+    }
 
-    auto append = [&out](const std::vector<size_t>& rulesForKey) {
-        out.insert(out.end(), rulesForKey.begin(), rulesForKey.end());
+    size_t minIdx = rules.size();
+    size_t maxIdx = 0;
+
+    auto markRule = [&](size_t idx) {
+        if (idx < rules.size()) {
+            flagArray[idx] = 1;
+            if (idx < minIdx) minIdx = idx;
+            if (idx > maxIdx) maxIdx = idx;
+        }
     };
 
-    append(universalRuleIndex_);
+    auto markRules = [&](const std::vector<size_t>& rulesForKey) {
+        for (size_t idx : rulesForKey) {
+            markRule(idx);
+        }
+    };
+
+    markRules(universalRuleIndex_);
 
     if (!id.empty()) {
         thread_local std::string idKey;
         idKey.assign(id.data(), id.size());
         auto it = idRuleIndex_.find(idKey);
-        if (it != idRuleIndex_.end()) append(it->second);
+        if (it != idRuleIndex_.end()) markRules(it->second);
     }
 
     thread_local std::vector<std::string_view> classes;
@@ -1998,7 +2020,7 @@ void StyleSheet::collectCandidateRules(std::string_view className,
         thread_local std::string clsKey;
         clsKey.assign(cls.data(), cls.size());
         auto it = classRuleIndex_.find(clsKey);
-        if (it != classRuleIndex_.end()) append(it->second);
+        if (it != classRuleIndex_.end()) markRules(it->second);
     }
 
     if (!type.empty()) {
@@ -2009,7 +2031,8 @@ void StyleSheet::collectCandidateRules(std::string_view className,
             typeKey[i] = (char)std::tolower((unsigned char)baseType[i]);
         }
         auto it = typeRuleIndex_.find(typeKey);
-        if (it != typeRuleIndex_.end()) append(it->second);
+        if (it != typeRuleIndex_.end()) markRules(it->second);
+
         std::string_view inputType = selectorAttributeValue(type, "type");
         if (baseType == "input" && !inputType.empty()) {
             typeKey.resize(inputType.size());
@@ -2017,12 +2040,18 @@ void StyleSheet::collectCandidateRules(std::string_view className,
                 typeKey[i] = (char)std::tolower((unsigned char)inputType[i]);
             }
             auto typedIt = typeRuleIndex_.find(typeKey);
-            if (typedIt != typeRuleIndex_.end()) append(typedIt->second);
+            if (typedIt != typeRuleIndex_.end()) markRules(typedIt->second);
         }
     }
 
-    std::sort(out.begin(), out.end());
-    out.erase(std::unique(out.begin(), out.end()), out.end());
+    if (minIdx <= maxIdx) {
+        out.reserve(maxIdx - minIdx + 1);
+        for (size_t i = minIdx; i <= maxIdx; ++i) {
+            if (flagArray[i]) {
+                out.push_back(i);
+            }
+        }
+    }
 }
 
 static std::vector<std::string> splitMediaAndClauses(const std::string& query) {
