@@ -123,6 +123,13 @@ public:
         activeRecord_.getPropertyTrees().updateTransformNode(nodeId, scale, translation);
     }
 
+    // Dynamic effect adjustment directly on the compositor (for thread-safe 120 FPS opacity animations)
+    void updateEffectNode(int nodeId, float opacity) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pendingRecord_.getPropertyTrees().updateEffectNode(nodeId, opacity);
+        activeRecord_.getPropertyTrees().updateEffectNode(nodeId, opacity);
+    }
+
 private:
     void compositorLoop() {
         while (running_) {
@@ -167,7 +174,7 @@ private:
 
         // 1. Resolve combined transforms recursively from the Transform Tree
         const auto& transNode = trees.getTransformNode(cmd.transformNodeId);
-        
+
         bool hasScale = (transNode.combinedScale != 1.0f);
         bool hasTranslation = (transNode.combinedTranslation.x != 0.0f || transNode.combinedTranslation.y != 0.0f);
 
@@ -178,11 +185,25 @@ private:
             renderer_->pushScale(transNode.combinedScale, transNode.pivot);
         }
 
-        // 2. Resolve visual effect properties
-        const auto& effectNode = trees.getEffectNode(cmd.effectNodeId);
-        float activeOpacity = cmd.opacity * effectNode.opacity;
+        // 2. Resolve clip hierarchy recursively from the Clip Tree (cc::ClipTree parity)
+        //    Walk up the clip-node chain and intersect all ancestor clip rects into one combined clip.
+        bool hasClip = false;
+        if (cmd.clipNodeId > 0) {
+            const auto& clipNode = trees.getClipNode(cmd.clipNodeId);
+            if (clipNode.hasCombinedClip) {
+                Rect combinedClip = trees.getCombinedClipRect(cmd.clipNodeId);
+                if (combinedClip.w > 0 && combinedClip.h > 0) {
+                    renderer_->pushScissor(combinedClip);
+                    hasClip = true;
+                }
+            }
+        }
 
-        // 3. Playback batched operations
+        // 3. Resolve cumulative opacity from the Effect Tree (cc::EffectTree parity)
+        //    Walks up the effect-node parent chain, multiplying opacities at each level.
+        float activeOpacity = cmd.opacity * trees.getCombinedOpacity(cmd.effectNodeId);
+
+        // 4. Playback batched draw operations
         switch (cmd.type) {
             case RenderCommandType::RoundedRect:
                 if (cmd.hasGradient) {
@@ -201,7 +222,7 @@ private:
                 renderer_->drawImage("", cmd.rect, activeOpacity, cmd.color);
                 break;
             case RenderCommandType::Scissor:
-                // Scissor rectangles can optionally be mapped with the current transform pivot offsets
+                // Explicit scissor commands still work for inline pushScissor() calls
                 renderer_->pushScissor(cmd.scissorRect);
                 break;
             case RenderCommandType::ScissorPop:
@@ -209,7 +230,10 @@ private:
                 break;
         }
 
-        // 4. Restore scale/translation stacks for clean rendering cycles
+        // 5. Restore clip/scale/translation stacks for clean rendering cycles
+        if (hasClip) {
+            renderer_->popScissor();
+        }
         if (hasScale) {
             renderer_->popScale();
         }

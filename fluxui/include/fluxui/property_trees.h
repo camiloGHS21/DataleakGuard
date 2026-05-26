@@ -25,6 +25,10 @@ struct ClipNode {
     int parentId = -1;
     Rect clipRect;
     int transformNodeId = 0; // Target transform node applied to clip coordinate bounds
+
+    // Combined/global clip rect cached on tree build (intersection of all ancestors)
+    Rect combinedClipRect;
+    bool hasCombinedClip = false;
 };
 
 struct EffectNode {
@@ -33,6 +37,9 @@ struct EffectNode {
     float opacity = 1.0f;
     float blurRadius = 0.0f;
     int transformNodeId = 0;
+
+    // Combined/global opacity cached on tree build (product of all ancestor opacities)
+    float combinedOpacity = 1.0f;
 };
 
 class PropertyTrees {
@@ -64,11 +71,13 @@ public:
         ClipNode rootClip;
         rootClip.id = 0;
         rootClip.parentId = -1;
+        rootClip.hasCombinedClip = false;
         clipTree_.push_back(rootClip);
 
         EffectNode rootEffect;
         rootEffect.id = 0;
         rootEffect.parentId = -1;
+        rootEffect.combinedOpacity = 1.0f;
         effectTree_.push_back(rootEffect);
     }
 
@@ -93,6 +102,7 @@ public:
         node.clipRect = clipRect;
         node.transformNodeId = transformNodeId;
 
+        updateCombinedClip(node);
         clipTree_.push_back(node);
         return node.id;
     }
@@ -105,8 +115,24 @@ public:
         node.blurRadius = blurRadius;
         node.transformNodeId = transformNodeId;
 
+        updateCombinedEffect(node);
         effectTree_.push_back(node);
         return node.id;
+    }
+
+    // Dynamic effect update from compositor thread (opacity animations at 120 FPS)
+    void updateEffectNode(int id, float opacity) {
+        if (id >= 0 && id < static_cast<int>(effectTree_.size())) {
+            effectTree_[id].opacity = opacity;
+            updateCombinedEffect(effectTree_[id]);
+
+            // Propagate to direct descendants
+            for (auto& node : effectTree_) {
+                if (node.parentId == id) {
+                    updateCombinedEffect(node);
+                }
+            }
+        }
     }
 
     void updateTransformNode(int id, float scale, const Vec2& translation) {
@@ -149,6 +175,21 @@ public:
     const std::vector<ClipNode>& getClipTree() const { return clipTree_; }
     const std::vector<EffectNode>& getEffectTree() const { return effectTree_; }
 
+    // Resolve combined clip rect by walking up the clip tree and intersecting
+    Rect getCombinedClipRect(int clipNodeId) const {
+        const auto& node = getClipNode(clipNodeId);
+        if (!node.hasCombinedClip) {
+            return node.clipRect;
+        }
+        return node.combinedClipRect;
+    }
+
+    // Resolve combined opacity by walking up the effect tree
+    float getCombinedOpacity(int effectNodeId) const {
+        const auto& node = getEffectNode(effectNodeId);
+        return node.combinedOpacity;
+    }
+
 private:
     void updateCombinedTransform(TransformNode& node) {
         if (node.parentId == -1 || node.parentId == 0) {
@@ -159,6 +200,44 @@ private:
             node.combinedScale = parent.combinedScale * node.scale;
             node.combinedTranslation = parent.combinedTranslation + node.translation;
         }
+    }
+
+    void updateCombinedClip(ClipNode& node) {
+        if (node.parentId <= 0) {
+            // Root or direct child of root: clip is just this node's rect
+            node.combinedClipRect = node.clipRect;
+            node.hasCombinedClip = (node.clipRect.w > 0 && node.clipRect.h > 0);
+        } else {
+            const auto& parent = clipTree_[node.parentId];
+            if (parent.hasCombinedClip) {
+                // Intersect this clip with the parent's combined clip
+                node.combinedClipRect = rectIntersect(node.clipRect, parent.combinedClipRect);
+            } else {
+                node.combinedClipRect = node.clipRect;
+            }
+            node.hasCombinedClip = (node.combinedClipRect.w > 0 && node.combinedClipRect.h > 0);
+        }
+    }
+
+    void updateCombinedEffect(EffectNode& node) {
+        if (node.parentId == -1 || node.parentId == 0) {
+            node.combinedOpacity = node.opacity;
+        } else {
+            const auto& parent = effectTree_[node.parentId];
+            node.combinedOpacity = parent.combinedOpacity * node.opacity;
+        }
+    }
+
+    // Axis-aligned rect intersection helper
+    static Rect rectIntersect(const Rect& a, const Rect& b) {
+        float x1 = std::max(a.x, b.x);
+        float y1 = std::max(a.y, b.y);
+        float x2 = std::min(a.x + a.w, b.x + b.w);
+        float y2 = std::min(a.y + a.h, b.y + b.h);
+        if (x2 <= x1 || y2 <= y1) {
+            return Rect{0, 0, 0, 0};
+        }
+        return Rect{x1, y1, x2 - x1, y2 - y1};
     }
 };
 
