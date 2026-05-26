@@ -230,12 +230,60 @@ namespace FluxUI {
     LayoutFlexibleBox::LayoutFlexibleBox(Widget* node) : LayoutBlock(node) {}
 
     void LayoutFlexibleBox::layout(const LayoutConstraints& constraints) {
+        if (!node_) return;
+
+        // LayoutNG Cache check: $O(1)$ short-circuit if ConstraintSpace matches!
+        if (cache_.isValid && cache_.space == constraints) {
+            bounds_ = cache_.result.physicalFragment->bounds;
+            applyPhysicalFragment(*cache_.result.physicalFragment);
+            return;
+        }
+
+        // Run W3C-compliant Flexbox Solver (Parity with Blink's NGFlexLayoutAlgorithm)
+        FlexLayoutAlgorithm algorithm;
+        LayoutResult res = algorithm.layout(node_, constraints);
+
+        bounds_.w = res.width;
+        bounds_.h = res.height;
+        bounds_.x = res.x != 0.0f ? res.x : node_->bounds.x;
+        bounds_.y = res.y != 0.0f ? res.y : node_->bounds.y;
+
+        node_->bounds = bounds_;
+        node_->contentHeight = res.contentHeight;
+        node_->layoutDirty = false;
+        node_->lifecycleState = WidgetLifecycle::LayoutClean;
+
+        // Delegate child propagation, physical fragment creation, and caching to base LayoutBlock
         LayoutBlock::layout(constraints);
     }
 
     LayoutGrid::LayoutGrid(Widget* node) : LayoutBlock(node) {}
 
     void LayoutGrid::layout(const LayoutConstraints& constraints) {
+        if (!node_) return;
+
+        // LayoutNG Cache check: $O(1)$ short-circuit if ConstraintSpace matches!
+        if (cache_.isValid && cache_.space == constraints) {
+            bounds_ = cache_.result.physicalFragment->bounds;
+            applyPhysicalFragment(*cache_.result.physicalFragment);
+            return;
+        }
+
+        // Run Grid Layout Solver (Parity with Blink's NGGridLayoutAlgorithm)
+        GridLayoutAlgorithm algorithm;
+        LayoutResult res = algorithm.layout(node_, constraints);
+
+        bounds_.w = res.width;
+        bounds_.h = res.height;
+        bounds_.x = res.x != 0.0f ? res.x : node_->bounds.x;
+        bounds_.y = res.y != 0.0f ? res.y : node_->bounds.y;
+
+        node_->bounds = bounds_;
+        node_->contentHeight = res.contentHeight;
+        node_->layoutDirty = false;
+        node_->lifecycleState = WidgetLifecycle::LayoutClean;
+
+        // Delegate child propagation, physical fragment creation, and caching to base LayoutBlock
         LayoutBlock::layout(constraints);
     }
 
