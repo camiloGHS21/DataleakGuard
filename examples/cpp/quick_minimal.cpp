@@ -38,14 +38,14 @@ int main() {
     clickCounter->css("min-width: 150px; color: #a29bfe;");
 
     static int counter = 0;
-    controlRow->button("Increment", "btn", [clickCounter]() {
+    controlRow->button("Increment", "btn")->click([clickCounter]() {
         counter++;
         clickCounter->content = "Clicks: " + std::to_string(counter);
     });
 
-    controlRow->button("Exit App", "btn", [&app]() {
+    controlRow->button("Exit App", "btn")->css("background: linear-gradient(135deg, #e74c3c, #ff7675); box-shadow: 0 4px 15px rgba(231, 76, 60, 0.25);")->click([&app]() {
         app.app().running = false;
-    })->css("background: linear-gradient(135deg, #e74c3c, #ff7675); box-shadow: 0 4px 15px rgba(231, 76, 60, 0.25);");
+    });
 
     // Run the app! Build callback is optional.
     return app.run();

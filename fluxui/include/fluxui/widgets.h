@@ -454,6 +454,18 @@ public:
     Widget* removeClass(const std::string& value);
     Widget* toggleClass(const std::string& value, bool enabled);
     Widget* css(const std::string& declarations);
+    template<typename T = Widget>
+    T* as() {
+        return static_cast<T*>(this);
+    }
+    Widget* click(std::function<void()> callback) {
+        onClick = std::move(callback);
+        return this;
+    }
+    Widget* hover(std::function<void()> callback) {
+        onHover = std::move(callback);
+        return this;
+    }
     struct EventListenerEntry {
         size_t id = 0;
         std::string type;
@@ -1738,6 +1750,62 @@ public:
 
     TextInput* input(const std::string& placeholder = "", const std::string& cls = "") {
         return root()->input(placeholder, cls);
+    }
+
+    Text* span(const std::string& content, const std::string& cls = "") {
+        return root()->span(content, cls);
+    }
+
+    Text* strong(const std::string& content, const std::string& cls = "") {
+        return root()->strong(content, cls);
+    }
+
+    Text* small(const std::string& content, const std::string& cls = "") {
+        return root()->small(content, cls);
+    }
+
+    Anchor* a(const std::string& content, const std::string& href = "", const std::string& cls = "") {
+        return root()->a(content, href, cls);
+    }
+
+    Image* img(const std::string& source, const std::string& cls = "") {
+        return root()->img(source, cls);
+    }
+
+    ProgressBar* progress(float value, const std::string& cls = "", const Color& color = Color(0.42f, 0.36f, 0.91f, 1.0f)) {
+        return root()->progress(value, cls, color);
+    }
+
+    Checkbox* checkbox(bool checked = false, const std::string& cls = "", std::function<void(bool)> onChange = {}) {
+        return root()->checkbox(checked, cls, onChange);
+    }
+
+    Select* select(const std::string& cls = "", std::function<void(size_t, const std::string&)> onChange = {}) {
+        return root()->select(cls, onChange);
+    }
+
+    TextInput* textarea(const std::string& placeholder = "", const std::string& cls = "") {
+        return root()->textarea(placeholder, cls);
+    }
+
+    Panel* ul(const std::string& cls = "", size_t reserve = 0) {
+        return root()->ul(cls, reserve);
+    }
+
+    Panel* ol(const std::string& cls = "", size_t reserve = 0) {
+        return root()->ol(cls, reserve);
+    }
+
+    Panel* li(const std::string& cls = "", size_t reserve = 0) {
+        return root()->li(cls, reserve);
+    }
+
+    Panel* section(const std::string& cls = "", size_t reserve = 0) {
+        return root()->section(cls, reserve);
+    }
+
+    Canvas* canvas(const std::string& cls = "") {
+        return root()->canvas(cls);
     }
 
     int run(std::function<void(QuickApp&)> buildCallback = nullptr) {

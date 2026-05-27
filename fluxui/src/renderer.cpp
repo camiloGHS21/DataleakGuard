@@ -4477,6 +4477,21 @@ void Renderer::drawSoftwareRoundedRect(const Rect& rect,
     float safeY0 = safeMargin;
     float safeY1 = drawRect.h - safeMargin;
 
+    float innerSafeX0 = scaledBorder + std::max(0.5f, innerRadius);
+    float innerSafeX1 = drawRect.w - scaledBorder - std::max(0.5f, innerRadius);
+    float innerSafeY0 = scaledBorder + std::max(0.5f, innerRadius);
+    float innerSafeY1 = drawRect.h - scaledBorder - std::max(0.5f, innerRadius);
+
+    float gradVx = 0.0f, gradVy = 0.0f;
+    float invW = 0.0f, invH = 0.0f;
+    if (drawFill && hasGradient) {
+        float angle = gradientAngle * 3.14159265358979323846f / 180.0f;
+        gradVx = std::cos(angle);
+        gradVy = std::sin(angle);
+        invW = drawRect.w > 0.0f ? 1.0f / drawRect.w : 0.0f;
+        invH = drawRect.h > 0.0f ? 1.0f / drawRect.h : 0.0f;
+    }
+
     for (int y = y0; y < y1; ++y) {
         float py = static_cast<float>(y) + 0.5f;
         float ly = py - drawRect.y;
@@ -4499,7 +4514,10 @@ void Renderer::drawSoftwareRoundedRect(const Rect& rect,
 
             if (drawFill) {
                 if (hasGradient) {
-                    Color fill = softwareGradientColor(color, color2, drawRect, px, py, gradientAngle);
+                    float nx = (px - drawRect.x) * invW - 0.5f;
+                    float ny = (py - drawRect.y) * invH - 0.5f;
+                    float t = std::clamp(nx * gradVx + ny * gradVy + 0.5f, 0.0f, 1.0f);
+                    Color fill = Color::lerp(color, color2, t);
                     uint32_t fR = static_cast<uint32_t>(std::clamp(fill.r, 0.0f, 1.0f) * 255.0f);
                     uint32_t fG = static_cast<uint32_t>(std::clamp(fill.g, 0.0f, 1.0f) * 255.0f);
                     uint32_t fB = static_cast<uint32_t>(std::clamp(fill.b, 0.0f, 1.0f) * 255.0f);
@@ -4513,7 +4531,10 @@ void Renderer::drawSoftwareRoundedRect(const Rect& rect,
 
             if (drawBorder) {
                 float innerCoverage = 0.0f;
-                if (inner.w > 0.0f && inner.h > 0.0f) {
+                bool inSafeCenter = (lx >= safeX0 && lx <= safeX1 && ly >= safeY0 && ly <= safeY1);
+                if (inSafeCenter && lx >= innerSafeX0 && lx <= innerSafeX1 && ly >= innerSafeY0 && ly <= innerSafeY1) {
+                    innerCoverage = 1.0f;
+                } else if (inner.w > 0.0f && inner.h > 0.0f) {
                     innerCoverage = softwareRoundedCoverage(px, py, inner, innerRadius);
                 }
                 float borderCoverage = coverage * (1.0f - innerCoverage);
@@ -4617,6 +4638,8 @@ void Renderer::drawSoftwareText(const std::string& text,
     uint32_t srcG = static_cast<uint32_t>(std::clamp(color.g, 0.0f, 1.0f) * 255.0f);
     uint32_t srcB = static_cast<uint32_t>(std::clamp(color.b, 0.0f, 1.0f) * 255.0f);
     float baseAlpha = color.a;
+    bool isFastPath = (italicSkew == 0.0f && std::abs(glyphScale - 1.0f) < 0.001f);
+    uint32_t baseAlphaInt = static_cast<uint32_t>(color.a * 255.0f);
 
     auto drawGlyph = [&](const GlyphInfo& glyph, float originX, float originY) {
         int drawW = std::max(0, static_cast<int>(std::ceil(glyph.width * glyphScale)));
@@ -4634,28 +4657,56 @@ void Renderer::drawSoftwareText(const std::string& text,
         int atlasW = std::max(1, static_cast<int>(std::round(glyph.width)));
         int atlasH = std::max(1, static_cast<int>(std::round(glyph.height)));
 
-        int y0 = std::max(clip.y0, static_cast<int>(std::floor(originY)));
-        int y1 = std::min(clip.y1, static_cast<int>(std::ceil(originY + drawH)));
-        for (int y = y0; y < y1; ++y) {
-            float localY = static_cast<float>(y) + 0.5f - originY;
-            float rowSkew = italicSkew * (1.0f - localY / std::max(1.0f, static_cast<float>(drawH)));
-            int x0 = std::max(clip.x0, static_cast<int>(std::floor(originX + rowSkew)));
-            int x1 = std::min(clip.x1, static_cast<int>(std::ceil(originX + rowSkew + drawW)));
-            size_t rowOffset = static_cast<size_t>(y) * softwareWidth_;
-            for (int x = x0; x < x1; ++x) {
-                float localX = static_cast<float>(x) + 0.5f - originX - rowSkew;
-                float alpha = softwareSampleFontAlpha(font,
-                                                      atlasX0,
-                                                      atlasY0,
-                                                      atlasW,
-                                                      atlasH,
-                                                      localX / glyphScale - 0.5f,
-                                                      localY / glyphScale - 0.5f);
-                if (alpha <= 0.001f) {
-                    continue;
+        if (isFastPath) {
+            int iOriginX = static_cast<int>(std::floor(originX + 0.5f));
+            int iOriginY = static_cast<int>(std::floor(originY + 0.5f));
+            int y0 = std::max(clip.y0, iOriginY);
+            int y1 = std::min(clip.y1, iOriginY + atlasH);
+            int x0_clip = std::max(clip.x0, iOriginX);
+            int x1_clip = std::min(clip.x1, iOriginX + atlasW);
+
+            for (int y = y0; y < y1; ++y) {
+                int iy = y - iOriginY;
+                int clamp_ay = std::clamp(atlasY0 + iy, 0, font.atlasHeight - 1);
+                size_t atlasRowOffset = static_cast<size_t>(clamp_ay) * font.atlasWidth;
+                size_t rowOffset = static_cast<size_t>(y) * softwareWidth_;
+                for (int x = x0_clip; x < x1_clip; ++x) {
+                    int ix = x - iOriginX;
+                    int clamp_ax = std::clamp(atlasX0 + ix, 0, font.atlasWidth - 1);
+                    uint8_t alphaVal = font.atlasPixels[atlasRowOffset + clamp_ax];
+                    if (alphaVal == 0) {
+                        continue;
+                    }
+                    uint32_t a_int = (static_cast<uint32_t>(alphaVal) * baseAlphaInt) / 255u;
+                    if (a_int > 0) {
+                        softwareBlendPixelFast(softwarePixels_[rowOffset + x], srcR, srcG, srcB, a_int);
+                    }
                 }
-                uint32_t a_int = static_cast<uint32_t>(baseAlpha * alpha * 255.0f);
-                softwareBlendPixelFast(softwarePixels_[rowOffset + x], srcR, srcG, srcB, a_int);
+            }
+        } else {
+            int y0 = std::max(clip.y0, static_cast<int>(std::floor(originY)));
+            int y1 = std::min(clip.y1, static_cast<int>(std::ceil(originY + drawH)));
+            for (int y = y0; y < y1; ++y) {
+                float localY = static_cast<float>(y) + 0.5f - originY;
+                float rowSkew = italicSkew * (1.0f - localY / std::max(1.0f, static_cast<float>(drawH)));
+                int x0 = std::max(clip.x0, static_cast<int>(std::floor(originX + rowSkew)));
+                int x1 = std::min(clip.x1, static_cast<int>(std::ceil(originX + rowSkew + drawW)));
+                size_t rowOffset = static_cast<size_t>(y) * softwareWidth_;
+                for (int x = x0; x < x1; ++x) {
+                    float localX = static_cast<float>(x) + 0.5f - originX - rowSkew;
+                    float alpha = softwareSampleFontAlpha(font,
+                                                          atlasX0,
+                                                          atlasY0,
+                                                          atlasW,
+                                                          atlasH,
+                                                          localX / glyphScale - 0.5f,
+                                                          localY / glyphScale - 0.5f);
+                    if (alpha <= 0.001f) {
+                        continue;
+                    }
+                    uint32_t a_int = static_cast<uint32_t>(baseAlpha * alpha * 255.0f);
+                    softwareBlendPixelFast(softwarePixels_[rowOffset + x], srcR, srcG, srcB, a_int);
+                }
             }
         }
     };
@@ -4722,20 +4773,28 @@ void Renderer::drawSoftwareImage(const std::string& key,
     uint32_t tintA = static_cast<uint32_t>(std::clamp(tint.a, 0.0f, 1.0f) * 255.0f);
     uint32_t opacityInt = static_cast<uint32_t>(std::clamp(opacity, 0.0f, 1.0f) * 255.0f);
 
+    float u_step = (u1 - u0) / drawRect.w;
+    float u_start = u0 + (static_cast<float>(x0) + 0.5f - drawRect.x) * u_step;
+
+    float v_step = (v1 - v0) / drawRect.h;
+    float v_start = v0 + (static_cast<float>(y0) + 0.5f - drawRect.y) * v_step;
+
+    float imgWidthFloat = static_cast<float>(image.width);
+    float imgHeightFloat = static_cast<float>(image.height);
+
     for (int y = y0; y < y1; ++y) {
-        float fy = (static_cast<float>(y) + 0.5f - drawRect.y) / drawRect.h;
-        int sy = std::clamp(static_cast<int>((v0 + fy * (v1 - v0)) *
-                                             static_cast<float>(image.height)),
+        float v_val = v_start + static_cast<float>(y - y0) * v_step;
+        int sy = std::clamp(static_cast<int>(v_val * imgHeightFloat),
                             0,
                             image.height - 1);
         size_t rowOffset = static_cast<size_t>(y) * softwareWidth_;
+        size_t syOffset = static_cast<size_t>(sy) * image.width;
         for (int x = x0; x < x1; ++x) {
-            float fx = (static_cast<float>(x) + 0.5f - drawRect.x) / drawRect.w;
-            int sx = std::clamp(static_cast<int>((u0 + fx * (u1 - u0)) *
-                                                 static_cast<float>(image.width)),
+            float u_val = u_start + static_cast<float>(x - x0) * u_step;
+            int sx = std::clamp(static_cast<int>(u_val * imgWidthFloat),
                                 0,
                                 image.width - 1);
-            size_t index = (static_cast<size_t>(sy) * image.width + sx) * 4u;
+            size_t index = (syOffset + sx) * 4u;
             uint32_t imgR = image.pixels[index + 0];
             uint32_t imgG = image.pixels[index + 1];
             uint32_t imgB = image.pixels[index + 2];

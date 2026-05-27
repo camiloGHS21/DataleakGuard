@@ -6836,10 +6836,14 @@ void Application::run() {
             firstFrame = false;
         }
 #if FLUXUI_TARGET_FPS > 0
-        constexpr float targetFrameSeconds = 1.0f / static_cast<float>(FLUXUI_TARGET_FPS);
+        float targetFPS = static_cast<float>(FLUXUI_TARGET_FPS);
+        if (renderer_.activeBackend() == RenderBackendType::Compatibility) {
+            targetFPS = 60.0f; // Limit to 60 FPS on CPU to save CPU usage and battery
+        }
+        float targetFrameSeconds = targetFPS > 0.0f ? 1.0f / targetFPS : 0.0f;
         auto frameElapsed = std::chrono::duration<float>(
             std::chrono::high_resolution_clock::now() - now).count();
-        if (frameElapsed < targetFrameSeconds) {
+        if (targetFrameSeconds > 0.0f && frameElapsed < targetFrameSeconds) {
             std::this_thread::sleep_for(
                 std::chrono::duration<float>(targetFrameSeconds - frameElapsed));
         } else {
