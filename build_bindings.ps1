@@ -89,7 +89,17 @@ if ($Javac) {
     Write-Host "  [WARN] javac not found; skipping Java class compilation." -ForegroundColor Yellow
 }
 
-# â”€â”€ 5. Verify Build and Display Results â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 4.5. Build Go Bindings and Examples ───────────────────────────────────────
+Write-Host "`n[4.5] Compiling Go FFI Bindings and Example..." -ForegroundColor Yellow
+$Go = (Get-Command go -ErrorAction SilentlyContinue).Source
+if ($Go) {
+    Write-Host "  -> Compiling Go minimal example 'minimal_go.exe'..." -ForegroundColor Gray
+    & $Go build -o build/Release/minimal_go.exe examples/go/minimal.go
+} else {
+    Write-Host "  [WARN] go compiler not found; skipping Go compilation." -ForegroundColor Yellow
+}
+
+# ── 5. Verify Build and Display Results ───────────────────────────────────────
 Write-Host "`n[5/5] Verifying Build Outputs..." -ForegroundColor Yellow
 
 $Outputs = @(
@@ -101,7 +111,8 @@ $Outputs = @(
     "build/Release/minimal_rust.exe",
     "build/Release/minimal_zig.exe",
     "build/Release/fluxui-java.jar",
-    "build/java/classes/Minimal.class"
+    "build/java/classes/Minimal.class",
+    "build/Release/minimal_go.exe"
 )
 
 $AllSucceeded = $true

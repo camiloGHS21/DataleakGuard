@@ -187,12 +187,12 @@ pub const Widget = struct {
         return fromRaw(c.fluxui_widget_add_textarea(self.raw, placeholder, class_name));
     }
 
-    pub fn addCheckbox(self: Widget, checked: bool, class_name: [*:0]const u8) Error!Widget {
-        return fromRaw(c.fluxui_widget_add_checkbox(self.raw, if (checked) 1 else 0, class_name));
+    pub fn addCheckbox(self: Widget, is_checked: bool, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_checkbox(self.raw, if (is_checked) 1 else 0, class_name));
     }
 
-    pub fn addRadio(self: Widget, checked: bool, group: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
-        return fromRaw(c.fluxui_widget_add_radio(self.raw, if (checked) 1 else 0, group, class_name));
+    pub fn addRadio(self: Widget, is_checked: bool, group: [*:0]const u8, class_name: [*:0]const u8) Error!Widget {
+        return fromRaw(c.fluxui_widget_add_radio(self.raw, if (is_checked) 1 else 0, group, class_name));
     }
 
     pub fn addRange(self: Widget, value: f32, min: f32, max: f32, step: f32, class_name: [*:0]const u8) Error!Widget {
@@ -301,9 +301,9 @@ pub const Widget = struct {
         c.fluxui_text_input_set_type(self.raw, input_type);
     }
 
-    pub fn setChecked(self: Widget, checked: bool) void {
-        c.fluxui_checkbox_set_checked(self.raw, if (checked) 1 else 0);
-        c.fluxui_radio_set_checked(self.raw, if (checked) 1 else 0);
+    pub fn setChecked(self: Widget, is_checked: bool) void {
+        c.fluxui_checkbox_set_checked(self.raw, if (is_checked) 1 else 0);
+        c.fluxui_radio_set_checked(self.raw, if (is_checked) 1 else 0);
     }
 
     pub fn checked(self: Widget) bool {
