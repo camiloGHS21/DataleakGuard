@@ -1033,6 +1033,66 @@ impl Widget {
         self.set_on_click_raw(stop_app_callback, app.raw() as *mut c_void);
     }
 
+    pub fn style_width(self, value: f32) {
+        unsafe { sys::fluxui_style_width_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_height(self, value: f32) {
+        unsafe { sys::fluxui_style_height_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_min_width(self, value: f32) {
+        unsafe { sys::fluxui_style_min_width_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_min_height(self, value: f32) {
+        unsafe { sys::fluxui_style_min_height_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_max_width(self, value: f32) {
+        unsafe { sys::fluxui_style_max_width_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_max_height(self, value: f32) {
+        unsafe { sys::fluxui_style_max_height_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_flex_grow(self, value: f32) {
+        unsafe { sys::fluxui_style_flex_grow(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_gap(self, value: f32) {
+        unsafe { sys::fluxui_style_gap_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_padding_all(self, value: f32) {
+        unsafe { sys::fluxui_style_padding_all_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_padding(self, top: f32, right: f32, bottom: f32, left: f32) {
+        unsafe { sys::fluxui_style_padding_px(self.raw.as_ptr(), top, right, bottom, left) }
+    }
+
+    pub fn style_margin_all(self, value: f32) {
+        unsafe { sys::fluxui_style_margin_all_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_margin(self, top: f32, right: f32, bottom: f32, left: f32) {
+        unsafe { sys::fluxui_style_margin_px(self.raw.as_ptr(), top, right, bottom, left) }
+    }
+
+    pub fn style_border_radius(self, value: f32) {
+        unsafe { sys::fluxui_style_border_radius_px(self.raw.as_ptr(), value) }
+    }
+
+    pub fn style_background_color(self, color: Color) {
+        unsafe { sys::fluxui_style_background_color(self.raw.as_ptr(), color) }
+    }
+
+    pub fn style_text_color(self, color: Color) {
+        unsafe { sys::fluxui_style_text_color(self.raw.as_ptr(), color) }
+    }
+
     pub fn raw(self) -> *mut sys::FluxUIWidget {
         self.raw.as_ptr()
     }

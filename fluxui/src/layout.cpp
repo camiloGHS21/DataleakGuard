@@ -538,6 +538,13 @@ namespace FluxUI {
                 widget->bounds.h; // Column wraps are content bound
         }
 
+        if (!widget->parent) {
+            widget->bounds.x = 0.0f;
+            widget->bounds.y = 0.0f;
+            widget->bounds.w = constraints.availableWidth;
+            widget->bounds.h = constraints.availableHeight;
+        }
+
         result.x = widget->bounds.x;
         result.y = widget->bounds.y;
         result.width = widget->bounds.w;
@@ -621,6 +628,13 @@ namespace FluxUI {
 
         if (!s.height.isSet() && !consumesParentMainAxisHeight(widget, s)) {
             widget->bounds.h = std::max(widget->bounds.h, result.contentHeight);
+        }
+
+        if (!widget->parent) {
+            widget->bounds.x = 0.0f;
+            widget->bounds.y = 0.0f;
+            widget->bounds.w = constraints.availableWidth;
+            widget->bounds.h = constraints.availableHeight;
         }
 
         result.x = widget->bounds.x;

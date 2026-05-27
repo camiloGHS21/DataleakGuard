@@ -350,6 +350,56 @@ static std::vector<std::string> wrapText(const std::string& text, float fontSize
     }
     return lines;
 }
+static std::vector<std::string> splitPreservedLines(const std::string& text) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while (start <= text.size()) {
+        size_t end = text.find('\n', start);
+        if (end == std::string::npos) {
+            lines.push_back(text.substr(start));
+            break;
+        }
+        lines.push_back(text.substr(start, end - start));
+        start = end + 1;
+    }
+    if (lines.empty()) lines.push_back("");
+    return lines;
+}
+static std::vector<std::string> layoutTextLines(const std::string& text,
+                                                float fontSize,
+                                                float maxWidth,
+                                                WhiteSpace whiteSpace) {
+    if (whiteSpace == WhiteSpace::Pre) {
+        return splitPreservedLines(text);
+    }
+    if (whiteSpace == WhiteSpace::PreWrap || whiteSpace == WhiteSpace::PreLine) {
+        std::vector<std::string> lines;
+        for (const auto& preservedLine : splitPreservedLines(text)) {
+            std::vector<std::string> wrapped = wrapText(preservedLine, fontSize, maxWidth);
+            lines.insert(lines.end(), wrapped.begin(), wrapped.end());
+        }
+        if (lines.empty()) lines.push_back("");
+        return lines;
+    }
+    if (whiteSpace == WhiteSpace::NoWrap) {
+        return {text};
+    }
+    return wrapText(text, fontSize, maxWidth);
+}
+static float intrinsicTextWidth(const std::string& text,
+                                float fontSize,
+                                WhiteSpace whiteSpace) {
+    float width = 0.0f;
+    if (whiteSpace == WhiteSpace::Pre || whiteSpace == WhiteSpace::PreWrap ||
+        whiteSpace == WhiteSpace::PreLine) {
+        for (const auto& line : splitPreservedLines(text)) {
+            width = std::max(width, approximateTextWidth(line, fontSize));
+        }
+    } else {
+        width = approximateTextWidth(text, fontSize);
+    }
+    return width;
+}
 static std::string trimAsciiLocal(std::string value) {
     auto isWs = [](unsigned char c) { return std::isspace(c) != 0; };
     while (!value.empty() && isWs((unsigned char)value.front())) value.erase(value.begin());
@@ -560,6 +610,41 @@ static bool canHitTestWidget(const Widget* widget) {
     return canPaintWidget(widget) &&
            widget->computedStyle->pointerEvents != PointerEvents::None;
 }
+static bool isInlineDisplay(Display display) {
+    return display == Display::Inline || display == Display::InlineBlock;
+}
+static bool isImplicitInlineText(const Widget* widget) {
+    return widget && widget->type == "text" && widget->className.empty();
+}
+static bool isDocumentFlowTextElement(const Widget* widget) {
+    if (!widget) return false;
+    const std::string& type = widget->type;
+    return type == "p" || type == "h1" || type == "h2" || type == "h3" ||
+           type == "h4" || type == "h5" || type == "h6" || type == "li" ||
+           type == "dt" || type == "dd" || type == "legend" ||
+           type == "summary" || type == "figcaption" || type == "blockquote";
+}
+static bool isInlineFlowItem(const Widget* widget) {
+    if (!widget || !widget->computedStyle) return false;
+    return isInlineDisplay(widget->computedStyle->display) || isImplicitInlineText(widget);
+}
+static bool shouldUseInlineFlow(const Widget* widget) {
+    if (!widget) return false;
+    for (const auto& child : widget->children) {
+        if (!child || !child->visible || isDisplayNone(child.get()) ||
+            isOutOfFlow(child.get())) {
+            continue;
+        }
+        if (isInlineFlowItem(child.get())) {
+            return true;
+        }
+    }
+    return false;
+}
+static bool isExpandedSelectWidget(const Widget* widget) {
+    auto* select = dynamic_cast<const Select*>(widget);
+    return select && select->expanded;
+}
 static bool isKeyboardFocusableWidget(const Widget* widget) {
     if (!canHitTestWidget(widget)) return false;
     return widget->type == "input" ||
@@ -728,7 +813,7 @@ void Widget::attachLayoutTree() {
     }
 }
 std::unique_ptr<LayoutObject> Widget::createLayoutObject() {
-    if (type == "text") {
+    if (dynamic_cast<Text*>(this)) {
         auto* textWidget = static_cast<Text*>(this);
         return std::make_unique<LayoutText>(this, textWidget->content);
     }
@@ -2373,7 +2458,17 @@ void Widget::layout(const Rect& parentBounds) {
             h = s.padding.vertical() + usedBorderVertical(s);
         }
     }
-    bounds = {x, y, w, h};
+    bounds = {parent ? x : 0.0f, parent ? y : 0.0f, w, h};
+    auto resolveAutoBlockHeight = [&](float measuredHeight) {
+        float resolvedHeight = measuredHeight;
+        if (s.minHeight.isSet()) {
+            resolvedHeight = std::max(resolvedHeight, s.minHeight.resolve(parentBounds.h, vpW, vpH));
+        }
+        if (s.maxHeight.isSet()) {
+            resolvedHeight = std::min(resolvedHeight, s.maxHeight.resolve(parentBounds.h, vpW, vpH));
+        }
+        return std::max(0.0f, resolvedHeight);
+    };
     if (s.display == Display::Flex) {
         LayoutConstraints constraints;
         constraints.availableWidth = parentBounds.w;
@@ -2499,7 +2594,7 @@ void Widget::layout(const Rect& parentBounds) {
             if (hasSizeContainment) {
                 bounds.h = s.padding.vertical() + usedBorderVertical(s);
             } else {
-                bounds.h = std::max(bounds.h, currentY - bounds.y + s.padding.bottom);
+                bounds.h = resolveAutoBlockHeight(currentY - bounds.y + s.padding.bottom);
             }
         }
         if (hasSizeContainment) {
@@ -2580,7 +2675,7 @@ void Widget::layout(const Rect& parentBounds) {
                 if (hasSizeContainment) {
                     bounds.h = s.padding.vertical() + usedBorderVertical(s);
                 } else {
-                    bounds.h = std::max(bounds.h, totalColContainerHeight);
+                    bounds.h = resolveAutoBlockHeight(totalColContainerHeight);
                 }
             }
             if (hasSizeContainment) {
@@ -2598,6 +2693,19 @@ void Widget::layout(const Rect& parentBounds) {
                 bool isLeft;
             };
             std::vector<ActiveFloat> floats;
+            float lineX = bounds.x + s.padding.left;
+            float lineY = cy;
+            float lineHeight = 0.0f;
+            bool lineActive = false;
+
+            auto flushInlineLine = [&]() {
+                if (!lineActive) return;
+                cy = lineY + std::max(lineHeight, computedStyle->fontSize * computedStyle->lineHeight);
+                lineX = bounds.x + s.padding.left;
+                lineY = cy;
+                lineHeight = 0.0f;
+                lineActive = false;
+            };
 
             for (auto& child : children) {
                 if (!child->visible) continue;
@@ -2615,8 +2723,64 @@ void Widget::layout(const Rect& parentBounds) {
                         if (!f.isLeft) cy = std::max(cy, f.y + f.h);
                     }
                 }
+                if (isInlineFlowItem(child.get()) && cs.cssFloat == CSSFloat::None) {
+                    float currentLeftX = bounds.x + s.padding.left;
+                    float currentRightX = bounds.x + bounds.w - s.padding.right;
+                    for (const auto& f : floats) {
+                        if (f.y + f.h > lineY && f.y <= lineY) {
+                            if (f.isLeft) {
+                                currentLeftX = std::max(currentLeftX, f.x + f.w);
+                            } else {
+                                currentRightX = std::min(currentRightX, f.x);
+                            }
+                        }
+                    }
+                    if (!lineActive || lineX < currentLeftX) {
+                        lineX = currentLeftX;
+                        lineY = cy;
+                    }
+
+                    auto layoutInlineAt = [&](float x, float y) {
+                        float availableW = std::max(1.0f, currentRightX - x - cs.margin.horizontal());
+                        Rect childArea = {
+                            x,
+                            y,
+                            availableW,
+                            10000.0f
+                        };
+                        child->layout(childArea);
+                    };
+
+                    layoutInlineAt(lineX, lineY);
+                    float outerW = child->bounds.w + cs.margin.horizontal();
+                    bool wraps = lineActive &&
+                        lineX + outerW > currentRightX &&
+                        currentRightX > currentLeftX + 1.0f;
+                    if (wraps) {
+                        flushInlineLine();
+                        currentLeftX = bounds.x + s.padding.left;
+                        currentRightX = bounds.x + bounds.w - s.padding.right;
+                        for (const auto& f : floats) {
+                            if (f.y + f.h > lineY && f.y <= lineY) {
+                                if (f.isLeft) {
+                                    currentLeftX = std::max(currentLeftX, f.x + f.w);
+                                } else {
+                                    currentRightX = std::min(currentRightX, f.x);
+                                }
+                            }
+                        }
+                        lineX = currentLeftX;
+                        layoutInlineAt(lineX, lineY);
+                        outerW = child->bounds.w + cs.margin.horizontal();
+                    }
+                    lineHeight = std::max(lineHeight, child->bounds.h + cs.margin.vertical());
+                    lineX = child->bounds.x + child->bounds.w + cs.margin.right;
+                    lineActive = true;
+                    continue;
+                }
 
                 if (cs.cssFloat == CSSFloat::Left) {
+                    flushInlineLine();
                     float currentLeftX = bounds.x + s.padding.left;
                     for (const auto& f : floats) {
                         if (f.isLeft && f.y + f.h > cy && f.y <= cy) {
@@ -2628,6 +2792,7 @@ void Widget::layout(const Rect& parentBounds) {
                     child->layout(childArea);
                     floats.push_back({ currentLeftX, cy, child->bounds.w, child->bounds.h, true });
                 } else if (cs.cssFloat == CSSFloat::Right) {
+                    flushInlineLine();
                     float currentRightX = bounds.x + bounds.w - s.padding.right;
                     for (const auto& f : floats) {
                         if (!f.isLeft && f.y + f.h > cy && f.y <= cy) {
@@ -2640,6 +2805,7 @@ void Widget::layout(const Rect& parentBounds) {
                     child->layout(childArea);
                     floats.push_back({ cellX, cy, child->bounds.w, child->bounds.h, false });
                 } else {
+                    flushInlineLine();
                     float currentLeftX = bounds.x + s.padding.left;
                     float currentRightX = bounds.x + bounds.w - s.padding.right;
                     for (const auto& f : floats) {
@@ -2652,16 +2818,20 @@ void Widget::layout(const Rect& parentBounds) {
                         }
                     }
                     float availChildW = std::max(0.0f, currentRightX - currentLeftX);
+                    float availableChildH = (!s.height.isSet() && !heightProvidedByParentFlex)
+                        ? 10000.0f
+                        : (bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000.0f);
                     Rect childArea = {
                         currentLeftX,
                         cy,
                         availChildW,
-                        bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000
+                        std::max(0.0f, availableChildH)
                     };
                     child->layout(childArea);
                     cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
                 }
             }
+            flushInlineLine();
 
             float maxFloatY = cy;
             for (const auto& f : floats) {
@@ -2673,7 +2843,7 @@ void Widget::layout(const Rect& parentBounds) {
                 if (hasSizeContainment) {
                     bounds.h = s.padding.vertical() + usedBorderVertical(s);
                 } else {
-                    bounds.h = std::max(bounds.h, cy - bounds.y + s.padding.bottom);
+                    bounds.h = resolveAutoBlockHeight(cy - bounds.y + s.padding.bottom);
                 }
             }
             if (hasSizeContainment) {
@@ -3369,6 +3539,15 @@ void Widget::renderChildren(Renderer& renderer) {
         if (!canPaintWidget(child.get())) continue;
         if (child->computedStyle->position == Position::Fixed) continue;
         if (clip && !rectIntersects(child->bounds, visibleContent, 64.0f)) continue;
+        if (isExpandedSelectWidget(child.get())) continue;
+        child->render(renderer);
+    }
+    for (size_t i = startIndex; i < endIndex; i++) {
+        auto& child = children[i];
+        if (!canPaintWidget(child.get())) continue;
+        if (child->computedStyle->position == Position::Fixed) continue;
+        if (clip && !rectIntersects(child->bounds, visibleContent, 64.0f)) continue;
+        if (!isExpandedSelectWidget(child.get())) continue;
         child->render(renderer);
     }
     if (scrollable) {
@@ -3417,18 +3596,29 @@ void Widget::render(Renderer& renderer) {
 void Text::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
     const Style& s = *computedStyle;
-    if (!s.width.isSet() && s.flexGrow <= 0.0f && parentUsesRowFlex(this)) {
-        bounds.w = std::max(1.0f, approximateTextWidth(content, s.fontSize) + s.padding.horizontal());
+    const bool hasOnlyChildContent = !children.empty() && content.empty();
+    const bool shrinkToText = isInlineFlowItem(this) ||
+        (s.flexGrow <= 0.0f && parentUsesRowFlex(this));
+    if (!s.width.isSet() && shrinkToText && !hasOnlyChildContent) {
+        bounds.w = std::max(1.0f, intrinsicTextWidth(content, s.fontSize, s.whiteSpace) +
+            s.padding.horizontal() + usedBorderHorizontal(s));
     }
-    if (!s.height.isSet()) {
+    if (!s.height.isSet() && !hasOnlyChildContent) {
         float availableW = std::max(0.0f, bounds.w - s.padding.horizontal());
-        if (s.whiteSpace == WhiteSpace::NoWrap || availableW <= 0.0f) {
-            bounds.h = std::max(1.0f, s.fontSize * s.lineHeight + s.padding.vertical());
-        } else {
-            std::vector<std::string> lines = wrapText(content, s.fontSize, availableW);
-            float lineCount = static_cast<float>(lines.size());
-            bounds.h = std::max(1.0f, lineCount * (s.fontSize * s.lineHeight) + s.padding.vertical());
+        std::vector<std::string> lines = layoutTextLines(content, s.fontSize, availableW, s.whiteSpace);
+        float lineCount = static_cast<float>(std::max<size_t>(1, lines.size()));
+        bounds.h = std::max(1.0f, lineCount * (s.fontSize * s.lineHeight) +
+            s.padding.vertical() + usedBorderVertical(s));
+    } else if (!s.height.isSet() && hasOnlyChildContent) {
+        float childBottom = bounds.y + s.padding.top;
+        for (const auto& child : children) {
+            if (!child || !child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) {
+                continue;
+            }
+            const Style& cs = *(child->computedStyle);
+            childBottom = std::max(childBottom, child->bounds.y + child->bounds.h + cs.margin.bottom);
         }
+        bounds.h = std::max(1.0f, childBottom - bounds.y + s.padding.bottom + usedBorderVertical(s));
     }
 }
 void Text::render(Renderer& renderer) {
@@ -3464,11 +3654,14 @@ void Text::render(Renderer& renderer) {
     }
     const std::string& fontName = renderFontName(computedStyle);
     if (computedStyle->whiteSpace != WhiteSpace::NoWrap && textRect.w > 0.0f) {
-        std::vector<std::string> lines = wrapText(*displayTextPtr, computedStyle->fontSize, textRect.w);
+        std::vector<std::string> lines = layoutTextLines(*displayTextPtr,
+                                                         computedStyle->fontSize,
+                                                         textRect.w,
+                                                         computedStyle->whiteSpace);
         float lineHeight = computedStyle->fontSize * computedStyle->lineHeight;
         float totalTextH = lines.size() * lineHeight;
         float startY = textRect.y;
-        if (textRect.h > totalTextH) {
+        if (!isDocumentFlowTextElement(this) && textRect.h > totalTextH) {
             startY += (textRect.h - totalTextH) / 2.0f;
         }
         for (size_t i = 0; i < lines.size(); ++i) {
@@ -3511,6 +3704,10 @@ void Text::render(Renderer& renderer) {
 void Button::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
     const Style& s = *computedStyle;
+    if (!s.width.isSet() && isInlineFlowItem(this)) {
+        bounds.w = std::max(16.0f, approximateTextWidth(label, s.fontSize) +
+            s.padding.horizontal() + usedBorderHorizontal(s));
+    }
     if (!s.height.isSet()) {
         bounds.h = std::max(22.0f, s.fontSize * s.lineHeight +
             s.padding.vertical() + usedBorderVertical(s));
@@ -3523,15 +3720,25 @@ void Button::render(Renderer& renderer) {
         renderer.pushScale(renderScale, bounds.center());
     }
     Rect drawBounds = bounds;
-    if (pressed) {
-        drawBounds.x += 1;
-        drawBounds.y += 1;
-        drawBounds.w -= 2;
-        drawBounds.h -= 2;
+    if (false) {
+        // drawBounds.x += 1;
+        // drawBounds.y += 1;
+        // drawBounds.w -= 2;
+        // drawBounds.h -= 2;
     }
     const Style& s = *computedStyle;
     if (s.boxShadow.blur > 0) {
         renderer.drawBoxShadow(drawBounds, s.boxShadow, s.borderRadius);
+    }
+    float opacity = s.opacity;
+    if (s.hoverOpacity >= 0 && hoverAnim > 0) {
+        opacity = s.opacity + (s.hoverOpacity - s.opacity) * hoverAnim;
+    }
+    if (focused && s.focusOpacity >= 0) {
+        opacity = s.focusOpacity;
+    }
+    if (pressed && s.activeOpacity >= 0) {
+        opacity = s.activeOpacity;
     }
     Color bgColor = s.backgroundColor;
     if (s.hasHoverBg && hoverAnim > 0) {
@@ -3554,12 +3761,9 @@ void Button::render(Renderer& renderer) {
         bgGradient = s.activeBackgroundGradient;
     }
     if (bgGradient.type != Gradient::None) {
-        renderer.drawRoundedRectGradient(drawBounds, bgGradient, s.borderRadius, s.opacity);
+        renderer.drawRoundedRectGradient(drawBounds, bgGradient, s.borderRadius, opacity);
     } else {
-        renderer.drawRoundedRect(drawBounds, bgColor, s.borderRadius, s.opacity);
-    }
-    if (pressed) {
-        renderer.drawRoundedRect(drawBounds, Color(0, 0, 0, 0.16f), s.borderRadius);
+        renderer.drawRoundedRect(drawBounds, bgColor, s.borderRadius, opacity);
     }
     if (s.border.width > 0) {
         Border b = s.border;
@@ -4916,7 +5120,23 @@ std::string Select::selectedValue() const {
 void Select::layout(const Rect& parentBounds) {
     Widget::layout(parentBounds);
     const Style& s = *computedStyle;
-    if (!s.width.isSet() && parentUsesRowFlex(this)) bounds.w = 128.0f;
+    if (!s.width.isSet() && isInlineFlowItem(this)) {
+        float widest = approximateTextWidth(selectedLabel(), s.fontSize);
+        for (auto* option : selectOptions(this)) {
+            widest = std::max(widest, approximateTextWidth(option->label, s.fontSize));
+        }
+        float intrinsicW = widest + s.padding.horizontal() +
+            usedBorderHorizontal(s) + 20.0f;
+        if (s.minWidth.isSet()) {
+            intrinsicW = std::max(intrinsicW, s.minWidth.resolve(parentBounds.w));
+        }
+        if (s.maxWidth.isSet()) {
+            intrinsicW = std::min(intrinsicW, s.maxWidth.resolve(parentBounds.w));
+        }
+        bounds.w = std::max(1.0f, intrinsicW);
+    } else if (!s.width.isSet() && parentUsesRowFlex(this)) {
+        bounds.w = 128.0f;
+    }
     if (!s.height.isSet()) {
         bounds.h = std::max(22.0f, s.fontSize * s.lineHeight +
             s.padding.vertical() + usedBorderVertical(s));
@@ -5860,7 +6080,8 @@ bool Application::init(const std::string& title, int width, int height) {
     root_->className = "root";
     root_->reserveChildren(FLUXUI_PREALLOC_ROOT_CHILDREN);
     root_->computedStyle.ensureMutable().display = Display::Flex;
-    root_->computedStyle.ensureMutable().flexDirection = FlexDirection::Row;
+    root_->computedStyle.ensureMutable().flexDirection = FlexDirection::Column;
+    root_->computedStyle.ensureMutable().overflowY = Overflow::Auto;
     axObjectCache_ = std::make_unique<AXObjectCache>();
     input_.windowSize = {(float)width, (float)height};
     return true;
@@ -6972,6 +7193,81 @@ void Dialog::resolveStyles(const StyleSheet& sheet) {
     }
 }
 
+void Dialog::layout(const Rect& parentBounds) {
+    Widget::layout(parentBounds);
+    if (!open || !computedStyle) return;
+
+    const Style& s = *computedStyle;
+
+    // --- Measure content height (block flow) ---
+    float cy = bounds.y + s.padding.top;
+    float contentW = std::max(0.0f, bounds.w - s.padding.horizontal());
+    for (auto& child : children) {
+        if (!child || !child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) {
+            continue;
+        }
+        const Style& cs = *(child->computedStyle);
+        Rect childArea = {
+            bounds.x + s.padding.left + cs.margin.left,
+            cy + cs.margin.top,
+            std::max(0.0f, contentW - cs.margin.horizontal()),
+            10000.0f
+        };
+        child->layout(childArea);
+        cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
+    }
+
+    float measuredHeight = cy - bounds.y + s.padding.bottom;
+    contentHeight = std::max(0.0f, measuredHeight);
+    if (!s.height.isSet() || s.height.isAuto() || measuredHeight > bounds.h) {
+        bounds.h = std::max(0.0f, measuredHeight);
+    }
+
+    // --- Center the dialog in the viewport (Blink top-layer centering) ---
+    // Since FluxUI does not support transform: translate(-50%, -50%),
+    // we center the dialog procedurally after measuring its natural size.
+    const Widget* root = this;
+    while (root->parent) root = root->parent;
+    float vpW = root->bounds.w;
+    float vpH = root->bounds.h;
+
+    // Blink uses max-width: calc(100% - 6px - 2em) and max-height similarly
+    float maxDialogW = vpW - 6.0f - 2.0f * s.fontSize * 2.0f;
+    float maxDialogH = vpH - 6.0f - 2.0f * s.fontSize * 2.0f;
+
+    if (!s.width.isSet()) {
+        // fit-content: use current width but cap to viewport
+        bounds.w = std::min(bounds.w, std::max(0.0f, maxDialogW));
+    }
+    if (!s.height.isSet()) {
+        bounds.h = std::min(bounds.h, std::max(0.0f, maxDialogH));
+    }
+
+    // Center horizontally and vertically
+    bounds.x = root->bounds.x + (vpW - bounds.w) * 0.5f;
+    bounds.y = root->bounds.y + (vpH - bounds.h) * 0.5f;
+
+    // Re-layout children with the new centered position
+    cy = bounds.y + s.padding.top;
+    contentW = std::max(0.0f, bounds.w - s.padding.horizontal());
+    for (auto& child : children) {
+        if (!child || !child->visible || isDisplayNone(child.get()) || isOutOfFlow(child.get())) {
+            continue;
+        }
+        const Style& cs = *(child->computedStyle);
+        Rect childArea = {
+            bounds.x + s.padding.left + cs.margin.left,
+            cy + cs.margin.top,
+            std::max(0.0f, contentW - cs.margin.horizontal()),
+            10000.0f
+        };
+        child->layout(childArea);
+        cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
+    }
+
+    layoutPositionedChildren();
+}
+
 void Dialog::update(const InputState& input) {
     if (!open) return;
     Widget::update(input);
@@ -7060,6 +7356,11 @@ void Progress::render(Renderer& renderer) {
 }
 
 void Application::shutdown() {
+#ifdef _WIN32
+    if (window_) {
+        SetWindowLongPtr((HWND)window_, GWLP_USERDATA, 0);
+    }
+#endif
     renderer_.shutdown();
     if (window_) {
         Platform::destroyWindow(window_);

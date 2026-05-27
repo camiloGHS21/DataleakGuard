@@ -21,6 +21,236 @@ StyleSheet::StyleSheet() {
     typeRuleIndex_.reserve(64);
     universalRuleIndex_.reserve(64);
 #endif
+
+    // ========================================================================
+    // Default Blink/Chromium User Agent Stylesheet (html.css equivalent)
+    // Covers ALL standard HTML element types for out-of-the-box rendering.
+    // Reference: chromium/src/third_party/blink/renderer/core/html/resources/html.css
+    // ========================================================================
+    parse(
+        // --- Root container (FluxUI Application root widget) ---
+        // This rule keeps the root stable across style re-resolutions triggered by events.
+        ".root {\n"
+        "    display: flex;\n"
+        "    flex-direction: column;\n"
+        "    overflow-y: auto;\n"
+        "    font-family: sans-serif;\n"
+        "    font-size: 16px;\n"
+        "    line-height: 1.2;\n"
+        "    color: #000000;\n"
+        "    background-color: #ffffff;\n"
+        "}\n"
+
+        // --- Block-level structural elements ---
+        "html, body, div, section, article, aside, header, footer, main, nav, "
+        "form, details, summary, address, figure, figcaption, hgroup, search { display: block; }\n"
+        "body { margin: 8px; font-family: sans-serif; font-size: 16px; line-height: 1.2; color: #000000; background-color: #ffffff; }\n"
+
+        // --- Typography: headings ---
+        "h1 { display: block; font-size: 2em; font-weight: bold; margin: 0.67em 0; }\n"
+        "h2 { display: block; font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }\n"
+        "h3 { display: block; font-size: 1.17em; font-weight: bold; margin: 1em 0; }\n"
+        "h4 { display: block; font-size: 1em; font-weight: bold; margin: 1.33em 0; }\n"
+        "h5 { display: block; font-size: 0.83em; font-weight: bold; margin: 1.67em 0; }\n"
+        "h6 { display: block; font-size: 0.67em; font-weight: bold; margin: 2.33em 0; }\n"
+
+        // --- Typography: inline text semantics ---
+        "strong, b { font-weight: bold; }\n"
+        "em, i { font-style: italic; }\n"
+        "small { font-size: 0.83em; }\n"
+        "span { display: inline; }\n"
+        "mark { background-color: #ffff00; color: #000000; padding: 0 2px; }\n"
+        "abbr { text-decoration: underline; }\n"
+        "sub { font-size: 0.83em; }\n"
+        "sup { font-size: 0.83em; }\n"
+        "q { display: inline; }\n"
+        "cite { font-style: italic; }\n"
+        "time { display: inline; }\n"
+
+        // --- Block text elements ---
+        "p { display: block; margin: 1em 0; }\n"
+        "blockquote { display: block; margin: 1em 40px; }\n"
+        "pre { display: block; font-family: monospace; white-space: pre; margin: 1em 0; }\n"
+        "code, kbd, samp { font-family: monospace; font-size: 1em; }\n"
+
+        // --- Lists ---
+        "ul, ol { display: block; margin: 1em 0; padding-left: 40px; }\n"
+        "li { display: list-item; }\n"
+
+        // --- Anchors / Hyperlinks (Blink html.css defaults) ---
+        "a { display: inline; color: #0000ee; text-decoration: underline; cursor: pointer; }\n"
+        "a:hover { color: #0000ee; }\n"
+        "a:active { color: #ff0000; }\n"
+
+        // --- Button ---
+        "button {\n"
+        "    display: inline-block;\n"
+        "    padding: 4px 12px;\n"
+        "    background-color: #f0f0f0;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 4px;\n"
+        "    color: #333;\n"
+        "    font-size: 14px;\n"
+        "    font-family: inherit;\n"
+        "    cursor: pointer;\n"
+        "    text-align: center;\n"
+        "    min-height: 28px;\n"
+        "}\n"
+
+        // --- Text input & textarea ---
+        "input {\n"
+        "    display: inline-block;\n"
+        "    padding: 4px 8px;\n"
+        "    background-color: #ffffff;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 2px;\n"
+        "    color: #000000;\n"
+        "    font-size: 13.333px;\n"
+        "    font-family: inherit;\n"
+        "    min-height: 22px;\n"
+        "}\n"
+        "textarea {\n"
+        "    display: block;\n"
+        "    padding: 4px 8px;\n"
+        "    background-color: #ffffff;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 2px;\n"
+        "    color: #000000;\n"
+        "    font-size: 13.333px;\n"
+        "    font-family: monospace;\n"
+        "    min-height: 60px;\n"
+        "}\n"
+        "input:focus, textarea:focus {\n"
+        "    border-color: #4d90fe;\n"
+        "    outline: 2px solid rgba(77,144,254,0.4);\n"
+        "    outline-offset: -1px;\n"
+        "}\n"
+
+        // --- Label ---
+        "label { display: inline; cursor: default; }\n"
+
+        // --- Fieldset & legend ---
+        "fieldset {\n"
+        "    display: block;\n"
+        "    margin: 0 2px;\n"
+        "    padding: 8px 12px 12px 12px;\n"
+        "    border: 2px groove #c0c0c0;\n"
+        "    border-radius: 0;\n"
+        "}\n"
+        "legend {\n"
+        "    display: block;\n"
+        "    padding: 0 4px;\n"
+        "    font-weight: normal;\n"
+        "    font-size: 1em;\n"
+        "}\n"
+
+        // --- Select dropdown ---
+        "select {\n"
+        "    display: inline-block;\n"
+        "    padding: 2px 6px;\n"
+        "    background-color: #ffffff;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 2px;\n"
+        "    color: #000000;\n"
+        "    font-size: 13.333px;\n"
+        "    font-family: inherit;\n"
+        "    min-height: 22px;\n"
+        "    cursor: pointer;\n"
+        "}\n"
+        "option { display: none; }\n"
+
+        // --- Checkbox ---
+        "input[type='checkbox'] {\n"
+        "    display: inline-block;\n"
+        "    width: 13px;\n"
+        "    height: 13px;\n"
+        "    padding: 0;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 2px;\n"
+        "    background-color: #ffffff;\n"
+        "    cursor: pointer;\n"
+        "}\n"
+
+        // --- Radio button ---
+        "input[type='radio'] {\n"
+        "    display: inline-block;\n"
+        "    width: 13px;\n"
+        "    height: 13px;\n"
+        "    padding: 0;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 50%;\n"
+        "    background-color: #ffffff;\n"
+        "    cursor: pointer;\n"
+        "}\n"
+
+        // --- Range slider ---
+        "input[type='range'] {\n"
+        "    display: inline-block;\n"
+        "    min-width: 129px;\n"
+        "    height: 22px;\n"
+        "    padding: 0;\n"
+        "    border: 0;\n"
+        "    background-color: transparent;\n"
+        "    cursor: pointer;\n"
+        "}\n"
+
+        // --- Meter ---
+        "meter {\n"
+        "    display: inline-block;\n"
+        "    min-width: 80px;\n"
+        "    height: 16px;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 4px;\n"
+        "    background-color: #efefef;\n"
+        "}\n"
+
+        // --- Progress ---
+        "progress {\n"
+        "    display: inline-block;\n"
+        "    min-width: 160px;\n"
+        "    height: 16px;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 4px;\n"
+        "    background-color: #efefef;\n"
+        "}\n"
+
+        // --- Horizontal rule ---
+        "hr { display: block; height: 0; border: 0; border-top: 1px solid #ccc; margin: 8px 0; padding: 0; }\n"
+
+        // --- Details & summary ---
+        "details { display: block; margin: 0; padding: 0; }\n"
+        "summary {\n"
+        "    display: block;\n"
+        "    cursor: pointer;\n"
+        "    padding: 4px 0;\n"
+        "    font-weight: normal;\n"
+        "}\n"
+
+        // --- Dialog (Blink html.css defaults) ---
+        "dialog {\n"
+        "    display: none;\n"
+        "    position: absolute;\n"
+        "    background-color: #ffffff;\n"
+        "    color: #000000;\n"
+        "    border: 1px solid rgba(0,0,0,0.2);\n"
+        "    border-radius: 6px;\n"
+        "    padding: 1em;\n"
+        "    box-shadow: 0 4px 16px rgba(0,0,0,0.15);\n"
+        "}\n"
+
+        // --- Table elements ---
+        "table { display: table; border-collapse: separate; border-spacing: 2px; }\n"
+        "thead { display: table-header-group; }\n"
+        "tbody { display: table-row-group; }\n"
+        "tfoot { display: table-footer-group; }\n"
+        "tr { display: table-row; }\n"
+        "th { display: table-cell; font-weight: bold; text-align: center; padding: 1px; }\n"
+        "td { display: table-cell; padding: 1px; }\n"
+        "caption { display: table-caption; text-align: center; }\n"
+
+        // --- BR ---
+        "br { display: block; height: 0; }\n"
+    );
 }
 
 std::string StyleSheet::trim(const std::string& s) {
@@ -1787,7 +2017,7 @@ Style StyleSheet::resolve(std::string_view className,
     } else {
         style.fontSize = 16.0f;
     }
-    applyUserAgentDefaults(style, type, ancestors);
+    applyUserAgentDefaults(style, type, ancestors, widget);
     for (const auto& entry : propertyDefinitions_) {
         if (!entry.second.initialValue.empty()) {
             style.customProperties[entry.second.name] = entry.second.initialValue;
@@ -1863,9 +2093,45 @@ Style StyleSheet::resolve(std::string_view className,
 
     collectCandidateRules(className, id, type, candidateRules);
 
+    bool insideBlinkDoc = false;
+    if (className.find("blink-native-doc") != std::string_view::npos) {
+        insideBlinkDoc = true;
+    } else {
+        for (const auto& node : ancestors) {
+            if (node.className.find("blink-native-doc") != std::string_view::npos) {
+                insideBlinkDoc = true;
+                break;
+            }
+        }
+    }
+    if (!insideBlinkDoc && widget) {
+        const Widget* cur = widget;
+        while (cur) {
+            if (cur->className.find("blink-native-doc") != std::string::npos) {
+                insideBlinkDoc = true;
+                break;
+            }
+            cur = cur->parent;
+        }
+    }
+
     for (size_t ruleIndex : candidateRules) {
         if (ruleIndex >= rules.size()) continue;
         const auto& rule = rules[ruleIndex];
+        if (insideBlinkDoc) {
+            // Allow UA-level type-only selectors (e.g. "a", "dialog", "button",
+            // "a:hover") through even inside the blink sandbox so that elements
+            // get their correct default styles.  Only block author-level rules
+            // (those with class '.' or id '#' selectors) that don't explicitly
+            // target blink-native-doc.
+            const std::string& sel = rule.selector;
+            bool isAuthorRule = (sel.find('.') != std::string::npos ||
+                                 sel.find('#') != std::string::npos);
+            if (isAuthorRule &&
+                sel.find("blink-native-doc") == std::string::npos) {
+                continue;
+            }
+        }
         if (!mediaQueryMatches(rule.mediaQuery)) continue;
         std::string_view pseudo;
         if (selectorMatches(rule, className, id, type, ancestors, &pseudo, widget)) {
@@ -2019,6 +2285,9 @@ void StyleSheet::collectCandidateRules(std::string_view className,
                                        std::string_view type,
                                        std::vector<size_t>& out) const {
     out.clear();
+    if (rules.empty()) {
+        return;
+    }
     
     std::vector<uint8_t> flagArray(rules.size(), 0);
 
@@ -2469,518 +2738,382 @@ static bool applyCSSWideProperty(Style& target,
 
 void StyleSheet::applyUserAgentDefaults(Style& style,
                                         std::string_view type,
-                                        const std::vector<CSSSelectorNode>& ancestors) {
-    std::string t = lowerAscii(std::string(selectorBaseType(type)));
-    std::string inputKind = lowerAscii(std::string(selectorAttributeValue(type, "type")));
-    constexpr float medium = 16.0f;
-    auto isSectioning = [](std::string_view nodeType) {
-        return equalIgnoreCase(nodeType, "article") || equalIgnoreCase(nodeType, "aside") ||
-               equalIgnoreCase(nodeType, "nav") || equalIgnoreCase(nodeType, "section");
-    };
-    auto block = [&]() {
-        style.display = Display::Block;
-    };
-    auto inlineBox = [&]() {
-        style.display = Display::InlineBlock;
-    };
-    auto inlineElement = [&]() {
-        style.display = Display::Inline;
-    };
-    auto heading = [&](float size, float marginEm, bool setFontSize = true) {
-        block();
-        if (setFontSize) {
-            style.fontSize = size;
-            style.hasFontSize = true;
-        }
-        style.marginBlockStart = marginEm * medium;
-        style.marginBlockEnd = marginEm * medium;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.fontWeight = FontWeight::Bold;
-        style.hasFontWeight = true;
-    };
-    auto smallControl = [&]() {
-        style.margin = EdgeInsets(0.0f);
-        style.fontSize = 13.333f;
-        style.hasFontSize = true;
-        style.fontWeight = FontWeight::Normal;
-        style.hasFontWeight = true;
-        style.fontStyle = FontStyle::Normal;
-        style.hasFontStyle = true;
-        style.lineHeight = 1.2f;
-        style.hasLineHeight = true;
-        style.letterSpacing = 0.0f;
-        style.hasLetterSpacing = true;
-        style.wordSpacing = 0.0f;
-        style.hasWordSpacing = true;
-        style.textTransform = TextTransform::None;
-        style.hasTextTransform = true;
-        style.textAlign = TextAlign::Left;
-        style.hasTextAlign = true;
-        style.display = Display::InlineBlock;
-    };
-    auto pushButtonControl = [&]() {
-        smallControl();
-        style.appearance = Appearance::PushButton;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.textAlign = TextAlign::Center;
-        style.hasTextAlign = true;
-        style.padding = EdgeInsets(2.0f, 6.0f, 3.0f, 6.0f);
-        style.border = Border(2.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        style.borderRadius = BorderRadius(2.0f);
-        style.backgroundColor = Color(0.94f, 0.94f, 0.94f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-        style.boxSizing = BoxSizing::BorderBox;
-        style.hasBoxSizing = true;
-    };
-
-    if (t == "head" || t == "meta" || t == "title" || t == "link" ||
-        t == "style" || t == "script" || t == "param" || t == "datalist" ||
-        t == "template" || t == "base" || t == "source" || t == "track") {
-        style.display = Display::None;
-    } else if (t == "h1") {
-        int sectionDepth = 0;
-        for (const auto& ancestor : ancestors) {
-            if (isSectioning(ancestor.type)) ++sectionDepth;
-        }
-        static constexpr float sizes[] = {2.0f, 1.5f, 1.17f, 1.0f, 0.83f, 0.67f};
-        static constexpr float margins[] = {0.67f, 0.83f, 1.0f, 1.33f, 1.67f, 2.33f};
-        size_t rank = static_cast<size_t>(std::min(sectionDepth, 5));
-        heading(sizes[rank] * medium, margins[rank]);
-    } else if (t == "h2") {
-        heading(1.5f * medium, 0.83f);
-    } else if (t == "h3") {
-        heading(1.17f * medium, 1.0f);
-    } else if (t == "h4") {
-        heading(medium, 1.33f, false);
-    } else if (t == "h5") {
-        heading(0.83f * medium, 1.67f);
-    } else if (t == "h6") {
-        heading(0.67f * medium, 2.33f);
-    } else if (t == "p") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-    } else if (t == "html") {
-        block();
-    } else if (t == "body") {
-        block();
-        style.margin = EdgeInsets(8.0f);
-    } else if (t == "blockquote") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.marginInlineStart = 40.0f;
-        style.marginInlineEnd = 40.0f;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.hasMarginInlineStart = true;
-        style.hasMarginInlineEnd = true;
-    } else if (t == "figure") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.marginInlineStart = 40.0f;
-        style.marginInlineEnd = 40.0f;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.hasMarginInlineStart = true;
-        style.hasMarginInlineEnd = true;
-    } else if (t == "figcaption" || t == "dt" || t == "form" ||
-               t == "layer" || t == "hgroup" || t == "search" ||
-               t == "frameset" || t == "frame") {
-        block();
-    } else if (t == "address") {
-        block();
-        style.fontStyle = FontStyle::Italic;
-        style.hasFontStyle = true;
-    } else if (t == "dl") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-    } else if (t == "dd") {
-        block();
-        style.marginInlineStart = 40.0f;
-        style.hasMarginInlineStart = true;
-    } else if (t == "center") {
-        block();
-        style.textAlign = TextAlign::Center;
-        style.hasTextAlign = true;
-    } else if (t == "hr") {
-        block();
-        style.overflow = Overflow::Hidden;
-        style.overflowX = Overflow::Hidden;
-        style.overflowY = Overflow::Hidden;
-        style.marginBlockStart = 0.5f * medium;
-        style.marginBlockEnd = 0.5f * medium;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.border = Border(1.0f, Color(0.5f, 0.5f, 0.5f, 1.0f));
-    } else if (t == "ul" || t == "ol" || t == "menu" || t == "dir") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.paddingInlineStart = 40.0f;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.hasPaddingInlineStart = true;
-        if (t == "ol") {
-            style.listStyleType = ListStyleType::Decimal;
-        } else {
-            int listDepth = 0;
-            for (const auto& ancestor : ancestors) {
-                std::string aType = lowerAscii(std::string(selectorBaseType(ancestor.type)));
-                if (aType == "ul" || aType == "ol") {
-                    listDepth++;
-                }
+                                        const std::vector<CSSSelectorNode>& ancestors,
+                                        const Widget* widget) {
+    static StyleSheet uaSheet;
+    static bool initialized = false;
+    if (!initialized) {
+        // Parse a beautifully structured, comprehensive declarative UA default stylesheet string based on Blink html.css!
+        uaSheet.parse(R"CSS(
+            /* Declarative UA defaults matching Blink html.css specifications */
+            html { display: block; }
+            body { display: block; margin: 8px; }
+            p { display: block; margin-block-start: 1em; margin-block-end: 1em; }
+            div, article, aside, footer, header, main, nav, section, address, fieldset, details, summary, dialog { display: block; }
+            blockquote { display: block; margin-block-start: 1em; margin-block-end: 1em; margin-inline-start: 40px; margin-inline-end: 40px; }
+            figure { display: block; margin-block-start: 1em; margin-block-end: 1em; margin-inline-start: 40px; margin-inline-end: 40px; }
+            figcaption, dt, form, layer, hgroup, search, frameset, frame { display: block; }
+            address { font-style: italic; }
+            dl { display: block; margin-block-start: 1em; margin-block-end: 1em; }
+            dd { display: block; margin-inline-start: 40px; }
+            center { display: block; text-align: center; }
+            hr { display: block; overflow: hidden; margin-block-start: 0.5em; margin-block-end: 0.5em; border: 1px solid rgb(128, 128, 128); }
+            
+            h1 { display: block; font-size: 2em; margin-block-start: 0.67em; margin-block-end: 0.67em; font-weight: bold; }
+            h2 { display: block; font-size: 1.5em; margin-block-start: 0.83em; margin-block-end: 0.83em; font-weight: bold; }
+            h3 { display: block; font-size: 1.17em; margin-block-start: 1em; margin-block-end: 1em; font-weight: bold; }
+            h4 { display: block; font-size: 1em; margin-block-start: 1.33em; margin-block-end: 1.33em; font-weight: bold; }
+            h5 { display: block; font-size: 0.83em; margin-block-start: 1.67em; margin-block-end: 1.67em; font-weight: bold; }
+            h6 { display: block; font-size: 0.67em; margin-block-start: 2.33em; margin-block-end: 2.33em; font-weight: bold; }
+            
+            article h1, aside h1, nav h1, section h1 { font-size: 1.5em; margin-block-start: 0.83em; margin-block-end: 0.83em; }
+            article article h1, article aside h1, article nav h1, article section h1,
+            aside article h1, aside aside h1, aside nav h1, aside section h1,
+            nav article h1, nav aside h1, nav nav h1, nav section h1,
+            section article h1, section aside h1, section nav h1, section section h1 { font-size: 1.17em; margin-block-start: 1em; margin-block-end: 1em; }
+            
+            ul, ol, menu, dir { display: block; margin-block-start: 1em; margin-block-end: 1em; padding-inline-start: 40px; }
+            ol { list-style-type: decimal; }
+            ul { list-style-type: disc; }
+            ul ul, ol ul { list-style-type: circle; }
+            ul ul ul, ol ul ul, ul ol ul, ol ol ul { list-style-type: square; }
+            
+            li { display: list-item; }
+            
+            table { display: table; border: 0px solid rgb(128, 128, 128); }
+            thead { display: table-header-group; vertical-align: middle; }
+            tbody { display: table-row-group; vertical-align: middle; }
+            tfoot { display: table-footer-group; vertical-align: middle; }
+            tr { display: table-row; vertical-align: middle; }
+            td, th { display: table-cell; vertical-align: middle; }
+            th { font-weight: bold; text-align: center; }
+            caption { display: table-caption; text-align: center; }
+            col { display: table-column; }
+            colgroup { display: table-column-group; }
+            
+            strong, b { display: inline; font-weight: bold; }
+            a { display: inline; color: rgb(0, 0, 238); text-decoration: underline; cursor: pointer; }
+            u, ins { display: inline; text-decoration: underline; }
+            s, strike, del { display: inline; text-decoration: line-through; }
+            mark { display: inline; background-color: rgb(255, 255, 0); color: rgb(0, 0, 0); }
+            big { display: inline; font-size: 19.2px; }
+            i, cite, em, var, dfn { display: inline; font-style: italic; }
+            sub { display: inline; vertical-align: sub; font-size: 13.333px; }
+            sup { display: inline; vertical-align: super; font-size: 13.333px; }
+            small { display: inline; font-size: 13.333px; }
+            pre, xmp, plaintext, listing { display: block; margin-block-start: 1em; margin-block-end: 1em; font-family: monospace; white-space: pre; }
+            code, kbd, samp, tt { display: inline; font-family: monospace; }
+            nobr { display: inline; white-space: nowrap; }
+            
+            img, svg, picture { display: inline-block; object-fit: fill; }
+            canvas { display: inline-block; width: 300px; height: 150px; }
+            video { display: inline-block; object-fit: contain; }
+            rp, noframes { display: none; }
+            
+            span, q, map, area, abbr, acronym, bdi, bdo, data, time, output, rb, rtc, ruby, audio, embed, iframe, object { display: inline; }
+            iframe { border: 2px solid rgb(118, 118, 118); }
+            bdi, output { unicode-bidi: isolate; }
+            bdo { unicode-bidi: bidi-override; }
+            slot { display: contents; }
+            rt { display: block; font-size: 8px; }
+            label { display: inline; cursor: default; }
+            
+            fieldset { display: block; margin: 0px 2px; padding: 5.6px 12px 10px 12px; border: 2px solid rgb(192, 192, 192); min-width: 0px; }
+            legend { display: block; padding: 0px 2px; }
+            
+            /* Hidden inputs */
+            input[type="hidden"] {
+                display: none !important;
+                appearance: auto;
+                cursor: default;
+                padding: 0px;
+                border: 0px solid rgba(0, 0, 0, 0);
+                background-color: rgba(0, 0, 0, 0);
+                width: 0px;
+                height: 0px;
             }
-            if (listDepth == 0) {
-                style.listStyleType = ListStyleType::Disc;
-            } else if (listDepth == 1) {
-                style.listStyleType = ListStyleType::Circle;
-            } else {
-                style.listStyleType = ListStyleType::Square;
+            
+            /* File, image and color pickers */
+            input[type="file"] {
+                display: inline-block;
+                appearance: auto;
+                cursor: default;
+                padding: 0px;
+                border: 0px solid rgba(0, 0, 0, 0);
+                background-color: rgba(0, 0, 0, 0);
+                width: 253px;
+                height: 21px;
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
             }
-        }
-        style.hasListStyleType = true;
-    } else if (t == "li") {
-        style.display = Display::ListItem;
-    } else if (t == "table") {
-        style.display = Display::Table;
-        style.border = Border(0.0f, Color(0.5f, 0.5f, 0.5f, 1.0f));
-    } else if (t == "thead") {
-        style.display = Display::TableHeaderGroup;
-        style.verticalAlign = VerticalAlign::Middle;
-        style.hasVerticalAlign = true;
-    } else if (t == "tbody") {
-        style.display = Display::TableRowGroup;
-        style.verticalAlign = VerticalAlign::Middle;
-        style.hasVerticalAlign = true;
-    } else if (t == "tfoot") {
-        style.display = Display::TableFooterGroup;
-        style.verticalAlign = VerticalAlign::Middle;
-        style.hasVerticalAlign = true;
-    } else if (t == "tr") {
-        style.display = Display::TableRow;
-        style.verticalAlign = VerticalAlign::Middle;
-        style.hasVerticalAlign = true;
-    } else if (t == "td" || t == "th") {
-        style.display = Display::TableCell;
-        style.verticalAlign = VerticalAlign::Middle;
-        style.hasVerticalAlign = true;
-        if (t == "th") {
-            style.fontWeight = FontWeight::Bold;
-            style.hasFontWeight = true;
-            style.textAlign = TextAlign::Center;
-            style.hasTextAlign = true;
-        }
-    } else if (t == "caption") {
-        style.display = Display::TableCaption;
-        style.textAlign = TextAlign::Center;
-        style.hasTextAlign = true;
-    } else if (t == "col") {
-        style.display = Display::TableColumn;
-    } else if (t == "colgroup") {
-        style.display = Display::TableColumnGroup;
-    } else if (t == "strong" || t == "b") {
-        inlineBox();
-        style.fontWeight = FontWeight::Bold;
-        style.hasFontWeight = true;
-    } else if (t == "a") {
-        inlineBox();
-        style.color = Color(0.0f, 0.0f, 0.933f, 1.0f);
-        style.hasColor = true;
-        style.textDecoration = TextDecoration::Underline;
-        style.hasTextDecoration = true;
-        style.cursor = CursorType::Pointer;
-    } else if (t == "u" || t == "ins") {
-        inlineBox();
-        style.textDecoration = TextDecoration::Underline;
-        style.hasTextDecoration = true;
-    } else if (t == "s" || t == "strike" || t == "del") {
-        inlineBox();
-        style.textDecoration = TextDecoration::LineThrough;
-        style.hasTextDecoration = true;
-    } else if (t == "mark") {
-        inlineBox();
-        style.backgroundColor = Color(1.0f, 1.0f, 0.0f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "big") {
-        inlineBox();
-        style.fontSize = 19.2f;
-        style.hasFontSize = true;
-    } else if (t == "i" || t == "cite" || t == "em" ||
-               t == "var" || t == "dfn") {
-        inlineBox();
-        style.fontStyle = FontStyle::Italic;
-        style.hasFontStyle = true;
-    } else if (t == "sub") {
-        inlineBox();
-        style.verticalAlign = VerticalAlign::Sub;
-        style.hasVerticalAlign = true;
-        style.fontSize = 13.333f;
-        style.hasFontSize = true;
-    } else if (t == "sup") {
-        inlineBox();
-        style.verticalAlign = VerticalAlign::Super;
-        style.hasVerticalAlign = true;
-        style.fontSize = 13.333f;
-        style.hasFontSize = true;
-    } else if (t == "small") {
-        inlineBox();
-        style.fontSize = 13.333f;
-        style.hasFontSize = true;
-    } else if (t == "pre" || t == "xmp" || t == "plaintext" || t == "listing") {
-        block();
-        style.marginBlockStart = medium;
-        style.marginBlockEnd = medium;
-        style.hasMarginBlockStart = true;
-        style.hasMarginBlockEnd = true;
-        style.fontFamily = "monospace";
-        style.hasFontFamily = true;
-        style.whiteSpace = WhiteSpace::Pre;
-        style.hasWhiteSpace = true;
-    } else if (t == "code" || t == "kbd" || t == "samp" || t == "tt") {
-        inlineBox();
-        style.fontFamily = "monospace";
-        style.hasFontFamily = true;
-    } else if (t == "nobr") {
-        inlineBox();
-        style.whiteSpace = WhiteSpace::NoWrap;
-        style.hasWhiteSpace = true;
-    } else if (t == "img" || t == "svg" || t == "picture") {
-        inlineBox();
-        style.objectFit = ObjectFit::Fill;
-        style.hasObjectFit = true;
-    } else if (t == "video") {
-        inlineBox();
-        style.objectFit = ObjectFit::Contain;
-        style.hasObjectFit = true;
-    } else if (t == "rp" || t == "noframes") {
-        style.display = Display::None;
-    } else if (t == "div" || t == "article" || t == "aside" || t == "footer" ||
-               t == "header" || t == "main" || t == "nav" || t == "section") {
-        block();
-    } else if (t == "span" || t == "q" || t == "map" || t == "area" ||
-               t == "abbr" || t == "acronym" || t == "bdi" || t == "bdo" ||
-               t == "data" || t == "time" || t == "output" || t == "rb" ||
-               t == "rtc" || t == "ruby" || t == "audio" || t == "embed" ||
-               t == "iframe" || t == "object") {
-        inlineElement();
-        if (t == "iframe") {
-            style.border = Border(2.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        }
-        // Blink UA: bdi, output { unicode-bidi: isolate; }
-        if (t == "bdi" || t == "output") {
-            style.unicodeBidi = UnicodeBidi::Isolate;
-            style.hasUnicodeBidi = true;
-        }
-        // Blink UA: bdo { unicode-bidi: bidi-override; }
-        if (t == "bdo") {
-            style.unicodeBidi = UnicodeBidi::BidiOverride;
-            style.hasUnicodeBidi = true;
-        }
-    } else if (t == "slot") {
-        style.display = Display::Contents;
-    } else if (t == "rt") {
-        block();
-        style.fontSize = 8.0f;
-        style.hasFontSize = true;
-    } else if (t == "label") {
-        inlineElement();
-        style.cursor = CursorType::Default;
-    } else if (t == "fieldset") {
-        block();
-        style.margin = EdgeInsets(0.0f, 2.0f, 0.0f, 2.0f);
-        style.padding = EdgeInsets(5.6f, 12.0f, 10.0f, 12.0f);
-        style.border = Border(2.0f, Color(0.63f, 0.63f, 0.63f, 1.0f));
-        style.minWidth = CSSValue::px(0.0f);
-    } else if (t == "legend") {
-        block();
-        style.padding = EdgeInsets(0.0f, 2.0f, 0.0f, 2.0f);
-    } else if (t == "button") {
-        pushButtonControl();
-        style.appearance = Appearance::Button;
-    } else if (t == "input" && inputKind == "hidden") {
-        smallControl();
-        style.display = Display::None;
-        style.appearance = Appearance::Auto;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.padding = EdgeInsets(0.0f);
-        style.border = Border(0.0f, Color(0, 0, 0, 0));
-        style.backgroundColor = Color(0, 0, 0, 0);
-        style.width = CSSValue::px(0.0f);
-        style.height = CSSValue::px(0.0f);
-    } else if (t == "input" && (inputKind == "button" ||
-               inputKind == "submit" || inputKind == "reset")) {
-        pushButtonControl();
-    } else if (t == "input" && inputKind == "file") {
-        smallControl();
-        style.appearance = Appearance::Auto;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.padding = EdgeInsets(0.0f);
-        style.border = Border(0.0f, Color(0, 0, 0, 0));
-        style.backgroundColor = Color(0, 0, 0, 0);
-        style.width = CSSValue::px(253.0f);
-        style.height = CSSValue::px(21.0f);
-    } else if (t == "input" && inputKind == "image") {
-        smallControl();
-        style.appearance = Appearance::Auto;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Pointer;
-        style.padding = EdgeInsets(0.0f);
-        style.border = Border(0.0f, Color(0, 0, 0, 0));
-        style.backgroundColor = Color(0, 0, 0, 0);
-    } else if (t == "input" && inputKind == "color") {
-        smallControl();
-        style.appearance = Appearance::SquareButton;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.width = CSSValue::px(44.0f);
-        style.height = CSSValue::px(23.0f);
-        style.padding = EdgeInsets(1.0f, 2.0f, 1.0f, 2.0f);
-        style.border = Border(1.0f, Color(0.663f, 0.663f, 0.663f, 1.0f));
-        style.backgroundColor = Color(0.94f, 0.94f, 0.94f, 1.0f);
-        style.boxSizing = BoxSizing::BorderBox;
-        style.hasBoxSizing = true;
-    } else if (t == "input" && inputKind != "checkbox" &&
-               inputKind != "radio" && inputKind != "range") {
-        smallControl();
-        style.appearance = inputKind == "search" ? Appearance::SearchField : Appearance::TextField;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Text;
-        style.padding = EdgeInsets(1.0f, 2.0f, 1.0f, 2.0f);
-        style.border = Border(2.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "textarea") {
-        smallControl();
-        style.appearance = Appearance::Auto;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Text;
-        style.overflow = Overflow::Auto;
-        style.whiteSpace = WhiteSpace::PreWrap;
-        style.hasWhiteSpace = true;
-        style.wordBreak = WordBreak::BreakWord;
-        style.hasWordBreak = true;
-        style.fontFamily = "monospace";
-        style.hasFontFamily = true;
-        style.padding = EdgeInsets(2.0f);
-        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "select") {
-        smallControl();
-        style.appearance = Appearance::Menulist;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.padding = EdgeInsets(1.0f, 22.0f, 1.0f, 4.0f);
-        style.border = Border(1.0f, Color(0.0f, 0.0f, 0.0f, 1.0f));
-        style.borderRadius = BorderRadius(5.0f);
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "option") {
-        smallControl();
-        style.display = Display::Block;
-        style.padding = EdgeInsets(0.0f, 2.0f, 1.0f, 2.0f);
-        style.whiteSpace = WhiteSpace::Pre;
-        style.hasWhiteSpace = true;
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "checkbox" || (t == "input" && inputKind == "checkbox")) {
-        smallControl();
-        style.appearance = Appearance::Checkbox;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.margin = EdgeInsets(3.0f, 4.0f, 3.0f, 4.0f);
-        style.padding = EdgeInsets(0.0f);
-        style.width = CSSValue::px(13.0f);
-        style.height = CSSValue::px(13.0f);
-        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-    } else if (t == "radio" || (t == "input" && inputKind == "radio")) {
-        smallControl();
-        style.appearance = Appearance::Radio;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.margin = EdgeInsets(3.0f, 4.0f, 3.0f, 4.0f);
-        style.padding = EdgeInsets(0.0f);
-        style.width = CSSValue::px(13.0f);
-        style.height = CSSValue::px(13.0f);
-        style.border = Border(1.0f, Color(0.46f, 0.46f, 0.46f, 1.0f));
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-    } else if (t == "range" || (t == "input" && inputKind == "range")) {
-        smallControl();
-        style.appearance = Appearance::SliderHorizontal;
-        style.hasAppearance = true;
-        style.cursor = CursorType::Default;
-        style.margin = EdgeInsets(2.0f);
-        style.padding = EdgeInsets(0.0f);
-        style.width = CSSValue::px(129.0f);
-        style.height = CSSValue::px(16.0f);
-        style.border = Border(0.0f, Color(0, 0, 0, 0));
-        style.color = Color(0.565f, 0.565f, 0.565f, 1.0f);
-        style.hasColor = true;
-    } else if (t == "details") {
-        block();
-    } else if (t == "summary") {
-        block();
-        style.padding.left = 20.0f;
-        style.cursor = CursorType::Pointer;
-    } else if (t == "dialog") {
-        style.display = Display::None;
-        style.position = Position::Absolute;
-        style.backgroundColor = Color(1.0f, 1.0f, 1.0f, 1.0f);
-        style.color = Color(0.0f, 0.0f, 0.0f, 1.0f);
-        style.hasColor = true;
-        style.border = Border(1.0f, Color(0.0f, 0.0f, 0.0f, 1.0f));
-        style.padding = EdgeInsets(20.0f);
-    } else if (t == "meter") {
-        inlineBox();
-        style.width = CSSValue::px(80.0f);
-        style.height = CSSValue::px(16.0f);
-        style.backgroundColor = Color(0.9f, 0.9f, 0.9f, 1.0f);
-        style.border = Border(1.0f, Color(0.7f, 0.7f, 0.7f, 1.0f));
-        style.borderRadius = BorderRadius(4.0f);
-    } else if (t == "progress") {
-        inlineBox();
-        style.width = CSSValue::px(160.0f);
-        style.height = CSSValue::px(16.0f);
-        style.backgroundColor = Color(0.1f, 0.1f, 0.1f, 0.1f);
-        style.border = Border(1.0f, Color(0.3f, 0.3f, 0.3f, 0.3f));
-        style.borderRadius = BorderRadius(8.0f);
-    } else if (t == "br") {
-        style.display = Display::Block;
-        style.width = CSSValue::pct(100.0f);
-        style.height = CSSValue::px(0.0f);
+            input[type="image"] {
+                display: inline-block;
+                appearance: auto;
+                cursor: pointer;
+                padding: 0px;
+                border: 0px solid rgba(0, 0, 0, 0);
+                background-color: rgba(0, 0, 0, 0);
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            input[type="color"] {
+                display: inline-block;
+                appearance: square-button;
+                cursor: default;
+                width: 44px;
+                height: 23px;
+                padding: 1px 2px;
+                border: 1px solid rgb(169, 169, 169);
+                background-color: rgb(239, 239, 239);
+                box-sizing: border-box;
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Text inputs (text, password, search, email, url, tel, number, etc.) */
+            input[type="text"], input[type="password"], input[type="search"], input[type="number"], input[type="email"], input[type="url"], input[type="tel"], input[type="date"], input[type="time"], input[type="month"], input[type="week"], input[type="datetime-local"] {
+                display: inline-block;
+                appearance: textfield;
+                cursor: text;
+                padding: 1px 2px;
+                border: 2px solid rgb(118, 118, 118);
+                border-radius: 2px;
+                background-color: rgb(255, 255, 255);
+                color: rgb(0, 0, 0);
+                width: 170px;
+                box-sizing: border-box;
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            input[type="search"] {
+                appearance: searchfield;
+            }
+            
+            /* Textarea */
+            textarea {
+                display: inline-block;
+                appearance: auto;
+                cursor: text;
+                overflow: auto;
+                white-space: pre-wrap;
+                word-break: break-word;
+                font-family: monospace;
+                padding: 2px;
+                border: 1px solid rgb(118, 118, 118);
+                background-color: rgb(255, 255, 255);
+                color: rgb(0, 0, 0);
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Select */
+            select {
+                display: inline-block;
+                appearance: menulist;
+                cursor: default;
+                padding: 1px 22px 1px 4px;
+                border: 1px solid rgb(0, 0, 0);
+                border-radius: 5px;
+                background-color: rgb(255, 255, 255);
+                color: rgb(0, 0, 0);
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Option */
+            option {
+                display: none;
+                padding: 0px 2px 1px 2px;
+                white-space: pre;
+                color: rgb(0, 0, 0);
+                margin: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Checkbox */
+            input[type="checkbox"] {
+                display: inline-block;
+                appearance: checkbox;
+                cursor: default;
+                margin: 3px 4px 3px 4px;
+                width: 13px;
+                height: 13px;
+                border: 1px solid rgb(118, 118, 118);
+                background-color: rgb(255, 255, 255);
+                border-radius: 0px;
+                padding: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Radio */
+            input[type="radio"] {
+                display: inline-block;
+                appearance: radio;
+                cursor: default;
+                margin: 3px 4px 3px 4px;
+                width: 13px;
+                height: 13px;
+                border: 1px solid rgb(118, 118, 118);
+                background-color: rgb(255, 255, 255);
+                border-radius: 50%;
+                padding: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            /* Range */
+            input[type="range"] {
+                display: inline-block;
+                appearance: slider-horizontal;
+                cursor: default;
+                margin: 2px;
+                width: 129px;
+                height: 16px;
+                border: none;
+                color: rgb(144, 144, 144);
+                padding: 0px;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: left;
+            }
+            
+            button, input[type="button"], input[type="submit"], input[type="reset"] {
+                display: inline-block;
+                appearance: button;
+                cursor: default;
+                box-sizing: border-box;
+                background-color: rgb(239, 239, 239);
+                color: rgb(0, 0, 0);
+                border: 2px solid rgb(118, 118, 118);
+                border-radius: 2px;
+                padding: 2px 6px 3px 6px;
+                font-family: system-ui;
+                font-size: 13.333px;
+                font-weight: normal;
+                font-style: normal;
+                line-height: 1.2;
+                letter-spacing: 0px;
+                word-spacing: 0px;
+                text-transform: none;
+                text-align: center;
+            }
+            
+            /* Details / Summary */
+            details { display: block; }
+            summary { display: block; padding-left: 20px; cursor: pointer; }
+            dialog { display: none; position: absolute; background-color: rgb(255, 255, 255); color: rgb(0, 0, 0); border: 1px solid rgb(0, 0, 0); padding: 20px; }
+            meter { display: inline-block; width: 80px; height: 16px; background-color: rgb(229, 229, 229); border: 1px solid rgb(179, 179, 179); border-radius: 4px; }
+            progress { display: inline-block; width: 160px; height: 16px; background-color: rgba(26, 26, 26, 0.1); border: 1px solid rgba(76, 76, 76, 0.3); border-radius: 8px; }
+            br { display: block; width: 100%; height: 0px; }
+            
+            /* Directional attributes */
+            [dir="rtl"] { direction: rtl; unicode-bidi: isolate; }
+            [dir="ltr"] { direction: ltr; unicode-bidi: isolate; }
+        )CSS");
+        initialized = true;
     }
 
-    // Blink UA: [dir="rtl"] { direction: rtl; unicode-bidi: isolate; }
-    std::string_view dirAttr = selectorAttributeValue(type, "dir");
-    if (!dirAttr.empty()) {
-        if (equalIgnoreCase(dirAttr, "rtl")) {
-            style.direction = Direction::Rtl;
-            style.hasDirection = true;
-            style.unicodeBidi = UnicodeBidi::Isolate;
-            style.hasUnicodeBidi = true;
-        } else if (equalIgnoreCase(dirAttr, "ltr")) {
-            style.direction = Direction::Ltr;
-            style.hasDirection = true;
-            style.unicodeBidi = UnicodeBidi::Isolate;
-            style.hasUnicodeBidi = true;
+    std::vector<size_t> candidateRules;
+    uaSheet.collectCandidateRules("", "", type, candidateRules);
+
+    struct WinningProperty {
+        const CSSProperty* property = nullptr;
+        int specificity = 0;
+        int sourceOrder = 0;
+
+        bool isWorseThan(const WinningProperty& o) const {
+            if (specificity != o.specificity) return specificity < o.specificity;
+            return sourceOrder < o.sourceOrder;
         }
+    };
+
+    std::unordered_map<std::string, WinningProperty> winningProperties;
+
+    for (size_t ruleIndex : candidateRules) {
+        if (ruleIndex >= uaSheet.rules.size()) continue;
+        const auto& rule = uaSheet.rules[ruleIndex];
+        std::string_view pseudo;
+        if (selectorMatches(rule, "", "", type, ancestors, &pseudo, widget)) {
+            for (const auto& prop : rule.properties) {
+                WinningProperty wp{&prop, rule.specificity, (int)prop.sourceOrder};
+                auto it = winningProperties.find(prop.name.getString());
+                if (it == winningProperties.end() || it->second.isWorseThan(wp)) {
+                    winningProperties[prop.name.getString()] = wp;
+                }
+            }
+        }
+    }
+
+    for (const auto& entry : winningProperties) {
+        StyleSheet::mergeProperty(style, entry.first, entry.second.property->value, style.fontSize);
     }
 }
 

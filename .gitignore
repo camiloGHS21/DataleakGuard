@@ -25,3 +25,4 @@ vcpkg/
 .DS_Store
 go.work
 go.work.sum
+go.mod

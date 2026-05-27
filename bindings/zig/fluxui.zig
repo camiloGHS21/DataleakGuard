@@ -367,6 +367,66 @@ pub const Widget = struct {
         return c.fluxui_progress_element_get_value(self.raw);
     }
 
+    pub fn styleWidth(self: Widget, px: f32) void {
+        c.fluxui_style_width_px(self.raw, px);
+    }
+
+    pub fn styleHeight(self: Widget, px: f32) void {
+        c.fluxui_style_height_px(self.raw, px);
+    }
+
+    pub fn styleMinWidth(self: Widget, px: f32) void {
+        c.fluxui_style_min_width_px(self.raw, px);
+    }
+
+    pub fn styleMinHeight(self: Widget, px: f32) void {
+        c.fluxui_style_min_height_px(self.raw, px);
+    }
+
+    pub fn styleMaxWidth(self: Widget, px: f32) void {
+        c.fluxui_style_max_width_px(self.raw, px);
+    }
+
+    pub fn styleMaxHeight(self: Widget, px: f32) void {
+        c.fluxui_style_max_height_px(self.raw, px);
+    }
+
+    pub fn styleFlexGrow(self: Widget, grow: f32) void {
+        c.fluxui_style_flex_grow(self.raw, grow);
+    }
+
+    pub fn styleGap(self: Widget, px: f32) void {
+        c.fluxui_style_gap_px(self.raw, px);
+    }
+
+    pub fn stylePaddingAll(self: Widget, px: f32) void {
+        c.fluxui_style_padding_all_px(self.raw, px);
+    }
+
+    pub fn stylePadding(self: Widget, top: f32, right: f32, bottom: f32, left: f32) void {
+        c.fluxui_style_padding_px(self.raw, top, right, bottom, left);
+    }
+
+    pub fn styleMarginAll(self: Widget, px: f32) void {
+        c.fluxui_style_margin_all_px(self.raw, px);
+    }
+
+    pub fn styleMargin(self: Widget, top: f32, right: f32, bottom: f32, left: f32) void {
+        c.fluxui_style_margin_px(self.raw, top, right, bottom, left);
+    }
+
+    pub fn styleBorderRadius(self: Widget, px: f32) void {
+        c.fluxui_style_border_radius_px(self.raw, px);
+    }
+
+    pub fn styleBackgroundColor(self: Widget, color: Color) void {
+        c.fluxui_style_background_color(self.raw, color);
+    }
+
+    pub fn styleTextColor(self: Widget, color: Color) void {
+        c.fluxui_style_text_color(self.raw, color);
+    }
+
     fn fromRaw(raw: ?*c.FluxUIWidget) Error!Widget {
         if (raw == null) return Error.MissingWidget;
         return .{ .raw = raw };

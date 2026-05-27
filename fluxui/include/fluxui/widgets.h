@@ -920,6 +920,7 @@ public:
     void showModal();
     void close();
     void resolveStyles(const StyleSheet& sheet) override;
+    void layout(const Rect& parentBounds) override;
     void update(const InputState& input) override;
     void render(Renderer& renderer) override;
 };
@@ -1109,7 +1110,9 @@ inline LazyPanel* Widget::lazyPanel(std::function<void()> worker,
     return add<LazyPanel>(std::move(worker), std::move(skeleton), std::move(content));
 }
 inline Panel* Widget::div(const std::string& cls, size_t reserve) {
-    return panel(cls, reserve);
+    auto* widget = panel(cls, reserve);
+    widget->type = "div";
+    return widget;
 }
 inline Panel* Widget::section(const std::string& cls, size_t reserve) {
     auto* widget = panel(cls, reserve);

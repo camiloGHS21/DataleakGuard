@@ -288,11 +288,23 @@ namespace FluxUI {
             renderer.pushTranslation({0.0f, -node_->scrollY});
         }
 
-        // Paint all children recursively via the LayoutObject tree
+        // Paint normal children first, then expanded native selects so their menu
+        // appears above following siblings like a browser control popup.
         for (auto* child : children_) {
             if (child->node() && child->node()->computedStyle->position == Position::Fixed) {
                 continue;
             }
+            if (auto* select = child->node() ? dynamic_cast<Select*>(child->node()) : nullptr) {
+                if (select->expanded) continue;
+            }
+            child->paint(renderer);
+        }
+        for (auto* child : children_) {
+            if (child->node() && child->node()->computedStyle->position == Position::Fixed) {
+                continue;
+            }
+            auto* select = child->node() ? dynamic_cast<Select*>(child->node()) : nullptr;
+            if (!select || !select->expanded) continue;
             child->paint(renderer);
         }
 
@@ -340,8 +352,8 @@ namespace FluxUI {
 
         bounds_.w = res.width;
         bounds_.h = res.height;
-        bounds_.x = res.x != 0.0f ? res.x : node_->bounds.x;
-        bounds_.y = res.y != 0.0f ? res.y : node_->bounds.y;
+        bounds_.x = node_->parent ? (res.x != 0.0f ? res.x : node_->bounds.x) : 0.0f;
+        bounds_.y = node_->parent ? (res.y != 0.0f ? res.y : node_->bounds.y) : 0.0f;
 
         node_->bounds = bounds_;
         node_->contentHeight = res.contentHeight;
@@ -370,8 +382,8 @@ namespace FluxUI {
 
         bounds_.w = res.width;
         bounds_.h = res.height;
-        bounds_.x = res.x != 0.0f ? res.x : node_->bounds.x;
-        bounds_.y = res.y != 0.0f ? res.y : node_->bounds.y;
+        bounds_.x = node_->parent ? (res.x != 0.0f ? res.x : node_->bounds.x) : 0.0f;
+        bounds_.y = node_->parent ? (res.y != 0.0f ? res.y : node_->bounds.y) : 0.0f;
 
         node_->bounds = bounds_;
         node_->contentHeight = res.contentHeight;
@@ -388,13 +400,7 @@ namespace FluxUI {
     void LayoutText::layout(const LayoutConstraints& constraints) {
         if (!node_) return;
 
-        Rect parentBounds;
-        parentBounds.x = bounds_.x;
-        parentBounds.y = bounds_.y;
-        parentBounds.w = constraints.availableWidth;
-        parentBounds.h = constraints.availableHeight;
-
-        node_->layout(parentBounds);
+        (void)constraints;
         bounds_ = node_->bounds;
     }
 

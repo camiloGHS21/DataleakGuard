@@ -281,7 +281,8 @@ private:
     static bool stripImportant(std::string& value);
     static void applyUserAgentDefaults(Style& style,
                                        std::string_view type,
-                                       const std::vector<CSSSelectorNode>& ancestors);
+                                       const std::vector<CSSSelectorNode>& ancestors,
+                                       const Widget* widget = nullptr);
     void collectCandidateRules(std::string_view className,
                                std::string_view id,
                                std::string_view type,

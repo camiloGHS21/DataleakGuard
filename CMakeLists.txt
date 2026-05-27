@@ -430,6 +430,11 @@ add_executable(symbol_resolver
 )
 target_link_libraries(symbol_resolver PRIVATE dbghelp)
 
+add_executable(test_dynamic
+    examples/cpp/test_dynamic.cpp
+)
+
+
 
 
 

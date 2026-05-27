@@ -602,160 +602,183 @@ static void buildSettings(Widget* content) {
     addTableRow(privacy, "table-row", "PII masking", "Enabled", "Reports", "Compliance");
 }
 static void buildBlinkParity(Application& app, Widget* content) {
-    buildTopBar(content, "Blink UI", "Testing native Chromium Blink user-agent element behaviors", false);
-    auto* main = content->add<Panel>("main-scroll");
-    
-    auto* grid = main->panel("blink-showcase-grid", 2);
-    
-    auto* col1 = grid->panel("blink-showcase-column", 2);
-    
-    // Disclosure Widgets
-    auto* cardDetails = col1->panel("blink-section-card", 3);
-    cardDetails->text("Disclosure Widgets (<details> & <summary>)", "blink-section-title");
-    
-    auto* details1 = cardDetails->add<Details>(false);
+    (void)app;
+    buildTopBar(content, "Blink UI", "Scoped native Chromium/Blink element sandbox", false);
+
+    auto* main = content->add<Panel>("main-scroll blink-page-scroll");
+    auto* doc = main->panel("blink-native-doc");
+
+    doc->h1("Blink Native Element Parity");
+    doc->p("This sandbox keeps the DataLeak Guard shell intact while the document below uses scoped browser-like user-agent styles.");
+
+    doc->h2("Block And Inline Containers");
+    auto* blockDiv = doc->div();
+    blockDiv->p("This is a plain <div> block. It should occupy normal block flow without enterprise card styling.");
+    auto* inlineContainers = doc->p("");
+    inlineContainers->add<Text>("Inline flow keeps ");
+    inlineContainers->span("<span> text");
+    inlineContainers->add<Text>(", ");
+    inlineContainers->element("q", "<q> quoted text", "");
+    inlineContainers->add<Text>(", ");
+    inlineContainers->element("abbr", "<abbr>", "");
+    inlineContainers->add<Text>(" and ");
+    inlineContainers->element("time", "<time>", "");
+    inlineContainers->add<Text>(" on one browser-like line.");
+    auto* semanticSection = doc->section();
+    semanticSection->h3("Semantic section");
+    semanticSection->p("Section, article, header, footer, main, nav, and aside share Blink block defaults unless author CSS changes them.");
+
+    doc->h2("Typography");
+    doc->h1("Heading 1 (h1)");
+    doc->h2("Heading 2 (h2)");
+    doc->h3("Heading 3 (h3)");
+    doc->h4("Heading 4 (h4)");
+    doc->h5("Heading 5 (h5)");
+    doc->h6("Heading 6 (h6)");
+    doc->p("This is a standard native HTML paragraph element (<p>) with normal document flow.");
+
+    auto* pStyles = doc->p("");
+    pStyles->strong("Bold text via <strong> ");
+    pStyles->b("or <b> ");
+    pStyles->add<Text>("and ");
+    pStyles->element("i", "italic text via <i> ", "");
+    pStyles->add<Text>("or ");
+    pStyles->element("em", "<em> ", "");
+    pStyles->add<Text>("with ");
+    pStyles->small("smaller annotations via <small>.");
+
+    auto* codeLine = doc->p("");
+    codeLine->add<Text>("Inline code: ");
+    codeLine->code("inlineCodeElement()");
+
+    doc->pre("class CodeBlock {\n    void execute() {\n        std::cout << \"Hello from Blink!\" << std::endl;\n    }\n};");
+
+    doc->h2("Lists");
+    doc->p("Unordered List (ul & li):");
+    auto* uList = doc->ul();
+    uList->li()->text("First unordered list item");
+    uList->li()->text("Second unordered list item with details");
+    uList->li()->text("Third nested option");
+
+    doc->p("Ordered List (ol & li):");
+    auto* oList = doc->ol();
+    oList->li()->text("Primary step in sequence");
+    oList->li()->text("Secondary step in sequence");
+    oList->li()->text("Tertiary final action step");
+
+    doc->h2("Native Form Controls");
+    auto* nativeForm = doc->form("blink-native-form");
+    auto* fsForm = nativeForm->fieldset("blink-native-fieldset");
+    fsForm->legend("Standard Interactive Form Inputs");
+
+    fsForm->label("Text Field (<input type=\"text\">):");
+    fsForm->input("text", "Enter alphanumeric value...", "");
+    fsForm->br();
+
+    fsForm->label("Password Field (<input type=\"password\">):");
+    fsForm->input("password", "Enter secure key...", "");
+    fsForm->br();
+
+    fsForm->label("Search Field (<input type=\"search\">):");
+    fsForm->input("search", "Search Blink defaults...", "");
+    fsForm->br();
+
+    fsForm->label("Number Field (<input type=\"number\">):");
+    fsForm->input("number", "42", "");
+    fsForm->br();
+
+    fsForm->label("Textarea (<textarea>):");
+    fsForm->textarea("Multiline native text area...", "");
+    fsForm->br();
+
+    fsForm->label("Color Picker (<input type=\"color\">):");
+    auto* colorInput = fsForm->input("color", "", "");
+    colorInput->value = "#00ffaa";
+    fsForm->br();
+
+    fsForm->label("File Picker (<input type=\"file\">):");
+    fsForm->input("file", "Choose File", "");
+    fsForm->br();
+
+    fsForm->label("Checkboxes (<input type=\"checkbox\">):");
+    auto* chkRow1 = fsForm->panel("blink-native-line");
+    chkRow1->checkbox(true, "");
+    chkRow1->label(" Option A (Checked by default)", "");
+    auto* chkRow2 = fsForm->panel("blink-native-line");
+    chkRow2->checkbox(false, "");
+    chkRow2->label(" Option B (Unchecked by default)", "");
+
+    fsForm->label("Radio Group (<input type=\"radio\">):");
+    auto* radRow1 = fsForm->panel("blink-native-line");
+    radRow1->radio(true, "native-radio-group", "");
+    radRow1->label(" Radio Option 1 (Selected)", "");
+    auto* radRow2 = fsForm->panel("blink-native-line");
+    radRow2->radio(false, "native-radio-group", "");
+    radRow2->label(" Radio Option 2 (Unselected)", "");
+
+    fsForm->label("Range Slider (<input type=\"range\">):");
+    fsForm->range(0.6f, 0.0f, 1.0f, 0.01f, "");
+    fsForm->br();
+
+    fsForm->label("Dropdown Menu (<select> & <option>):");
+    auto* dSelect = fsForm->select("");
+    dSelect->option("Chromium Blink Engine Layout", "blink");
+    dSelect->option("FluxUI Layout Engine Core", "fluxui");
+    dSelect->option("Skia High-Perf Compositor", "skia");
+    fsForm->br();
+
+    fsForm->label("Standard Form Buttons (<button>):");
+    auto* buttonLine = fsForm->panel("blink-native-line");
+    buttonLine->button("Submit", "");
+    buttonLine->button("Reset", "");
+
+    doc->h2("Progress And Meters");
+    doc->p("Determinate progress (65%):");
+    doc->progressElement(0.65f, 1.0f, "");
+    doc->p("Indeterminate progress:");
+    doc->progressElement(-1.0f, 1.0f, "");
+    doc->p("Optimal meter:");
+    auto* meterA = doc->meter(0.6f, 0.0f, 1.0f, "");
+    meterA->low = 0.1f;
+    meterA->high = 0.9f;
+    meterA->optimum = 0.5f;
+    doc->p("Warning meter:");
+    auto* meterB = doc->meter(0.7f, 0.0f, 1.0f, "");
+    meterB->low = 0.3f;
+    meterB->high = 0.9f;
+    meterB->optimum = 0.1f;
+
+    doc->h2("Disclosure, Links, Rules, And Breaks");
+    auto* details1 = doc->details("");
     details1->summary("Technical Specifications");
-    details1->text("This widget operates in high fidelity parity with Chrome's native Blink engine disclosure element. Expanding this item triggers a dynamic layout pass where child nodes are set to visible/invisible.");
-    
-    auto* details2 = cardDetails->add<Details>(true);
-    details2->summary("Enforcement Engine Architecture");
-    details2->text("The engine intercepts file modification and memory allocation streams on target endpoints. Real-time classification models verify standard compliance parameters.");
-    
-    // Hyperlinks
-    auto* cardLinks = col1->panel("blink-section-card", 6);
-    cardLinks->text("Hyperlinks (<a> Anchor)", "blink-section-title");
-    cardLinks->a("Go to Chromium Blink Engine Source", "https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/");
-    cardLinks->br();
-    cardLinks->a("Go to FluxUI Documentation Portal", "https://github.com/camiloGHS21/FluxUI");
-    cardLinks->br();
-    cardLinks->a("Go to Google DeepMind Official Site", "https://deepmind.google");
+    details1->p("Expanding this item triggers the same layout path as the native details/summary control.");
+    auto* details2 = doc->add<Details>(true);
+    details2->summary("Open Details By Default");
+    details2->p("This block starts open and should reserve document height without overlapping the next section.");
+    doc->p("Anchor links:");
+    doc->a("Chromium Blink Source", "https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/", "");
+    doc->br();
+    doc->a("FluxUI Documentation Portal", "https://github.com/camiloGHS21/FluxUI", "");
+    doc->p("Line 1 above break");
+    doc->br();
+    doc->p("Line 2 below break");
+    doc->hr();
+    doc->p("Content below the horizontal divider rule.");
 
-    // Progress Bars
-    auto* cardProgress = col1->panel("blink-section-card", 5);
-    cardProgress->text("Progress Bars (<progress>)", "blink-section-title");
-    
-    cardProgress->text("Determinate (65%):", "page-subtitle");
-    cardProgress->progressElement(0.65f, 1.0f, "progress");
-
-    cardProgress->text("Indeterminate (Animated):", "page-subtitle");
-    cardProgress->progressElement(-1.0f, 1.0f, "progress");
-
-    auto* col2 = grid->panel("blink-showcase-column", 5);
-    
-    // Progress Meters
-    auto* cardMeters = col2->panel("blink-section-card", 7);
-    cardMeters->text("Progress Meters (<meter>)", "blink-section-title");
-    
-    cardMeters->text("Optimal Range (Green):", "page-subtitle");
-    auto* m1 = cardMeters->meter(0.6f, 0.0f, 1.0f, "meter");
-    m1->low = 0.1f;
-    m1->high = 0.9f;
-    m1->optimum = 0.5f;
-
-    cardMeters->text("Sub-optimal Warning (Yellow):", "page-subtitle");
-    auto* m2 = cardMeters->meter(0.7f, 0.0f, 1.0f, "meter");
-    m2->low = 0.3f;
-    m2->high = 0.9f;
-    m2->optimum = 0.1f;
-
-    cardMeters->text("Out-of-bounds Alert (Red):", "page-subtitle");
-    auto* m3 = cardMeters->meter(0.15f, 0.0f, 1.0f, "meter");
-    m3->low = 0.3f;
-    m3->high = 0.8f;
-    m3->optimum = 0.5f;
-
-    // Horizontal Rules & Breaks
-    auto* cardSeparators = col2->panel("blink-section-card", 5);
-    cardSeparators->text("Horizontal Rules & Breaks (<hr> & <br>)", "blink-section-title");
-    cardSeparators->text("Line 1 above break", "page-subtitle");
-    cardSeparators->br();
-    cardSeparators->text("Line 2 below break", "page-subtitle");
-    cardSeparators->hr();
-    cardSeparators->text("Content below horizontal divider rule", "page-subtitle");
-
-    // Dialog Box Trigger Card
-    auto* cardDialog = col2->panel("blink-section-card", 3);
-    cardDialog->text("Overlay Dialogs (<dialog>)", "blink-section-title");
-    cardDialog->text("Click the button below to display a modal dialog overlay styled with custom positions, borders, and shadows.", "page-subtitle");
-    
-    // Dialog modal widget
-    auto* dl = main->dialog("dialog");
-    dl->text("System Access Requested", "dialog-title");
-    dl->text("An external process is attempting to load system assets for rendering evaluation. Confirm authorization to proceed.", "dialog-text");
-    
-    auto* dialogButtons = dl->panel("posture-pills", 2);
-    addButton(dialogButtons, "Authorize", "shield", "btn btn-primary btn-small", [dl]() {
-        std::cout << "[Blink UI] Dialog Authorized" << std::endl;
-        dl->close();
-    });
-    addButton(dialogButtons, "Decline", "alert", "btn btn-danger btn-small", [dl]() {
-        std::cout << "[Blink UI] Dialog Declined" << std::endl;
-        dl->close();
-    });
-
-    addButton(cardDialog, "Show Dialog", "alert", "btn btn-primary", [dl]() {
-        std::cout << "[Blink UI] Showing Modal Dialog" << std::endl;
-        dl->showModal();
-    });
-
-    // Backdrop Filters Glassmorphism Card
-    auto* cardGlass = col2->panel("blink-section-card", 2);
-    cardGlass->text("Backdrop Filters (Glassmorphism)", "blink-section-title");
-    auto* glassContainer = cardGlass->panel("glass-container", 1);
-    auto* glassOverlay = glassContainer->panel("glass-overlay", 2);
-    glassOverlay->text("Frosted Glass Effect", "glass-title");
-    glassOverlay->text("Blink visual filter rendering in high-fidelity on C++.", "glass-text");
-
-    // Resize Observer Card (Blink Parity)
-    auto* cardResize = col2->panel("blink-section-card", 4);
-    cardResize->text("Resize Observer (<ResizeObserver>)", "blink-section-title");
-    cardResize->text("Observed Container Query box. Toggle size to trigger observer updates.", "page-subtitle");
-
-    auto* observedBox = cardResize->panel("posture-card", 2);
-    observedBox->css("width: 260px; height: 110px; display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background-color: rgba(237,243,248,0.03); border-radius: 6px;");
-
-    auto* statusText = observedBox->text("Narrow Layout", "pill-text");
-    statusText->classes("reactive-badge pill-warning pill-text");
-    auto* sizeText = observedBox->text("Size: 260px x 110px", "page-subtitle");
-
-    // Static/persisted ResizeObserver so it stays alive throughout the app lifecycle
-    static ResizeObserver* ro = nullptr;
-    if (ro) {
-        delete ro;
-    }
-    ro = new ResizeObserver([statusText, sizeText](const std::vector<ResizeObserverEntry>& entries, ResizeObserver&) {
-        for (const auto& entry : entries) {
-            float w = entry.contentRect.w;
-            float h = entry.contentRect.h;
-            
-            char buf[128];
-            sprintf(buf, "Size: %.0fpx x %.0fpx", w, h);
-            sizeText->content = buf;
-            sizeText->markStyleDirty();
-
-            if (w > 350.0f) {
-                statusText->content = "Wide Layout Badge (Reactive)";
-                statusText->classes("reactive-badge pill-ok pill-text");
-            } else {
-                statusText->content = "Narrow Layout Badge (Reactive)";
-                statusText->classes("reactive-badge pill-warning pill-text");
-            }
-            statusText->markStyleDirty();
-        }
-    });
-
-    ro->observe(observedBox);
-
-
-    addButton(cardResize, "Toggle Size (Resize)", "expand", "btn btn-secondary btn-full", [observedBox, isExpanded = false]() mutable {
-        isExpanded = !isExpanded;
-        if (isExpanded) {
-            observedBox->css("width: 400px; flex-shrink: 0; height: 110px; display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background-color: rgba(200,50,50,0.2); border-radius: 6px;");
-        } else {
-            observedBox->css("width: 260px; flex-shrink: 0; height: 110px; display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; border: 1px solid rgba(255,255,255,0.15); background-color: rgba(50,200,50,0.2); border-radius: 6px;");
-        }
-    });
+    doc->h2("Dialog");
+    doc->p("Click the button below to display a native dialog-style overlay.");
+    auto* nativeDialog = doc->dialog("");
+    nativeDialog->p("Native dialog content rendered inside the Blink sandbox.");
+    auto* closeDialog = nativeDialog->button("Close", "");
+    closeDialog->onClick = [nativeDialog]() {
+        nativeDialog->close();
+    };
+    auto* showDialog = doc->button("Show Dialog", "");
+    showDialog->onClick = [nativeDialog]() {
+        nativeDialog->showModal();
+    };
 }
+
 static void runKeymapBenchmark(Application& app) {
     std::cout << "\n==================================================" << std::endl;
     std::cout << "         FLUXUI KEYMAP BUBBLING BENCHMARK" << std::endl;
@@ -861,7 +884,7 @@ static void runStyleResolutionBenchmark(Application& app) {
         Panel* panel = current->add<Panel>("sidebar");
         panel->id = "panel_" + std::to_string(i);
         allWidgets.push_back(panel);
-        
+
         Text* txt = panel->add<Text>("Item " + std::to_string(i), "content");
         txt->id = "text_" + std::to_string(i);
         allWidgets.push_back(txt);
@@ -908,7 +931,7 @@ static void runStyleResolutionBenchmark(Application& app) {
             }
             // Force complete style dirtying
             root->markStyleDirtyRecursive();
-            
+
             // Resolve styles recursively
             root->resolveStyles(sheet);
         }
@@ -939,7 +962,7 @@ static void runStyleResolutionBenchmark(Application& app) {
     log_print("Total time: " + std::to_string(durationMs) + " ms for " + std::to_string(iterations) + " iterations");
     log_print("Average latency per full tree style resolution: " + std::to_string(avgUsPerFrame) + " microseconds");
     log_print("Average latency per single widget style resolution: " + std::to_string(avgUsPerWidget) + " microseconds");
-    
+
     // Quick sanity checks
     bool correctness = true;
     for (Widget* w : allWidgets) {
@@ -959,7 +982,7 @@ static void runStyleResolutionBenchmark(Application& app) {
         }
     }
     log_print("Correctness verification: " + std::string(correctness ? "PASS" : "FAIL"));
-    
+
     if (avgUsPerWidget < 1.0) {
         log_print("STATUS: PASS (Sub-microsecond style resolution: " + std::to_string(avgUsPerWidget) + " us < 1.0 us)");
     } else {
@@ -974,7 +997,7 @@ static void validateStyleInvalidationSets(Application& app) {
     std::cout << "==================================================" << std::endl;
 
     StyleSheet oldSheet = app.stylesheet();
-    
+
     StyleSheet sheet;
     sheet.parse(R"(
         .container .descendant { color: red; }
@@ -996,7 +1019,7 @@ static void validateStyleInvalidationSets(Application& app) {
     Widget* child1 = root->add<Widget>();
     child1->id = "child-1";
     child1->className = "child";
-    
+
     Widget* child2 = root->add<Widget>();
     child2->id = "child-2";
     child2->className = "not-a-child";
@@ -1047,7 +1070,7 @@ static void validateStyleInvalidationSets(Application& app) {
     resetAllFlags();
     std::cout << "[Test 1] Modifying simple button class name..." << std::endl;
     btn->invalidateStyleOnClassListChange("simple-btn", "simple-btn active-state");
-    
+
     bool t1_ok = btn->styleDirty;
     bool t1_clean = !child1->styleDirty && !child2->styleDirty && !desc1->styleDirty && !desc2->styleDirty && !active->styleDirty && !adj->styleDirty && !sib->styleDirty;
     std::cout << "  - Button marked dirty: " << (t1_ok ? "PASS" : "FAIL") << std::endl;
@@ -1088,7 +1111,7 @@ static void validateStyleInvalidationSets(Application& app) {
     bool overall_pass = t1_ok && t1_clean && t2_root_ok && t2_child1_ok && t2_child2_ok && t2_desc1_ok && t2_desc2_ok && t3_active_ok && t3_adj_ok && t3_sib_ok && t3_desc_clean;
     std::cout << "STYLE INVALIDATION SET VERIFICATION: " << (overall_pass ? "PASS" : "FAIL") << std::endl;
     std::cout << "==================================================" << std::endl;
-    
+
     app.stylesheet() = oldSheet;
 }
 

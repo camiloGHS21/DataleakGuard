@@ -4138,9 +4138,9 @@ bool Renderer::beginVulkanFrame(int w, int h) {
     }
 
     VkClearValue clearValue = {};
-    clearValue.color.float32[0] = 0.06f;
-    clearValue.color.float32[1] = 0.06f;
-    clearValue.color.float32[2] = 0.09f;
+    clearValue.color.float32[0] = 1.0f;
+    clearValue.color.float32[1] = 1.0f;
+    clearValue.color.float32[2] = 1.0f;
     clearValue.color.float32[3] = 1.0f;
 
     VkRenderPassBeginInfo renderPassInfo = {};
@@ -4278,7 +4278,7 @@ void Renderer::beginSoftwareFrame(int w, int h) {
     }
 
     std::fill(softwarePixels_.begin(), softwarePixels_.end(),
-              softwarePackOpaque(Color(0.06f, 0.06f, 0.09f, 1.0f)));
+              softwarePackOpaque(Color(1.0f, 1.0f, 1.0f, 1.0f)));
     scissorStack_.clear();
     rectBatch_.clear();
     batchValid_ = false;
@@ -5378,7 +5378,7 @@ void Renderer::beginFrame(int w, int h) {
         dpiScale_ = (w > 0) ? (float)drawW / (float)w : 1.0f;
     }
     glViewport(0, 0, drawW, drawH);
-    glClearColor(0.06f, 0.06f, 0.09f, 1.0f);
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     scissorStack_.clear();
     activeShader_ = 0;

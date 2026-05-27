@@ -34,6 +34,29 @@ var (
 	fluxui_widget_add_select          = fluxui_dll.NewProc("fluxui_widget_add_select")
 	fluxui_widget_add_option          = fluxui_dll.NewProc("fluxui_widget_add_option")
 
+	fluxui_widget_add_element         = fluxui_dll.NewProc("fluxui_widget_add_element")
+	fluxui_widget_add_form            = fluxui_dll.NewProc("fluxui_widget_add_form")
+	fluxui_widget_add_fieldset        = fluxui_dll.NewProc("fluxui_widget_add_fieldset")
+	fluxui_widget_add_label           = fluxui_dll.NewProc("fluxui_widget_add_label")
+	fluxui_widget_add_legend          = fluxui_dll.NewProc("fluxui_widget_add_legend")
+	fluxui_widget_add_input           = fluxui_dll.NewProc("fluxui_widget_add_input")
+	fluxui_widget_add_password_input  = fluxui_dll.NewProc("fluxui_widget_add_password_input")
+	fluxui_widget_add_textarea        = fluxui_dll.NewProc("fluxui_widget_add_textarea")
+	fluxui_widget_add_checkbox        = fluxui_dll.NewProc("fluxui_widget_add_checkbox")
+	fluxui_widget_add_radio           = fluxui_dll.NewProc("fluxui_widget_add_radio")
+	fluxui_widget_add_range           = fluxui_dll.NewProc("fluxui_widget_add_range")
+	fluxui_widget_add_anchor          = fluxui_dll.NewProc("fluxui_widget_add_anchor")
+	fluxui_widget_add_details         = fluxui_dll.NewProc("fluxui_widget_add_details")
+	fluxui_widget_add_summary         = fluxui_dll.NewProc("fluxui_widget_add_summary")
+	fluxui_widget_add_dialog          = fluxui_dll.NewProc("fluxui_widget_add_dialog")
+	fluxui_widget_add_meter           = fluxui_dll.NewProc("fluxui_widget_add_meter")
+	fluxui_widget_add_progress_element = fluxui_dll.NewProc("fluxui_widget_add_progress_element")
+	fluxui_widget_add_hr              = fluxui_dll.NewProc("fluxui_widget_add_hr")
+	fluxui_widget_add_br              = fluxui_dll.NewProc("fluxui_widget_add_br")
+	fluxui_widget_add_icon            = fluxui_dll.NewProc("fluxui_widget_add_icon")
+	fluxui_widget_add_progress_bar    = fluxui_dll.NewProc("fluxui_widget_add_progress_bar")
+	fluxui_widget_add_stat_card       = fluxui_dll.NewProc("fluxui_widget_add_stat_card")
+
 	fluxui_text_set_content           = fluxui_dll.NewProc("fluxui_text_set_content")
 	fluxui_button_set_label           = fluxui_dll.NewProc("fluxui_button_set_label")
 	fluxui_text_input_set_value       = fluxui_dll.NewProc("fluxui_text_input_set_value")
@@ -41,6 +64,27 @@ var (
 	fluxui_text_input_set_placeholder = fluxui_dll.NewProc("fluxui_text_input_set_placeholder")
 	fluxui_select_set_selected_index  = fluxui_dll.NewProc("fluxui_select_set_selected_index")
 	fluxui_select_get_selected_index  = fluxui_dll.NewProc("fluxui_select_get_selected_index")
+
+	fluxui_text_input_set_type        = fluxui_dll.NewProc("fluxui_text_input_set_type")
+	fluxui_checkbox_set_checked       = fluxui_dll.NewProc("fluxui_checkbox_set_checked")
+	fluxui_checkbox_get_checked       = fluxui_dll.NewProc("fluxui_checkbox_get_checked")
+	fluxui_radio_set_checked          = fluxui_dll.NewProc("fluxui_radio_set_checked")
+	fluxui_radio_get_checked          = fluxui_dll.NewProc("fluxui_radio_get_checked")
+	fluxui_range_set_value            = fluxui_dll.NewProc("fluxui_range_set_value")
+	fluxui_range_get_value            = fluxui_dll.NewProc("fluxui_range_get_value")
+	fluxui_details_set_open           = fluxui_dll.NewProc("fluxui_details_set_open")
+	fluxui_details_get_open           = fluxui_dll.NewProc("fluxui_details_get_open")
+	fluxui_dialog_show                = fluxui_dll.NewProc("fluxui_dialog_show")
+	fluxui_dialog_show_modal          = fluxui_dll.NewProc("fluxui_dialog_show_modal")
+	fluxui_dialog_close               = fluxui_dll.NewProc("fluxui_dialog_close")
+	fluxui_dialog_get_open            = fluxui_dll.NewProc("fluxui_dialog_get_open")
+	fluxui_meter_set_value            = fluxui_dll.NewProc("fluxui_meter_set_value")
+	fluxui_meter_get_value            = fluxui_dll.NewProc("fluxui_meter_get_value")
+	fluxui_progress_element_set_value = fluxui_dll.NewProc("fluxui_progress_element_set_value")
+	fluxui_progress_element_get_value = fluxui_dll.NewProc("fluxui_progress_element_get_value")
+	fluxui_icon_set_glyph             = fluxui_dll.NewProc("fluxui_icon_set_glyph")
+	fluxui_progress_bar_set_value     = fluxui_dll.NewProc("fluxui_progress_bar_set_value")
+	fluxui_progress_bar_set_color     = fluxui_dll.NewProc("fluxui_progress_bar_set_color")
 
 	fluxui_canvas_set_on_draw         = fluxui_dll.NewProc("fluxui_canvas_set_on_draw")
 	fluxui_draw_rect                  = fluxui_dll.NewProc("fluxui_draw_rect")
@@ -331,6 +375,362 @@ func (w *Widget) AddOption(label, value, className string) *Widget {
 	return &Widget{handle: r1}
 }
 
+func (w *Widget) AddElement(tagName, text, className string) *Widget {
+	cTag, err := syscall.BytePtrFromString(tagName)
+	if err != nil {
+		return nil
+	}
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_element.Call(w.handle, uintptr(unsafe.Pointer(cTag)), uintptr(unsafe.Pointer(cText)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddForm(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_form.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddFieldset(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_fieldset.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddLabel(text, className string) *Widget {
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_label.Call(w.handle, uintptr(unsafe.Pointer(cText)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddLegend(text, className string) *Widget {
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_legend.Call(w.handle, uintptr(unsafe.Pointer(cText)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddInput(inputType, placeholder, className string) *Widget {
+	cType, err := syscall.BytePtrFromString(inputType)
+	if err != nil {
+		return nil
+	}
+	cPlaceholder, err := syscall.BytePtrFromString(placeholder)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_input.Call(w.handle, uintptr(unsafe.Pointer(cType)), uintptr(unsafe.Pointer(cPlaceholder)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddPasswordInput(placeholder, className string) *Widget {
+	cPlaceholder, err := syscall.BytePtrFromString(placeholder)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_password_input.Call(w.handle, uintptr(unsafe.Pointer(cPlaceholder)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddTextarea(placeholder, className string) *Widget {
+	cPlaceholder, err := syscall.BytePtrFromString(placeholder)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_textarea.Call(w.handle, uintptr(unsafe.Pointer(cPlaceholder)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddCheckbox(checked bool, className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	chk := 0
+	if checked {
+		chk = 1
+	}
+	r1, _, _ := fluxui_widget_add_checkbox.Call(w.handle, uintptr(chk), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddRadio(checked bool, group, className string) *Widget {
+	cGroup, err := syscall.BytePtrFromString(group)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	chk := 0
+	if checked {
+		chk = 1
+	}
+	r1, _, _ := fluxui_widget_add_radio.Call(w.handle, uintptr(chk), uintptr(unsafe.Pointer(cGroup)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddRange(value, min, max, step float32, className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_range.Call(
+		w.handle,
+		uintptr(math.Float32bits(value)),
+		uintptr(math.Float32bits(min)),
+		uintptr(math.Float32bits(max)),
+		uintptr(math.Float32bits(step)),
+		uintptr(unsafe.Pointer(cClass)),
+	)
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddAnchor(text, href, className string) *Widget {
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return nil
+	}
+	cHref, err := syscall.BytePtrFromString(href)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_anchor.Call(w.handle, uintptr(unsafe.Pointer(cText)), uintptr(unsafe.Pointer(cHref)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddDetails(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_details.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddSummary(text, className string) *Widget {
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_summary.Call(w.handle, uintptr(unsafe.Pointer(cText)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddDialog(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_dialog.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddMeter(value, min, max float32, className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_meter.Call(
+		w.handle,
+		uintptr(math.Float32bits(value)),
+		uintptr(math.Float32bits(min)),
+		uintptr(math.Float32bits(max)),
+		uintptr(unsafe.Pointer(cClass)),
+	)
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddProgressElement(value, max float32, className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_progress_element.Call(
+		w.handle,
+		uintptr(math.Float32bits(value)),
+		uintptr(math.Float32bits(max)),
+		uintptr(unsafe.Pointer(cClass)),
+	)
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddHr(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_hr.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddBr(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_br.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddIcon(glyph, className string) *Widget {
+	cGlyph, err := syscall.BytePtrFromString(glyph)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_icon.Call(w.handle, uintptr(unsafe.Pointer(cGlyph)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddProgressBar(className string, progress float32) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_progress_bar.Call(w.handle, uintptr(unsafe.Pointer(cClass)), uintptr(math.Float32bits(progress)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddStatCard(title, value, subtitle string, accent Color) *Widget {
+	cTitle, err := syscall.BytePtrFromString(title)
+	if err != nil {
+		return nil
+	}
+	cValue, err := syscall.BytePtrFromString(value)
+	if err != nil {
+		return nil
+	}
+	cSubtitle, err := syscall.BytePtrFromString(subtitle)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_stat_card.Call(
+		w.handle,
+		uintptr(unsafe.Pointer(cTitle)),
+		uintptr(unsafe.Pointer(cValue)),
+		uintptr(unsafe.Pointer(cSubtitle)),
+		uintptr(unsafe.Pointer(&accent)),
+	)
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
 func (w *Widget) SetContent(text string) {
 	cText, err := syscall.BytePtrFromString(text)
 	if err != nil {
@@ -375,6 +775,113 @@ func (w *Widget) SetSelectIndex(index uint32) {
 func (w *Widget) GetSelectIndex() uint32 {
 	r1, _, _ := fluxui_select_get_selected_index.Call(w.handle)
 	return uint32(r1)
+}
+
+func (w *Widget) SetInputType(inputType string) {
+	cType, err := syscall.BytePtrFromString(inputType)
+	if err != nil {
+		return
+	}
+	fluxui_text_input_set_type.Call(w.handle, uintptr(unsafe.Pointer(cType)))
+}
+
+func (w *Widget) SetCheckboxChecked(checked bool) {
+	val := 0
+	if checked {
+		val = 1
+	}
+	fluxui_checkbox_set_checked.Call(w.handle, uintptr(val))
+}
+
+func (w *Widget) GetCheckboxChecked() bool {
+	r1, _, _ := fluxui_checkbox_get_checked.Call(w.handle)
+	return r1 != 0
+}
+
+func (w *Widget) SetRadioChecked(checked bool) {
+	val := 0
+	if checked {
+		val = 1
+	}
+	fluxui_radio_set_checked.Call(w.handle, uintptr(val))
+}
+
+func (w *Widget) GetRadioChecked() bool {
+	r1, _, _ := fluxui_radio_get_checked.Call(w.handle)
+	return r1 != 0
+}
+
+func (w *Widget) SetRangeValue(val float32) {
+	fluxui_range_set_value.Call(w.handle, uintptr(math.Float32bits(val)))
+}
+
+func (w *Widget) GetRangeValue() float32 {
+	r1, _, _ := fluxui_range_get_value.Call(w.handle)
+	return math.Float32frombits(uint32(r1))
+}
+
+func (w *Widget) SetDetailsOpen(open bool) {
+	val := 0
+	if open {
+		val = 1
+	}
+	fluxui_details_set_open.Call(w.handle, uintptr(val))
+}
+
+func (w *Widget) GetDetailsOpen() bool {
+	r1, _, _ := fluxui_details_get_open.Call(w.handle)
+	return r1 != 0
+}
+
+func (w *Widget) DialogShow() {
+	fluxui_dialog_show.Call(w.handle)
+}
+
+func (w *Widget) DialogShowModal() {
+	fluxui_dialog_show_modal.Call(w.handle)
+}
+
+func (w *Widget) DialogClose() {
+	fluxui_dialog_close.Call(w.handle)
+}
+
+func (w *Widget) DialogGetOpen() bool {
+	r1, _, _ := fluxui_dialog_get_open.Call(w.handle)
+	return r1 != 0
+}
+
+func (w *Widget) SetMeterValue(val float32) {
+	fluxui_meter_set_value.Call(w.handle, uintptr(math.Float32bits(val)))
+}
+
+func (w *Widget) GetMeterValue() float32 {
+	r1, _, _ := fluxui_meter_get_value.Call(w.handle)
+	return math.Float32frombits(uint32(r1))
+}
+
+func (w *Widget) SetProgressValue(val float32) {
+	fluxui_progress_element_set_value.Call(w.handle, uintptr(math.Float32bits(val)))
+}
+
+func (w *Widget) GetProgressValue() float32 {
+	r1, _, _ := fluxui_progress_element_get_value.Call(w.handle)
+	return math.Float32frombits(uint32(r1))
+}
+
+func (w *Widget) SetIconGlyph(glyph string) {
+	cGlyph, err := syscall.BytePtrFromString(glyph)
+	if err != nil {
+		return
+	}
+	fluxui_icon_set_glyph.Call(w.handle, uintptr(unsafe.Pointer(cGlyph)))
+}
+
+func (w *Widget) SetProgressBarValue(val float32) {
+	fluxui_progress_bar_set_value.Call(w.handle, uintptr(math.Float32bits(val)))
+}
+
+func (w *Widget) SetProgressBarColor(accent Color) {
+	fluxui_progress_bar_set_color.Call(w.handle, uintptr(unsafe.Pointer(&accent)))
 }
 
 func (w *Widget) SetID(id string) {

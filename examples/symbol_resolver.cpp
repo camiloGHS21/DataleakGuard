@@ -25,7 +25,7 @@ int main() {
 
     
     // Address to resolve
-    DWORD64 targetAddr = baseAddr + 0xa85f4;
+    DWORD64 targetAddr = baseAddr + 0xa32b5;
     
     // Resolve symbol name
     char symbolBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
