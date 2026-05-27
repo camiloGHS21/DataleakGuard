@@ -23,3 +23,5 @@ vcpkg/
 # Misc
 *.log
 .DS_Store
+go.work
+go.work.sum

@@ -229,6 +229,19 @@ void fluxui_app_set_update_callback(FluxUIApp* app,
     };
 }
 
+void fluxui_app_set_update_callback_go(FluxUIApp* app,
+                                       void (*callback)(FluxUIApp* app, uint32_t delta_time_bits, void* user_data),
+                                       void* user_data) {
+    if (!app) return;
+    app->app.onUpdate = [app, callback, user_data](float deltaTime) {
+        if (callback) {
+            union { float f; uint32_t i; } u;
+            u.f = deltaTime;
+            callback(app, u.i, user_data);
+        }
+    };
+}
+
 FluxUIWidget* fluxui_app_root(FluxUIApp* app) {
     if (!app || !app->initialized || app->shutdown) return nullptr;
     return as_c_widget(app->app.root());

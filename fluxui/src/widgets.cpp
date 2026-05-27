@@ -1721,9 +1721,8 @@ void Widget::resolveStyles(const StyleSheet& sheet) {
         }
 
         if (styleDirty) {
-            auto getAncestors = [this]() -> const std::vector<CSSSelectorNode>& {
-                thread_local std::vector<CSSSelectorNode> t_ancestors;
-                t_ancestors.clear();
+            auto getAncestors = [this]() -> std::vector<CSSSelectorNode> {
+                std::vector<CSSSelectorNode> t_ancestors;
                 size_t ancestorCount = 0;
                 for (Widget* node = parent; node; node = node->parent) {
                     ++ancestorCount;

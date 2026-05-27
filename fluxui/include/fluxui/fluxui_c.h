@@ -122,6 +122,9 @@ FLUXUI_API void fluxui_app_release_font_sources(FluxUIApp* app);
 FLUXUI_API void fluxui_app_set_update_callback(FluxUIApp* app,
                                                FluxUIUpdateCallback callback,
                                                void* user_data);
+FLUXUI_API void fluxui_app_set_update_callback_go(FluxUIApp* app,
+                                                  void (*callback)(FluxUIApp* app, uint32_t delta_time_bits, void* user_data),
+                                                  void* user_data);
 FLUXUI_API FluxUIWidget* fluxui_app_root(FluxUIApp* app);
 FLUXUI_API uint64_t fluxui_app_on_event(FluxUIApp* app,
                                         FluxUIEventType type,

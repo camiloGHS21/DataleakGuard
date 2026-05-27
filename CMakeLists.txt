@@ -422,6 +422,16 @@ target_include_directories(minimal_example PRIVATE
 )
 enable_release_lto(minimal_example)
 
+# ============================================================
+#  Temporary Symbol Resolver
+# ============================================================
+add_executable(symbol_resolver
+    examples/symbol_resolver.cpp
+)
+target_link_libraries(symbol_resolver PRIVATE dbghelp)
+
+
+
 
 
 

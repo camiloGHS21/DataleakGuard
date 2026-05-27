@@ -1855,17 +1855,11 @@ Style StyleSheet::resolve(std::string_view className,
         }
     };
 
-    thread_local CascadeMap baseMap;
-    thread_local CascadeMap hoverMap;
-    thread_local CascadeMap focusMap;
-    thread_local CascadeMap activeMap;
-    thread_local std::vector<size_t> candidateRules;
-
-    baseMap.clear();
-    hoverMap.clear();
-    focusMap.clear();
-    activeMap.clear();
-    candidateRules.clear();
+    CascadeMap baseMap;
+    CascadeMap hoverMap;
+    CascadeMap focusMap;
+    CascadeMap activeMap;
+    std::vector<size_t> candidateRules;
 
     collectCandidateRules(className, id, type, candidateRules);
 
@@ -2026,15 +2020,7 @@ void StyleSheet::collectCandidateRules(std::string_view className,
                                        std::vector<size_t>& out) const {
     out.clear();
     
-    // Optimize sorting and deduplication using a thread-local flag array.
-    // Since rule indices are naturally sorted as they are parsed, setting flags
-    // and scanning sequentially guarantees ascending order in linear O(N) time with no heap allocations.
-    thread_local std::vector<uint8_t> flagArray;
-    if (flagArray.size() < rules.size()) {
-        flagArray.resize(rules.size(), 0);
-    } else {
-        std::fill(flagArray.begin(), flagArray.end(), 0);
-    }
+    std::vector<uint8_t> flagArray(rules.size(), 0);
 
     size_t minIdx = rules.size();
     size_t maxIdx = 0;
@@ -2056,24 +2042,21 @@ void StyleSheet::collectCandidateRules(std::string_view className,
     markRules(universalRuleIndex_);
 
     if (!id.empty()) {
-        thread_local std::string idKey;
-        idKey.assign(id.data(), id.size());
+        std::string idKey(id);
         auto it = idRuleIndex_.find(idKey);
         if (it != idRuleIndex_.end()) markRules(it->second);
     }
 
-    thread_local std::vector<std::string_view> classes;
-    classes.clear();
+    std::vector<std::string_view> classes;
     appendClassTokens(className, classes);
     for (const auto& cls : classes) {
-        thread_local std::string clsKey;
-        clsKey.assign(cls.data(), cls.size());
+        std::string clsKey(cls);
         auto it = classRuleIndex_.find(clsKey);
         if (it != classRuleIndex_.end()) markRules(it->second);
     }
 
     if (!type.empty()) {
-        thread_local std::string typeKey;
+        std::string typeKey;
         std::string_view baseType = selectorBaseType(type);
         typeKey.resize(baseType.size());
         for (size_t i = 0; i < baseType.size(); ++i) {

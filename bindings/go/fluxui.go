@@ -10,20 +10,81 @@ import (
 var (
 	fluxui_dll = syscall.NewLazyDLL("fluxui_shared.dll")
 
-	fluxui_app_create             = fluxui_dll.NewProc("fluxui_app_create")
-	fluxui_app_destroy            = fluxui_dll.NewProc("fluxui_app_destroy")
-	fluxui_app_init               = fluxui_dll.NewProc("fluxui_app_init")
-	fluxui_app_run                = fluxui_dll.NewProc("fluxui_app_run")
-	fluxui_app_stop               = fluxui_dll.NewProc("fluxui_app_stop")
-	fluxui_app_root               = fluxui_dll.NewProc("fluxui_app_root")
-	fluxui_widget_add_panel       = fluxui_dll.NewProc("fluxui_widget_add_panel")
-	fluxui_widget_add_button      = fluxui_dll.NewProc("fluxui_widget_add_button")
-	fluxui_widget_add_text        = fluxui_dll.NewProc("fluxui_widget_add_text")
-	fluxui_text_set_content       = fluxui_dll.NewProc("fluxui_text_set_content")
-	fluxui_style_width_px         = fluxui_dll.NewProc("fluxui_style_width_px")
-	fluxui_style_height_px        = fluxui_dll.NewProc("fluxui_style_height_px")
-	fluxui_style_background_color = fluxui_dll.NewProc("fluxui_style_background_color")
-	fluxui_widget_set_on_click    = fluxui_dll.NewProc("fluxui_widget_set_on_click")
+	fluxui_app_create                 = fluxui_dll.NewProc("fluxui_app_create")
+	fluxui_app_destroy                = fluxui_dll.NewProc("fluxui_app_destroy")
+	fluxui_app_init                   = fluxui_dll.NewProc("fluxui_app_init")
+	fluxui_app_run                    = fluxui_dll.NewProc("fluxui_app_run")
+	fluxui_app_stop                   = fluxui_dll.NewProc("fluxui_app_stop")
+	fluxui_app_root                   = fluxui_dll.NewProc("fluxui_app_root")
+	fluxui_app_set_backend            = fluxui_dll.NewProc("fluxui_app_set_backend")
+	fluxui_app_get_backend            = fluxui_dll.NewProc("fluxui_app_get_backend")
+	fluxui_app_set_update_callback_go = fluxui_dll.NewProc("fluxui_app_set_update_callback_go")
+	fluxui_app_on_event               = fluxui_dll.NewProc("fluxui_app_on_event")
+	fluxui_app_off_event              = fluxui_dll.NewProc("fluxui_app_off_event")
+	fluxui_app_emit_custom_event      = fluxui_dll.NewProc("fluxui_app_emit_custom_event")
+	fluxui_app_load_stylesheet        = fluxui_dll.NewProc("fluxui_app_load_stylesheet")
+	fluxui_app_add_stylesheet         = fluxui_dll.NewProc("fluxui_app_add_stylesheet")
+	fluxui_app_load_default_font      = fluxui_dll.NewProc("fluxui_app_load_default_font")
+
+	fluxui_widget_add_panel           = fluxui_dll.NewProc("fluxui_widget_add_panel")
+	fluxui_widget_add_button          = fluxui_dll.NewProc("fluxui_widget_add_button")
+	fluxui_widget_add_text            = fluxui_dll.NewProc("fluxui_widget_add_text")
+	fluxui_widget_add_canvas          = fluxui_dll.NewProc("fluxui_widget_add_canvas")
+	fluxui_widget_add_text_input      = fluxui_dll.NewProc("fluxui_widget_add_text_input")
+	fluxui_widget_add_select          = fluxui_dll.NewProc("fluxui_widget_add_select")
+	fluxui_widget_add_option          = fluxui_dll.NewProc("fluxui_widget_add_option")
+
+	fluxui_text_set_content           = fluxui_dll.NewProc("fluxui_text_set_content")
+	fluxui_button_set_label           = fluxui_dll.NewProc("fluxui_button_set_label")
+	fluxui_text_input_set_value       = fluxui_dll.NewProc("fluxui_text_input_set_value")
+	fluxui_text_input_get_value       = fluxui_dll.NewProc("fluxui_text_input_get_value")
+	fluxui_text_input_set_placeholder = fluxui_dll.NewProc("fluxui_text_input_set_placeholder")
+	fluxui_select_set_selected_index  = fluxui_dll.NewProc("fluxui_select_set_selected_index")
+	fluxui_select_get_selected_index  = fluxui_dll.NewProc("fluxui_select_get_selected_index")
+
+	fluxui_canvas_set_on_draw         = fluxui_dll.NewProc("fluxui_canvas_set_on_draw")
+	fluxui_draw_rect                  = fluxui_dll.NewProc("fluxui_draw_rect")
+	fluxui_draw_text                  = fluxui_dll.NewProc("fluxui_draw_text")
+	fluxui_draw_image                 = fluxui_dll.NewProc("fluxui_draw_image")
+	fluxui_renderer_flush             = fluxui_dll.NewProc("fluxui_renderer_flush")
+
+	fluxui_widget_set_id              = fluxui_dll.NewProc("fluxui_widget_set_id")
+	fluxui_widget_set_class           = fluxui_dll.NewProc("fluxui_widget_set_class")
+	fluxui_widget_set_visible         = fluxui_dll.NewProc("fluxui_widget_set_visible")
+	fluxui_widget_get_bounds          = fluxui_dll.NewProc("fluxui_widget_get_bounds")
+	fluxui_widget_set_on_click        = fluxui_dll.NewProc("fluxui_widget_set_on_click")
+	fluxui_widget_clear_children      = fluxui_dll.NewProc("fluxui_widget_clear_children")
+
+	fluxui_style_width_px             = fluxui_dll.NewProc("fluxui_style_width_px")
+	fluxui_style_height_px            = fluxui_dll.NewProc("fluxui_style_height_px")
+	fluxui_style_min_width_px         = fluxui_dll.NewProc("fluxui_style_min_width_px")
+	fluxui_style_min_height_px        = fluxui_dll.NewProc("fluxui_style_min_height_px")
+	fluxui_style_max_width_px         = fluxui_dll.NewProc("fluxui_style_max_width_px")
+	fluxui_style_max_height_px        = fluxui_dll.NewProc("fluxui_style_max_height_px")
+	fluxui_style_flex_grow            = fluxui_dll.NewProc("fluxui_style_flex_grow")
+	fluxui_style_gap_px               = fluxui_dll.NewProc("fluxui_style_gap_px")
+	fluxui_style_padding_all_px       = fluxui_dll.NewProc("fluxui_style_padding_all_px")
+	fluxui_style_padding_px           = fluxui_dll.NewProc("fluxui_style_padding_px")
+	fluxui_style_margin_all_px        = fluxui_dll.NewProc("fluxui_style_margin_all_px")
+	fluxui_style_margin_px            = fluxui_dll.NewProc("fluxui_style_margin_px")
+	fluxui_style_border_radius_px     = fluxui_dll.NewProc("fluxui_style_border_radius_px")
+	fluxui_style_background_color     = fluxui_dll.NewProc("fluxui_style_background_color")
+	fluxui_style_text_color           = fluxui_dll.NewProc("fluxui_style_text_color")
+)
+
+const (
+	EventQuit          = 0
+	EventWindowResized = 1
+	EventMouseMove     = 2
+	EventMouseDown     = 3
+	EventMouseUp       = 4
+	EventMouseWheel    = 5
+	EventKeyDown       = 6
+	EventKeyUp         = 7
+	EventTextInput     = 8
+	EventWidgetClick   = 9
+	EventRouteChanged  = 10
+	EventCustom        = 11
 )
 
 type App struct {
@@ -34,8 +95,52 @@ type Widget struct {
 	handle uintptr
 }
 
-type FluxUIColor struct {
+type Renderer struct {
+	handle uintptr
+}
+
+type Rect struct {
+	X, Y, W, H float32
+}
+
+type Color struct {
 	R, G, B, A float32
+}
+
+type Event struct {
+	Type          int32
+	Target        uintptr
+	Name          string
+	Route         string
+	PreviousRoute string
+	Text          string
+	X             float32
+	Y             float32
+	Dx            float32
+	Dy            float32
+	KeyCode       int32
+	Modifiers     int32
+	Button        int32
+	ClickCount    int32
+	Handled       bool
+}
+
+type cEventStruct struct {
+	Type          int32
+	Target        uintptr
+	Name          uintptr
+	Route         uintptr
+	PreviousRoute uintptr
+	Text          uintptr
+	X             float32
+	Y             float32
+	Dx            float32
+	Dy            float32
+	KeyCode       int32
+	Modifiers     int32
+	Button        int32
+	ClickCount    int32
+	Handled       int32
 }
 
 func CreateApp() (*App, error) {
@@ -62,6 +167,16 @@ func (a *App) Init(title string, width, height int) bool {
 	return r1 != 0
 }
 
+func (a *App) SetBackend(backend int) bool {
+	r1, _, _ := fluxui_app_set_backend.Call(a.handle, uintptr(backend))
+	return r1 != 0
+}
+
+func (a *App) GetBackend() int {
+	r1, _, _ := fluxui_app_get_backend.Call(a.handle)
+	return int(r1)
+}
+
 func (a *App) Run() {
 	fluxui_app_run.Call(a.handle)
 }
@@ -76,6 +191,40 @@ func (a *App) Root() *Widget {
 		return nil
 	}
 	return &Widget{handle: r1}
+}
+
+func (a *App) LoadStylesheet(path string) bool {
+	cPath, err := syscall.BytePtrFromString(path)
+	if err != nil {
+		return false
+	}
+	r1, _, _ := fluxui_app_load_stylesheet.Call(a.handle, uintptr(unsafe.Pointer(cPath)))
+	return r1 != 0
+}
+
+func (a *App) AddStylesheet(css string) {
+	cCss, err := syscall.BytePtrFromString(css)
+	if err != nil {
+		return
+	}
+	fluxui_app_add_stylesheet.Call(a.handle, uintptr(unsafe.Pointer(cCss)))
+}
+
+func (a *App) LoadDefaultFont(size float32) bool {
+	r1, _, _ := fluxui_app_load_default_font.Call(a.handle, uintptr(math.Float32bits(size)))
+	return r1 != 0
+}
+
+func (a *App) EmitCustomEvent(name, text string) {
+	cName, err := syscall.BytePtrFromString(name)
+	if err != nil {
+		return
+	}
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return
+	}
+	fluxui_app_emit_custom_event.Call(a.handle, uintptr(unsafe.Pointer(cName)), uintptr(unsafe.Pointer(cText)))
 }
 
 func (w *Widget) AddPanel(className string) *Widget {
@@ -122,12 +271,144 @@ func (w *Widget) AddText(text, className string) *Widget {
 	return &Widget{handle: r1}
 }
 
+func (w *Widget) AddCanvas(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_canvas.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddTextInput(placeholder, className string) *Widget {
+	cPlaceholder, err := syscall.BytePtrFromString(placeholder)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_text_input.Call(w.handle, uintptr(unsafe.Pointer(cPlaceholder)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddSelect(className string) *Widget {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_select.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
+func (w *Widget) AddOption(label, value, className string) *Widget {
+	cLabel, err := syscall.BytePtrFromString(label)
+	if err != nil {
+		return nil
+	}
+	cValue, err := syscall.BytePtrFromString(value)
+	if err != nil {
+		return nil
+	}
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return nil
+	}
+	r1, _, _ := fluxui_widget_add_option.Call(w.handle, uintptr(unsafe.Pointer(cLabel)), uintptr(unsafe.Pointer(cValue)), uintptr(unsafe.Pointer(cClass)))
+	if r1 == 0 {
+		return nil
+	}
+	return &Widget{handle: r1}
+}
+
 func (w *Widget) SetContent(text string) {
 	cText, err := syscall.BytePtrFromString(text)
 	if err != nil {
 		return
 	}
 	fluxui_text_set_content.Call(w.handle, uintptr(unsafe.Pointer(cText)))
+}
+
+func (w *Widget) SetButtonLabel(label string) {
+	cLabel, err := syscall.BytePtrFromString(label)
+	if err != nil {
+		return
+	}
+	fluxui_button_set_label.Call(w.handle, uintptr(unsafe.Pointer(cLabel)))
+}
+
+func (w *Widget) SetInputValue(value string) {
+	cValue, err := syscall.BytePtrFromString(value)
+	if err != nil {
+		return
+	}
+	fluxui_text_input_set_value.Call(w.handle, uintptr(unsafe.Pointer(cValue)))
+}
+
+func (w *Widget) GetInputValue() string {
+	r1, _, _ := fluxui_text_input_get_value.Call(w.handle)
+	return getString(r1)
+}
+
+func (w *Widget) SetInputPlaceholder(placeholder string) {
+	cPlaceholder, err := syscall.BytePtrFromString(placeholder)
+	if err != nil {
+		return
+	}
+	fluxui_text_input_set_placeholder.Call(w.handle, uintptr(unsafe.Pointer(cPlaceholder)))
+}
+
+func (w *Widget) SetSelectIndex(index uint32) {
+	fluxui_select_set_selected_index.Call(w.handle, uintptr(index))
+}
+
+func (w *Widget) GetSelectIndex() uint32 {
+	r1, _, _ := fluxui_select_get_selected_index.Call(w.handle)
+	return uint32(r1)
+}
+
+func (w *Widget) SetID(id string) {
+	cID, err := syscall.BytePtrFromString(id)
+	if err != nil {
+		return
+	}
+	fluxui_widget_set_id.Call(w.handle, uintptr(unsafe.Pointer(cID)))
+}
+
+func (w *Widget) SetClass(className string) {
+	cClass, err := syscall.BytePtrFromString(className)
+	if err != nil {
+		return
+	}
+	fluxui_widget_set_class.Call(w.handle, uintptr(unsafe.Pointer(cClass)))
+}
+
+func (w *Widget) SetVisible(visible bool) {
+	val := 0
+	if visible {
+		val = 1
+	}
+	fluxui_widget_set_visible.Call(w.handle, uintptr(val))
+}
+
+func (w *Widget) GetBounds() Rect {
+	var r Rect
+	fluxui_widget_get_bounds.Call(uintptr(unsafe.Pointer(&r)), w.handle)
+	return r
+}
+
+func (w *Widget) ClearChildren() {
+	fluxui_widget_clear_children.Call(w.handle)
 }
 
 func (w *Widget) StyleWidth(px float32) {
@@ -138,13 +419,65 @@ func (w *Widget) StyleHeight(px float32) {
 	fluxui_style_height_px.Call(w.handle, uintptr(math.Float32bits(px)))
 }
 
+func (w *Widget) StyleMinWidth(px float32) {
+	fluxui_style_min_width_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StyleMinHeight(px float32) {
+	fluxui_style_min_height_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StyleMaxWidth(px float32) {
+	fluxui_style_max_width_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StyleMaxHeight(px float32) {
+	fluxui_style_max_height_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StyleFlexGrow(grow float32) {
+	fluxui_style_flex_grow.Call(w.handle, uintptr(math.Float32bits(grow)))
+}
+
+func (w *Widget) StyleGap(px float32) {
+	fluxui_style_gap_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StylePaddingAll(px float32) {
+	fluxui_style_padding_all_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StylePadding(top, right, bottom, left float32) {
+	fluxui_style_padding_px.Call(w.handle, uintptr(math.Float32bits(top)), uintptr(math.Float32bits(right)), uintptr(math.Float32bits(bottom)), uintptr(math.Float32bits(left)))
+}
+
+func (w *Widget) StyleMarginAll(px float32) {
+	fluxui_style_margin_all_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
+func (w *Widget) StyleMargin(top, right, bottom, left float32) {
+	fluxui_style_margin_px.Call(w.handle, uintptr(math.Float32bits(top)), uintptr(math.Float32bits(right)), uintptr(math.Float32bits(bottom)), uintptr(math.Float32bits(left)))
+}
+
+func (w *Widget) StyleBorderRadius(px float32) {
+	fluxui_style_border_radius_px.Call(w.handle, uintptr(math.Float32bits(px)))
+}
+
 func (w *Widget) StyleBackgroundColor(r, g, b, a float32) {
-	color := FluxUIColor{R: r, G: g, B: b, A: a}
+	color := Color{R: r, G: g, B: b, A: a}
 	fluxui_style_background_color.Call(w.handle, uintptr(unsafe.Pointer(&color)))
+}
+
+func (w *Widget) StyleTextColor(r, g, b, a float32) {
+	color := Color{R: r, G: g, B: b, A: a}
+	fluxui_style_text_color.Call(w.handle, uintptr(unsafe.Pointer(&color)))
 }
 
 var (
 	clickCallbacks  = make(map[uintptr]func())
+	updateCallbacks = make(map[uintptr]func(float32))
+	eventCallbacks  = make(map[uintptr]func(*Event))
+	drawCallbacks   = make(map[uintptr]func(*Renderer, Rect))
 	callbackCounter uintptr
 )
 
@@ -155,11 +488,143 @@ func goClickCallback(widget, userData uintptr) uintptr {
 	return 0
 }
 
-var sysClickCallback = syscall.NewCallback(goClickCallback)
+func goUpdateCallback(appHandle, deltaTimeBits, userData uintptr) uintptr {
+	if cb, ok := updateCallbacks[userData]; ok {
+		dt := math.Float32frombits(uint32(deltaTimeBits))
+		cb(dt)
+	}
+	return 0
+}
+
+func goEventCallback(appHandle, eventPtr, userData uintptr) uintptr {
+	if cb, ok := eventCallbacks[userData]; ok {
+		ce := (*cEventStruct)(unsafe.Pointer(eventPtr))
+		ev := &Event{
+			Type:          ce.Type,
+			Target:        ce.Target,
+			Name:          getString(ce.Name),
+			Route:         getString(ce.Route),
+			PreviousRoute: getString(ce.PreviousRoute),
+			Text:          getString(ce.Text),
+			X:             ce.X,
+			Y:             ce.Y,
+			Dx:            ce.Dx,
+			Dy:            ce.Dy,
+			KeyCode:       ce.KeyCode,
+			Modifiers:     ce.Modifiers,
+			Button:        ce.Button,
+			ClickCount:    ce.ClickCount,
+			Handled:       ce.Handled != 0,
+		}
+		cb(ev)
+		if ev.Handled {
+			ce.Handled = 1
+		} else {
+			ce.Handled = 0
+		}
+	}
+	return 0
+}
+
+func goDrawCallback(canvasHandle, rendererPtr, boundsPtr, userData uintptr) uintptr {
+	if cb, ok := drawCallbacks[userData]; ok {
+		bounds := (*Rect)(unsafe.Pointer(boundsPtr))
+		cb(&Renderer{handle: rendererPtr}, *bounds)
+	}
+	return 0
+}
+
+var (
+	sysClickCallback  = syscall.NewCallback(goClickCallback)
+	sysUpdateCallback = syscall.NewCallback(goUpdateCallback)
+	sysEventCallback  = syscall.NewCallback(goEventCallback)
+	sysDrawCallback   = syscall.NewCallback(goDrawCallback)
+)
 
 func (w *Widget) SetOnClick(cb func()) {
 	callbackCounter++
 	id := callbackCounter
 	clickCallbacks[id] = cb
 	fluxui_widget_set_on_click.Call(w.handle, sysClickCallback, id)
+}
+
+func (a *App) SetUpdateCallback(cb func(float32)) {
+	updateCallbacks[a.handle] = cb
+	fluxui_app_set_update_callback_go.Call(a.handle, sysUpdateCallback, a.handle)
+}
+
+func (a *App) OnEvent(eventType int32, cb func(*Event)) uint64 {
+	callbackCounter++
+	id := callbackCounter
+	eventCallbacks[id] = cb
+	r1, _, _ := fluxui_app_on_event.Call(a.handle, uintptr(eventType), sysEventCallback, id)
+	return uint64(r1)
+}
+
+func (a *App) OffEvent(listenerId uint64) {
+	fluxui_app_off_event.Call(a.handle, uintptr(listenerId))
+}
+
+func (w *Widget) SetOnDraw(cb func(*Renderer, Rect)) {
+	callbackCounter++
+	id := callbackCounter
+	drawCallbacks[id] = cb
+	fluxui_canvas_set_on_draw.Call(w.handle, sysDrawCallback, id)
+}
+
+func (r *Renderer) DrawRect(rect Rect, color Color) {
+	fluxui_draw_rect.Call(r.handle, uintptr(unsafe.Pointer(&rect)), uintptr(unsafe.Pointer(&color)))
+}
+
+func (r *Renderer) DrawText(text string, x, y float32, color Color, fontSize float32) {
+	cText, err := syscall.BytePtrFromString(text)
+	if err != nil {
+		return
+	}
+	fluxui_draw_text.Call(r.handle,
+		uintptr(unsafe.Pointer(cText)),
+		uintptr(math.Float32bits(x)),
+		uintptr(math.Float32bits(y)),
+		uintptr(unsafe.Pointer(&color)),
+		uintptr(math.Float32bits(fontSize)),
+	)
+}
+
+func (r *Renderer) DrawImage(nameOrPath string, rect Rect, opacity float32) {
+	cName, err := syscall.BytePtrFromString(nameOrPath)
+	if err != nil {
+		return
+	}
+	fluxui_draw_image.Call(r.handle,
+		uintptr(unsafe.Pointer(cName)),
+		uintptr(unsafe.Pointer(&rect)),
+		uintptr(math.Float32bits(opacity)),
+	)
+}
+
+func (r *Renderer) Flush() {
+	fluxui_renderer_flush.Call(r.handle)
+}
+
+func (a *App) GetHandle() uintptr {
+	return a.handle
+}
+
+func (w *Widget) GetHandle() uintptr {
+	return w.handle
+}
+
+func getString(p uintptr) string {
+	if p == 0 {
+		return ""
+	}
+	var buf []byte
+	for i := 0; ; i++ {
+		b := *(*byte)(unsafe.Pointer(p + uintptr(i)))
+		if b == 0 {
+			break
+		}
+		buf = append(buf, b)
+	}
+	return string(buf)
 }
