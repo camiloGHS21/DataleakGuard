@@ -49,6 +49,6 @@ echo - Fast startup config: Enabled
 echo - Low-memory mode: OFF (keeps extra GPU buffers warm)
 echo.
 echo Application will start faster but may take longer to compile.
-echo Executable: build\Release\DataLeakGuard.exe
+echo Executable: build\Release\dataleakguard.exe
 echo.
 pause

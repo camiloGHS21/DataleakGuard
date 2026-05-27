@@ -16,7 +16,7 @@ endif()
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vendor/vcpkg/scripts/buildsystems/vcpkg.cmake"
     CACHE STRING "Vcpkg toolchain file")
 
-project(DataLeakGuard VERSION 1.0.0 LANGUAGES C CXX)
+project(FluxUI VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -387,56 +387,24 @@ if(FLUXUI_BUILD_SHARED)
 endif()
 
 # ============================================================
-#  DataLeak Guard Application
+#  DataLeak Guard Showcase Example
 # ============================================================
-add_executable(DataLeakGuard
-    src/main.cpp
+add_executable(dataleakguard
+    examples/dataleakguard/main.cpp
 )
 
-target_link_libraries(DataLeakGuard PRIVATE
+target_link_libraries(dataleakguard PRIVATE
     fluxui
     nlohmann_json::nlohmann_json
 )
 
-target_include_directories(DataLeakGuard PRIVATE
+target_include_directories(dataleakguard PRIVATE
     "${CMAKE_BINARY_DIR}/generated"
 )
 if(DATALEAKGUARD_PREBAKE_UI_FONTS)
-    add_dependencies(DataLeakGuard dataleakguard_prebaked_fonts)
+    add_dependencies(dataleakguard dataleakguard_prebaked_fonts)
 endif()
-enable_release_lto(DataLeakGuard)
-
-# ============================================================
-#  2D Retro Game Example
-# ============================================================
-add_executable(game_2d
-    examples/game_2d/main.cpp
-)
-
-target_link_libraries(game_2d PRIVATE
-    fluxui
-)
-
-target_include_directories(game_2d PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(game_2d)
-
-# ============================================================
-#  3D Game Example
-# ============================================================
-add_executable(game_3d
-    examples/game_3d/main.cpp
-)
-
-target_link_libraries(game_3d PRIVATE
-    fluxui
-)
-
-target_include_directories(game_3d PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(game_3d)
+enable_release_lto(dataleakguard)
 
 # ============================================================
 #  Minimal C++ Example
@@ -454,85 +422,6 @@ target_include_directories(minimal_example PRIVATE
 )
 enable_release_lto(minimal_example)
 
-# ============================================================
-#  Zero-Boilerplate QuickApp Example
-# ============================================================
-add_executable(quick_minimal
-    examples/cpp/quick_minimal.cpp
-)
-
-target_link_libraries(quick_minimal PRIVATE
-    fluxui
-)
-
-target_include_directories(quick_minimal PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(quick_minimal)
-
-# ============================================================
-#  Paint Invalidation C++ Unit Test
-# ============================================================
-add_executable(paint_invalidation_test
-    examples/cpp/paint_invalidation_test.cpp
-)
-
-target_link_libraries(paint_invalidation_test PRIVATE
-    fluxui
-)
-
-target_include_directories(paint_invalidation_test PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(paint_invalidation_test)
-
-# ============================================================
-#  GPU Paint Layerization C++ Unit Test
-# ============================================================
-add_executable(gpu_composited_layer_test
-    examples/cpp/gpu_composited_layer_test.cpp
-)
-
-target_link_libraries(gpu_composited_layer_test PRIVATE
-    fluxui
-)
-
-target_include_directories(gpu_composited_layer_test PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(gpu_composited_layer_test)
-
-# ============================================================
-#  Accessibility Tree C++ Unit Test
-# ============================================================
-add_executable(accessibility_tree_test
-    examples/cpp/accessibility_tree_test.cpp
-)
-
-target_link_libraries(accessibility_tree_test PRIVATE
-    fluxui
-)
-
-target_include_directories(accessibility_tree_test PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(accessibility_tree_test)
-
-# ============================================================
-#  Chromium Blink Engine Features C++ Unit Test
-# ============================================================
-add_executable(blink_features_test
-    examples/cpp/blink_features_test.cpp
-)
-
-target_link_libraries(blink_features_test PRIVATE
-    fluxui
-)
-
-target_include_directories(blink_features_test PRIVATE
-    "${CMAKE_BINARY_DIR}/generated"
-)
-enable_release_lto(blink_features_test)
 
 
 

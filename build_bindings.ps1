@@ -105,8 +105,8 @@ Write-Host "`n[5/5] Verifying Build Outputs..." -ForegroundColor Yellow
 $Outputs = @(
     "build/Release/fluxui_shared.dll",
     "build/Release/fluxui_java.dll",
-    "build/Release/game_2d.exe",
-    "build/Release/game_3d.exe",
+    "build/Release/dataleakguard.exe",
+    "build/Release/minimal_example.exe",
     "build/Release/libfluxui.rlib",
     "build/Release/minimal_rust.exe",
     "build/Release/minimal_zig.exe",

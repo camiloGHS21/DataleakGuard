@@ -1,5 +1,5 @@
 {
-  "name": "dataleakguard",
+  "name": "fluxui",
   "version-string": "1.0.0",
   "dependencies": [
     "nlohmann-json",
