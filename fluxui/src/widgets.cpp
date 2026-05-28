@@ -2811,9 +2811,14 @@ void Widget::layout(const Rect& parentBounds) {
                         }
                     }
                     float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
-                    Rect childArea = { currentLeftX, cy, targetW, 10000.0f };
+                    float floatStartX = currentLeftX + cs.margin.left;
+                    float floatStartY = cy + cs.margin.top;
+                    Rect childArea = { floatStartX, floatStartY, targetW, 10000.0f };
                     child->layout(childArea);
-                    floats.push_back({ currentLeftX, cy, child->bounds.w, child->bounds.h, true });
+                    if (!cs.height.isSet() && child->contentHeight > child->bounds.h) {
+                        child->bounds.h = child->contentHeight;
+                    }
+                    floats.push_back({ currentLeftX, cy, child->bounds.w + cs.margin.horizontal(), child->bounds.h + cs.margin.vertical(), true });
                 } else if (cs.cssFloat == CSSFloat::Right) {
                     flushInlineLine();
                     float currentRightX = bounds.x + bounds.w - s.padding.right;
@@ -2823,10 +2828,16 @@ void Widget::layout(const Rect& parentBounds) {
                         }
                     }
                     float targetW = cs.width.isSet() ? cs.width.resolve(bounds.w, 1920.0f, 1080.0f) : 100.0f;
-                    float cellX = currentRightX - targetW;
-                    Rect childArea = { cellX, cy, targetW, 10000.0f };
+                    float marginBoxW = targetW + cs.margin.horizontal();
+                    float cellStartX = currentRightX - marginBoxW;
+                    float floatStartX = cellStartX + cs.margin.left;
+                    float floatStartY = cy + cs.margin.top;
+                    Rect childArea = { floatStartX, floatStartY, targetW, 10000.0f };
                     child->layout(childArea);
-                    floats.push_back({ cellX, cy, child->bounds.w, child->bounds.h, false });
+                    if (!cs.height.isSet() && child->contentHeight > child->bounds.h) {
+                        child->bounds.h = child->contentHeight;
+                    }
+                    floats.push_back({ cellStartX, cy, child->bounds.w + cs.margin.horizontal(), child->bounds.h + cs.margin.vertical(), false });
                 } else {
                     flushInlineLine();
                     float currentLeftX = bounds.x + s.padding.left;
@@ -2841,16 +2852,26 @@ void Widget::layout(const Rect& parentBounds) {
                         }
                     }
                     float availChildW = std::max(0.0f, currentRightX - currentLeftX);
+                    float blockW = cs.width.isSet()
+                        ? std::min(availChildW - cs.margin.horizontal(), cs.width.resolve(bounds.w, 1920.0f, 1080.0f))
+                        : (availChildW - cs.margin.horizontal());
+                    blockW = std::max(0.0f, blockW);
+
                     float availableChildH = (!s.height.isSet() && !heightProvidedByParentFlex)
                         ? 10000.0f
                         : (bounds.h > 0 ? bounds.h - s.padding.vertical() : 10000.0f);
+                    float blockStartX = currentLeftX + cs.margin.left;
+                    float blockStartY = cy + cs.margin.top;
                     Rect childArea = {
-                        currentLeftX,
-                        cy,
-                        availChildW,
+                        blockStartX,
+                        blockStartY,
+                        blockW,
                         std::max(0.0f, availableChildH)
                     };
                     child->layout(childArea);
+                    if (!cs.height.isSet() && child->contentHeight > child->bounds.h) {
+                        child->bounds.h = child->contentHeight;
+                    }
                     cy = child->bounds.y + child->bounds.h + cs.margin.bottom;
                 }
             }
