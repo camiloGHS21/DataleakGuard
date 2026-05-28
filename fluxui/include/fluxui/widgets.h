@@ -334,6 +334,8 @@ public:
     std::shared_ptr<Widget> afterPseudoNode;
     std::unique_ptr<LayoutObject> layoutObject;
     bool skipDOMChildrenPaint = false;
+    int colspan = 1;
+    int rowspan = 1;
     void attachLayoutTree();
     void detachLayoutTree();
     virtual std::unique_ptr<LayoutObject> createLayoutObject();
@@ -1661,6 +1663,12 @@ inline void Widget::setAttribute(const std::string& name, const std::string& val
         classes(value);
     } else if (name == "style") {
         css(value);
+    } else if (name == "colspan") {
+        try { colspan = std::stoi(value); } catch (...) { colspan = 1; }
+        markLayoutDirty();
+    } else if (name == "rowspan") {
+        try { rowspan = std::stoi(value); } catch (...) { rowspan = 1; }
+        markLayoutDirty();
     }
 }
 class StatCard : public Widget {

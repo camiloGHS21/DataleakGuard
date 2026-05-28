@@ -2519,112 +2519,18 @@ void Widget::layout(const Rect& parentBounds) {
         bounds.h = hasSizeContainment && !s.height.isSet() ? s.padding.vertical() + usedBorderVertical(s) : res.height;
         contentHeight = hasSizeContainment ? s.padding.vertical() + usedBorderVertical(s) : res.contentHeight;
     } else if (s.display == Display::Table) {
-        std::vector<Widget*> rows;
-        std::function<void(Widget*)> collectRows = [&](Widget* w) {
-            for (auto& child : w->children) {
-                if (!child->visible || isDisplayNone(child.get())) continue;
-                if (child->computedStyle->display == Display::TableRow) {
-                    rows.push_back(child.get());
-                } else if (child->computedStyle->display == Display::TableRowGroup ||
-                           child->computedStyle->display == Display::TableHeaderGroup ||
-                           child->computedStyle->display == Display::TableFooterGroup) {
-                    collectRows(child.get());
-                }
-            }
-        };
-        collectRows(this);
+        LayoutConstraints constraints;
+        constraints.availableWidth = parentBounds.w;
+        constraints.availableHeight = parentBounds.h;
+        constraints.parentWidth = vpW;
+        constraints.parentHeight = vpH;
+        constraints.emBase = 16.0f;
 
-        std::vector<std::vector<Widget*>> matrix;
-        size_t maxCols = 0;
-        for (Widget* row : rows) {
-            std::vector<Widget*> cells;
-            for (auto& child : row->children) {
-                if (!child->visible || isDisplayNone(child.get())) continue;
-                if (child->computedStyle->display == Display::TableCell) {
-                    cells.push_back(child.get());
-                }
-            }
-            maxCols = std::max(maxCols, cells.size());
-            matrix.push_back(cells);
-        }
-
-        std::vector<float> colWidths(maxCols, 0.0f);
-        float availW = bounds.w - s.padding.horizontal();
-        for (size_t col = 0; col < maxCols; ++col) {
-            float maxCellW = 0.0f;
-            for (auto& rowCells : matrix) {
-                if (col < rowCells.size()) {
-                    Widget* cell = rowCells[col];
-                    Rect measureArea = { 0, 0, 10000.0f, 10000.0f };
-                    cell->layout(measureArea);
-                    maxCellW = std::max(maxCellW, cell->bounds.w);
-                }
-            }
-            colWidths[col] = std::max(5.0f, maxCellW);
-        }
-
-        float totalMeasuredW = 0.0f;
-        for (float w : colWidths) totalMeasuredW += w;
-        if (totalMeasuredW > 0.0f && totalMeasuredW > availW) {
-            for (size_t col = 0; col < maxCols; ++col) {
-                colWidths[col] = (colWidths[col] / totalMeasuredW) * availW;
-            }
-        } else if (totalMeasuredW > 0.0f && totalMeasuredW < availW) {
-            float extra = (availW - totalMeasuredW) / maxCols;
-            for (size_t col = 0; col < maxCols; ++col) {
-                colWidths[col] += extra;
-            }
-        } else if (maxCols > 0) {
-            for (size_t col = 0; col < maxCols; ++col) {
-                colWidths[col] = availW / maxCols;
-            }
-        }
-
-        float currentY = bounds.y + s.padding.top;
-        float startX = bounds.x + s.padding.left;
-
-        for (size_t r = 0; r < matrix.size(); ++r) {
-            Widget* rowWidget = rows[r];
-            auto& rowCells = matrix[r];
-            float rowH = 0.0f;
-
-            float currentX = startX;
-            for (size_t col = 0; col < rowCells.size(); ++col) {
-                Widget* cell = rowCells[col];
-                float colW = colWidths[col];
-                Rect cellArea = { currentX, currentY, colW, 10000.0f };
-                cell->layout(cellArea);
-                rowH = std::max(rowH, cell->bounds.h);
-                currentX += colW;
-            }
-
-            currentX = startX;
-            for (size_t col = 0; col < rowCells.size(); ++col) {
-                Widget* cell = rowCells[col];
-                float colW = colWidths[col];
-                Rect cellArea = { currentX, currentY, colW, rowH };
-                cell->layout(cellArea);
-                currentX += colW;
-            }
-
-            rowWidget->bounds = { startX, currentY, availW, rowH };
-            rowWidget->layoutDirty = false;
-
-            currentY += rowH;
-        }
-
-        if (!s.height.isSet() && !heightProvidedByParentFlex && parent != nullptr) {
-            if (hasSizeContainment) {
-                bounds.h = s.padding.vertical() + usedBorderVertical(s);
-            } else {
-                bounds.h = resolveAutoBlockHeight(currentY - bounds.y + s.padding.bottom);
-            }
-        }
-        if (hasSizeContainment) {
-            contentHeight = s.padding.vertical() + usedBorderVertical(s);
-        } else {
-            contentHeight = currentY - bounds.y + s.padding.bottom;
-        }
+        TableLayoutAlgorithm algorithm;
+        LayoutResult res = algorithm.layout(this, constraints);
+        bounds.w = hasSizeContainment && !s.width.isSet() ? s.padding.horizontal() + usedBorderHorizontal(s) : res.width;
+        bounds.h = hasSizeContainment && !s.height.isSet() ? s.padding.vertical() + usedBorderVertical(s) : res.height;
+        contentHeight = hasSizeContainment ? s.padding.vertical() + usedBorderVertical(s) : res.contentHeight;
     } else {
         if (s.columnCount > 1 || s.columnWidth > 0.0f) {
             float columnGap = s.columnGap > 0.0f ? s.columnGap : 16.0f;

@@ -445,6 +445,17 @@ target_include_directories(svg_test PRIVATE
 )
 enable_release_lto(svg_test)
 
+add_executable(table_test
+    examples/cpp/table_test.cpp
+)
+target_link_libraries(table_test PRIVATE
+    fluxui
+)
+target_include_directories(table_test PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+)
+enable_release_lto(table_test)
+
 
 
 

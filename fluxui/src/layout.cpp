@@ -644,4 +644,354 @@ namespace FluxUI {
         return result;
     }
 
+    // ============================================================
+    //  TableLayoutAlgorithm Implementation (Blink parity)
+    // ============================================================
+    LayoutResult TableLayoutAlgorithm::layout(Widget* widget, const LayoutConstraints& constraints) {
+        LayoutResult result;
+        auto& s = *widget->computedStyle;
+
+        // 1. Collect all rows in standard rendering order (thead, then tbody/tr, then tfoot)
+        std::vector<Widget*> rows;
+        std::function<void(Widget*)> collectRows = [&](Widget* w) {
+            if (!w) return;
+            for (auto& child : w->children) {
+                if (!child->visible || child->computedStyle->display == Display::None) continue;
+                if (child->computedStyle->display == Display::TableRow) {
+                    rows.push_back(child.get());
+                } else if (child->computedStyle->display == Display::TableRowGroup ||
+                           child->computedStyle->display == Display::TableHeaderGroup ||
+                           child->computedStyle->display == Display::TableFooterGroup) {
+                    collectRows(child.get());
+                }
+            }
+        };
+
+        // We traverse to collect rows group-by-group to respect standard HTML ordering
+        Widget* thead = nullptr;
+        Widget* tfoot = nullptr;
+        std::vector<Widget*> tbodiesAndBareRows;
+
+        for (auto& child : widget->children) {
+            if (!child->visible || child->computedStyle->display == Display::None) continue;
+            if (child->computedStyle->display == Display::TableHeaderGroup) {
+                thead = child.get();
+            } else if (child->computedStyle->display == Display::TableFooterGroup) {
+                tfoot = child.get();
+            } else if (child->computedStyle->display == Display::TableRowGroup ||
+                       child->computedStyle->display == Display::TableRow) {
+                tbodiesAndBareRows.push_back(child.get());
+            }
+        }
+
+        if (thead) collectRows(thead);
+        for (Widget* item : tbodiesAndBareRows) {
+            if (item->computedStyle->display == Display::TableRow) {
+                rows.push_back(item);
+            } else {
+                collectRows(item);
+            }
+        }
+        if (tfoot) collectRows(tfoot);
+
+        // 2. Build Table Matrix to resolve colspan and rowspan
+        std::vector<std::vector<Widget*>> matrix;
+        size_t maxCols = 0;
+
+        for (size_t r = 0; r < rows.size(); ++r) {
+            Widget* rowWidget = rows[r];
+            if (matrix.size() <= r) {
+                matrix.resize(r + 1);
+            }
+
+            std::vector<Widget*> cells;
+            for (auto& child : rowWidget->children) {
+                if (!child->visible || child->computedStyle->display == Display::None) continue;
+                if (child->computedStyle->display == Display::TableCell) {
+                    cells.push_back(child.get());
+                }
+            }
+
+            for (Widget* cell : cells) {
+                int colSpan = std::max(1, cell->colspan);
+                int rowSpan = std::max(1, cell->rowspan);
+
+                size_t c = 0;
+                while (c < matrix[r].size() && matrix[r][c] != nullptr) {
+                    c++;
+                }
+
+                for (int dr = 0; dr < rowSpan; ++dr) {
+                    size_t targetRow = r + dr;
+                    if (matrix.size() <= targetRow) {
+                        matrix.resize(targetRow + 1);
+                    }
+                    if (matrix[targetRow].size() <= c + colSpan) {
+                        matrix[targetRow].resize(c + colSpan, nullptr);
+                    }
+                    for (int dc = 0; dc < colSpan; ++dc) {
+                        matrix[targetRow][c + dc] = cell;
+                    }
+                }
+
+                maxCols = std::max(maxCols, c + colSpan);
+            }
+        }
+
+        for (auto& rowSlots : matrix) {
+            if (rowSlots.size() < maxCols) {
+                rowSlots.resize(maxCols, nullptr);
+            }
+        }
+
+        // 3. Pass 1: Measure preferred column widths
+        std::vector<float> colMinWidths(maxCols, 0.0f);
+        std::vector<float> colMaxWidths(maxCols, 0.0f);
+
+        for (size_t c = 0; c < maxCols; ++c) {
+            float minW = 0.0f;
+            float maxW = 0.0f;
+            for (size_t r = 0; r < matrix.size(); ++r) {
+                Widget* cell = matrix[r][c];
+                if (!cell || cell->colspan > 1) continue;
+
+                Rect measureArea = {0, 0, 10000.0f, 10000.0f};
+                cell->layout(measureArea);
+
+                float cellW = cell->bounds.w;
+                if (cell->computedStyle->width.isSet()) {
+                    float resolved = cell->computedStyle->width.resolve(constraints.availableWidth, constraints.parentWidth, constraints.parentHeight, constraints.emBase);
+                    cellW = std::max(cellW, resolved);
+                }
+
+                minW = std::max(minW, std::min(cellW, 100.0f));
+                maxW = std::max(maxW, cellW);
+            }
+            colMinWidths[c] = std::max(5.0f, minW);
+            colMaxWidths[c] = std::max(5.0f, maxW);
+        }
+
+        for (size_t r = 0; r < matrix.size(); ++r) {
+            for (size_t c = 0; c < maxCols; ++c) {
+                Widget* cell = matrix[r][c];
+                if (!cell || cell->colspan <= 1) continue;
+
+                bool isStart = true;
+                if (c > 0 && matrix[r][c - 1] == cell) isStart = false;
+                if (r > 0 && matrix[r - 1][c] == cell) isStart = false;
+                if (!isStart) continue;
+
+                int colSpan = std::max(1, cell->colspan);
+                Rect measureArea = {0, 0, 10000.0f, 10000.0f};
+                cell->layout(measureArea);
+                float cellW = cell->bounds.w;
+                if (cell->computedStyle->width.isSet()) {
+                    float resolved = cell->computedStyle->width.resolve(constraints.availableWidth, constraints.parentWidth, constraints.parentHeight, constraints.emBase);
+                    cellW = std::max(cellW, resolved);
+                }
+
+                float currentSum = 0.0f;
+                for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
+                    currentSum += colMaxWidths[c + dc];
+                }
+
+                if (cellW > currentSum) {
+                    float excess = (cellW - currentSum) / colSpan;
+                    for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
+                        colMaxWidths[c + dc] += excess;
+                        colMinWidths[c + dc] += excess;
+                    }
+                }
+            }
+        }
+
+        // 4. Distribute table width to columns
+        std::vector<float> colWidths = colMaxWidths;
+        float availW = widget->bounds.w - s.padding.horizontal();
+        float totalMaxW = 0.0f;
+        for (float w : colWidths) totalMaxW += w;
+
+        if (totalMaxW > 0.0f && totalMaxW > availW) {
+            float totalMinW = 0.0f;
+            for (float w : colMinWidths) totalMinW += w;
+
+            if (totalMinW <= availW) {
+                float diff = totalMaxW - totalMinW;
+                float shrinkRatio = (diff > 0.0f) ? (totalMaxW - availW) / diff : 1.0f;
+                for (size_t col = 0; col < maxCols; ++col) {
+                    colWidths[col] = colMaxWidths[col] - shrinkRatio * (colMaxWidths[col] - colMinWidths[col]);
+                }
+            } else {
+                for (size_t col = 0; col < maxCols; ++col) {
+                    colWidths[col] = (colMinWidths[col] / totalMinW) * availW;
+                }
+            }
+        } else if (totalMaxW > 0.0f && totalMaxW < availW) {
+            float extra = (availW - totalMaxW) / maxCols;
+            for (size_t col = 0; col < maxCols; ++col) {
+                colWidths[col] += extra;
+            }
+        } else if (maxCols > 0) {
+            for (size_t col = 0; col < maxCols; ++col) {
+                colWidths[col] = availW / maxCols;
+            }
+        }
+
+        // 5. Pass 2: Layout cells to determine row heights
+        std::vector<float> rowHeights(matrix.size(), 0.0f);
+        float startX = widget->bounds.x + s.padding.left;
+        float startY = widget->bounds.y + s.padding.top;
+
+        for (size_t r = 0; r < matrix.size(); ++r) {
+            float maxRowH = 0.0f;
+            for (size_t c = 0; c < maxCols; ++c) {
+                Widget* cell = matrix[r][c];
+                if (!cell || cell->rowspan > 1) continue;
+                if (c > 0 && matrix[r][c - 1] == cell) continue;
+
+                int colSpan = std::max(1, cell->colspan);
+                float spanW = 0.0f;
+                for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
+                    spanW += colWidths[c + dc];
+                }
+
+                Rect cellArea = {0, 0, spanW, 10000.0f};
+                cell->layout(cellArea);
+                maxRowH = std::max(maxRowH, cell->bounds.h);
+            }
+            rowHeights[r] = std::max(20.0f, maxRowH);
+        }
+
+        for (size_t r = 0; r < matrix.size(); ++r) {
+            for (size_t c = 0; c < maxCols; ++c) {
+                Widget* cell = matrix[r][c];
+                if (!cell || cell->rowspan <= 1) continue;
+
+                bool isStart = true;
+                if (c > 0 && matrix[r][c - 1] == cell) isStart = false;
+                if (r > 0 && matrix[r - 1][c] == cell) isStart = false;
+                if (!isStart) continue;
+
+                int colSpan = std::max(1, cell->colspan);
+                int rowSpan = std::max(1, cell->rowspan);
+
+                float spanW = 0.0f;
+                for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
+                    spanW += colWidths[c + dc];
+                }
+
+                Rect cellArea = {0, 0, spanW, 10000.0f};
+                cell->layout(cellArea);
+                float cellH = cell->bounds.h;
+
+                float currentSum = 0.0f;
+                for (int dr = 0; dr < rowSpan && (r + dr) < matrix.size(); ++dr) {
+                    currentSum += rowHeights[r + dr];
+                }
+
+                if (cellH > currentSum) {
+                    float excess = (cellH - currentSum) / rowSpan;
+                    for (int dr = 0; dr < rowSpan && (r + dr) < matrix.size(); ++dr) {
+                        rowHeights[r + dr] += excess;
+                    }
+                }
+            }
+        }
+
+        // 6. Pass 3: Final cell placement
+        float currentY = startY;
+        for (size_t r = 0; r < matrix.size(); ++r) {
+            float rowH = rowHeights[r];
+            Widget* rowWidget = rows[r];
+
+            for (size_t c = 0; c < maxCols; ++c) {
+                Widget* cell = matrix[r][c];
+                if (!cell) continue;
+
+                bool isStart = true;
+                if (c > 0 && matrix[r][c - 1] == cell) isStart = false;
+                if (r > 0 && matrix[r - 1][c] == cell) isStart = false;
+                if (!isStart) continue;
+
+                int colSpan = std::max(1, cell->colspan);
+                int rowSpan = std::max(1, cell->rowspan);
+
+                float cellX = startX;
+                for (size_t col = 0; col < c; ++col) {
+                    cellX += colWidths[col];
+                }
+
+                float spanW = 0.0f;
+                for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
+                    spanW += colWidths[c + dc];
+                }
+                float spanH = 0.0f;
+                for (int dr = 0; dr < rowSpan && (r + dr) < matrix.size(); ++dr) {
+                    spanH += rowHeights[r + dr];
+                }
+
+                Rect cellArea = {cellX, currentY, spanW, spanH};
+                cell->layout(cellArea);
+            }
+
+            rowWidget->bounds = {startX, currentY, availW, rowH};
+            rowWidget->layoutDirty = false;
+
+            currentY += rowH;
+        }
+
+        for (auto& child : widget->children) {
+            if (!child->visible || child->computedStyle->display == Display::None) continue;
+            if (child->computedStyle->display == Display::TableRowGroup ||
+                child->computedStyle->display == Display::TableHeaderGroup ||
+                child->computedStyle->display == Display::TableFooterGroup) {
+                
+                float groupMinY = 1e9f;
+                float groupMaxY = -1e9f;
+                bool hasGroupRows = false;
+                
+                std::function<void(Widget*)> getGroupBounds = [&](Widget* w) {
+                    if (w->computedStyle->display == Display::TableRow) {
+                        groupMinY = std::min(groupMinY, w->bounds.y);
+                        groupMaxY = std::max(groupMaxY, w->bounds.y + w->bounds.h);
+                        hasGroupRows = true;
+                    } else {
+                        for (auto& subChild : w->children) {
+                            if (subChild->visible && subChild->computedStyle->display != Display::None) {
+                                getGroupBounds(subChild.get());
+                            }
+                        }
+                    }
+                };
+                getGroupBounds(child.get());
+                
+                if (hasGroupRows) {
+                    child->bounds = {startX, groupMinY, availW, groupMaxY - groupMinY};
+                } else {
+                    child->bounds = {startX, currentY, availW, 0.0f};
+                }
+                child->layoutDirty = false;
+            }
+        }
+
+        result.contentHeight = currentY - widget->bounds.y + s.padding.bottom;
+
+        if (!s.height.isSet() && !consumesParentMainAxisHeight(widget, s)) {
+            widget->bounds.h = std::max(widget->bounds.h, result.contentHeight);
+        }
+
+        if (!widget->parent) {
+            widget->bounds.x = 0.0f;
+            widget->bounds.y = 0.0f;
+            widget->bounds.w = constraints.availableWidth;
+            widget->bounds.h = constraints.availableHeight;
+        }
+
+        result.x = widget->bounds.x;
+        result.y = widget->bounds.y;
+        result.width = widget->bounds.w;
+        result.height = widget->bounds.h;
+        return result;
+    }
+
 } // namespace FluxUI
