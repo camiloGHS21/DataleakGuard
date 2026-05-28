@@ -1008,8 +1008,71 @@ inline Widget* Widget::element(const std::string& tag,
     if (lower == "radio") return radio(false, "", cls);
     if (lower == "range") return range(0.5f, 0.0f, 1.0f, 0.01f, cls);
 
+    // Headline Elements
+    if (lower == "h1") return h1(content, cls);
+    if (lower == "h2") return h2(content, cls);
+    if (lower == "h3") return h3(content, cls);
+    if (lower == "h4") return h4(content, cls);
+    if (lower == "h5") return h5(content, cls);
+    if (lower == "h6") return h6(content, cls);
+
+    // Common Text Elements
+    if (lower == "p") return p(content, cls);
+    if (lower == "span") return span(content, cls);
+    if (lower == "strong") return strong(content, cls);
+    if (lower == "b") return b(content, cls);
+    if (lower == "small") return small(content, cls);
+    if (lower == "label") return label(content, cls);
+    if (lower == "legend") return legend(content, cls);
+    if (lower == "code") return code(content, cls);
+    if (lower == "pre") return pre(content, cls);
+
+    // Other Inline Text Semantics tags mapped to Text widget
+    if (lower == "i" || lower == "em" || lower == "u" || lower == "ins" ||
+        lower == "s" || lower == "strike" || lower == "del" || lower == "mark" ||
+        lower == "big" || lower == "sub" || lower == "sup" ||
+        lower == "kbd" || lower == "samp" || lower == "tt" ||
+        lower == "cite" || lower == "var" || lower == "dfn" || lower == "abbr" ||
+        lower == "acronym" || lower == "q" || lower == "bdi" || lower == "bdo" ||
+        lower == "data" || lower == "time" || lower == "nobr" || lower == "rt" ||
+        lower == "rp" || lower == "address" || lower == "figcaption" ||
+        lower == "dt" || lower == "dd" || lower == "td" || lower == "th" ||
+        lower == "caption") {
+        auto* widget = text(content, cls);
+        widget->type = lower;
+        return widget;
+    }
+
     if (!content.empty()) {
         auto* widget = text(content, cls);
+        widget->type = lower;
+        return widget;
+    }
+
+    // Structural/Container HTML elements mapped to Panel widget
+    if (lower == "div") return div(cls, reserve);
+    if (lower == "section") return section(cls, reserve);
+    if (lower == "article") return article(cls, reserve);
+    if (lower == "aside") return aside(cls, reserve);
+    if (lower == "header") return header(cls, reserve);
+    if (lower == "footer") return footer(cls, reserve);
+    if (lower == "main") return main(cls, reserve);
+    if (lower == "nav") return nav(cls, reserve);
+    if (lower == "body") return body(cls, reserve);
+    if (lower == "form") return form(cls, reserve);
+    if (lower == "fieldset") return fieldset(cls, reserve);
+    if (lower == "blockquote") return blockquote(cls, reserve);
+    if (lower == "ul") return ul(cls, reserve);
+    if (lower == "ol") return ol(cls, reserve);
+    if (lower == "li") return li(cls, reserve);
+
+    // Extra structural/table tags
+    if (lower == "figure" || lower == "hgroup" || lower == "search" ||
+        lower == "menu" || lower == "dir" || lower == "center" ||
+        lower == "table" || lower == "thead" || lower == "tbody" ||
+        lower == "tfoot" || lower == "tr" || lower == "col" ||
+        lower == "colgroup") {
+        auto* widget = panel(cls, reserve);
         widget->type = lower;
         return widget;
     }
