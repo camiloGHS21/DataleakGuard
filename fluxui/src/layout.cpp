@@ -898,10 +898,29 @@ namespace FluxUI {
             }
         }
 
-        // 6. Pass 3: Final cell placement
-        float currentY = startY;
+        // 6. Pre-calculate snapped column and row boundaries to enforce pixel-perfect gridlines
+        std::vector<float> snappedX(maxCols + 1, 0.0f);
+        {
+            float cumX = startX;
+            snappedX[0] = std::floor(cumX + 0.5f);
+            for (size_t col = 0; col < maxCols; ++col) {
+                cumX += colWidths[col];
+                snappedX[col + 1] = std::floor(cumX + 0.5f);
+            }
+        }
+
+        std::vector<float> snappedY(matrix.size() + 1, 0.0f);
+        {
+            float cumY = startY;
+            snappedY[0] = std::floor(cumY + 0.5f);
+            for (size_t row = 0; row < matrix.size(); ++row) {
+                cumY += rowHeights[row];
+                snappedY[row + 1] = std::floor(cumY + 0.5f);
+            }
+        }
+
+        // Pass 3: Final cell placement using snapped coordinates
         for (size_t r = 0; r < matrix.size(); ++r) {
-            float rowH = rowHeights[r];
             Widget* rowWidget = rows[r];
 
             for (size_t c = 0; c < maxCols; ++c) {
@@ -916,28 +935,19 @@ namespace FluxUI {
                 int colSpan = std::max(1, cell->colspan);
                 int rowSpan = std::max(1, cell->rowspan);
 
-                float cellX = startX;
-                for (size_t col = 0; col < c; ++col) {
-                    cellX += colWidths[col];
-                }
+                float cellX = snappedX[c];
+                float cellW = snappedX[c + colSpan] - cellX;
+                float cellY = snappedY[r];
+                float cellH = snappedY[r + rowSpan] - cellY;
 
-                float spanW = 0.0f;
-                for (int dc = 0; dc < colSpan && (c + dc) < maxCols; ++dc) {
-                    spanW += colWidths[c + dc];
-                }
-                float spanH = 0.0f;
-                for (int dr = 0; dr < rowSpan && (r + dr) < matrix.size(); ++dr) {
-                    spanH += rowHeights[r + dr];
-                }
-
-                Rect cellArea = {cellX, currentY, spanW, spanH};
+                Rect cellArea = {cellX, cellY, cellW, cellH};
                 cell->layout(cellArea);
             }
 
-            rowWidget->bounds = {startX, currentY, availW, rowH};
+            float rowWidgetY = snappedY[r];
+            float rowWidgetH = snappedY[r + 1] - rowWidgetY;
+            rowWidget->bounds = {snappedX[0], rowWidgetY, snappedX[maxCols] - snappedX[0], rowWidgetH};
             rowWidget->layoutDirty = false;
-
-            currentY += rowH;
         }
 
         for (auto& child : widget->children) {
@@ -966,15 +976,15 @@ namespace FluxUI {
                 getGroupBounds(child.get());
                 
                 if (hasGroupRows) {
-                    child->bounds = {startX, groupMinY, availW, groupMaxY - groupMinY};
+                    child->bounds = {snappedX[0], groupMinY, snappedX[maxCols] - snappedX[0], groupMaxY - groupMinY};
                 } else {
-                    child->bounds = {startX, currentY, availW, 0.0f};
+                    child->bounds = {snappedX[0], snappedY[matrix.size()], snappedX[maxCols] - snappedX[0], 0.0f};
                 }
                 child->layoutDirty = false;
             }
         }
 
-        result.contentHeight = currentY - widget->bounds.y + s.padding.bottom;
+        result.contentHeight = snappedY[matrix.size()] - widget->bounds.y + s.padding.bottom;
 
         if (!s.height.isSet() && !consumesParentMainAxisHeight(widget, s)) {
             widget->bounds.h = std::max(widget->bounds.h, result.contentHeight);

@@ -4641,10 +4641,14 @@ void Renderer::drawSoftwareRoundedRect(const Rect& rect,
     }
 
     Rect drawRect = transformSoftwareRect(rect, drawScale, pivot);
-    drawRect.x = std::floor(drawRect.x + 0.5f);
-    drawRect.y = std::floor(drawRect.y + 0.5f);
-    drawRect.w = std::floor(drawRect.w + 0.5f);
-    drawRect.h = std::floor(drawRect.h + 0.5f);
+    float left = std::floor(drawRect.x + 0.5f);
+    float right = std::floor(drawRect.x + drawRect.w + 0.5f);
+    float top = std::floor(drawRect.y + 0.5f);
+    float bottom = std::floor(drawRect.y + drawRect.h + 0.5f);
+    drawRect.x = left;
+    drawRect.y = top;
+    drawRect.w = std::max(1.0f, right - left);
+    drawRect.h = std::max(1.0f, bottom - top);
     if (drawRect.w <= 0.0f || drawRect.h <= 0.0f) {
         return;
     }
@@ -5087,10 +5091,14 @@ void Renderer::drawVulkanRoundedRect(const Rect& rect,
 
     VulkanRoundedInstance instance = {};
     auto snapPx = [](float value) { return std::floor(value + 0.5f); };
-    instance.rect[0] = snapPx(drawRect.x * dpiScale_);
-    instance.rect[1] = snapPx(drawRect.y * dpiScale_);
-    instance.rect[2] = std::max(1.0f, snapPx(drawRect.w * dpiScale_));
-    instance.rect[3] = std::max(1.0f, snapPx(drawRect.h * dpiScale_));
+    float left = snapPx(drawRect.x * dpiScale_);
+    float right = snapPx((drawRect.x + drawRect.w) * dpiScale_);
+    float top = snapPx(drawRect.y * dpiScale_);
+    float bottom = snapPx((drawRect.y + drawRect.h) * dpiScale_);
+    instance.rect[0] = left;
+    instance.rect[1] = top;
+    instance.rect[2] = std::max(1.0f, right - left);
+    instance.rect[3] = std::max(1.0f, bottom - top);
     instance.color[0] = color.r;
     instance.color[1] = color.g;
     instance.color[2] = color.b;
@@ -6565,10 +6573,14 @@ void Renderer::drawRoundedRect(const Rect& rect, const Color& color,
 
     auto snap = [this](float v) { return std::floor(v * dpiScale_ + 0.5f) / dpiScale_; };
     RoundedRectInstance inst{};
-    inst.rect[0] = snap(rect.x + translation_.x);
-    inst.rect[1] = snap(rect.y + translation_.y);
-    inst.rect[2] = snap(rect.w);
-    inst.rect[3] = snap(rect.h);
+    float left = snap(rect.x + translation_.x);
+    float right = snap(rect.x + rect.w + translation_.x);
+    float top = snap(rect.y + translation_.y);
+    float bottom = snap(rect.y + rect.h + translation_.y);
+    inst.rect[0] = left;
+    inst.rect[1] = top;
+    inst.rect[2] = std::max(0.0f, right - left);
+    inst.rect[3] = std::max(0.0f, bottom - top);
     inst.color[0] = color.r; inst.color[1] = color.g; inst.color[2] = color.b; inst.color[3] = color.a;
     inst.color2[0] = color.r; inst.color2[1] = color.g; inst.color2[2] = color.b; inst.color2[3] = color.a;
     inst.borderColor[0] = 0; inst.borderColor[1] = 0; inst.borderColor[2] = 0; inst.borderColor[3] = 0;
@@ -6624,10 +6636,14 @@ void Renderer::drawRoundedRectGradient(const Rect& rect, const Gradient& gradien
     auto& c2 = gradient.stops.back().first;
 
     RoundedRectInstance inst{};
-    inst.rect[0] = snap(rect.x + translation_.x);
-    inst.rect[1] = snap(rect.y + translation_.y);
-    inst.rect[2] = snap(rect.w);
-    inst.rect[3] = snap(rect.h);
+    float left = snap(rect.x + translation_.x);
+    float right = snap(rect.x + rect.w + translation_.x);
+    float top = snap(rect.y + translation_.y);
+    float bottom = snap(rect.y + rect.h + translation_.y);
+    inst.rect[0] = left;
+    inst.rect[1] = top;
+    inst.rect[2] = std::max(0.0f, right - left);
+    inst.rect[3] = std::max(0.0f, bottom - top);
     inst.color[0] = c1.r; inst.color[1] = c1.g; inst.color[2] = c1.b; inst.color[3] = c1.a;
     inst.color2[0] = c2.r; inst.color2[1] = c2.g; inst.color2[2] = c2.b; inst.color2[3] = c2.a;
     inst.borderColor[0] = 0; inst.borderColor[1] = 0; inst.borderColor[2] = 0; inst.borderColor[3] = 0;
@@ -6678,10 +6694,14 @@ void Renderer::drawBorder(const Rect& rect, const Border& border, const BorderRa
     batchValid_ = true;
 
     RoundedRectInstance inst{};
-    inst.rect[0] = snap(rect.x + translation_.x);
-    inst.rect[1] = snap(rect.y + translation_.y);
-    inst.rect[2] = snap(rect.w);
-    inst.rect[3] = snap(rect.h);
+    float left = snap(rect.x + translation_.x);
+    float right = snap(rect.x + rect.w + translation_.x);
+    float top = snap(rect.y + translation_.y);
+    float bottom = snap(rect.y + rect.h + translation_.y);
+    inst.rect[0] = left;
+    inst.rect[1] = top;
+    inst.rect[2] = std::max(0.0f, right - left);
+    inst.rect[3] = std::max(0.0f, bottom - top);
     inst.color[0] = 0; inst.color[1] = 0; inst.color[2] = 0; inst.color[3] = 0;
     inst.color2[0] = 0; inst.color2[1] = 0; inst.color2[2] = 0; inst.color2[3] = 0;
     inst.borderColor[0] = border.color.r; inst.borderColor[1] = border.color.g;
