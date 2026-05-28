@@ -1639,6 +1639,7 @@ public:
     Renderer& renderer() { return renderer_; }
     StyleSheet& stylesheet() { return stylesheet_; }
     InputState& input() { return input_; }
+    void* getWindowHandle() const { return window_; }
     size_t on(UIEventType type, EventCallback callback);
     void off(size_t listenerId);
     void emit(UIEvent event);

@@ -1024,6 +1024,49 @@ input:focus {
 }
 
 /* Blink UI Parity Styles */
+input[type="checkbox"] {
+    background-color: #ffffff;
+    border: 1px solid #767676;
+    border-radius: 2px;
+    cursor: default;
+    padding: 0;
+    margin: 3px 3px 3px 4px;
+    width: 13px;
+    height: 13px;
+    outline: none;
+    box-shadow: none;
+    box-sizing: border-box;
+}
+
+input[type="radio"] {
+    background-color: #ffffff;
+    border: 1px solid #767676;
+    border-radius: 50%;
+    cursor: default;
+    padding: 0;
+    margin: 3px 3px 0 5px;
+    width: 13px;
+    height: 13px;
+    outline: none;
+    box-shadow: none;
+    box-sizing: border-box;
+}
+
+input[type="range"] {
+    width: 129px;
+    height: 16px;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    cursor: default;
+}
+
+select {
+    border: 1px solid #767676;
+    border-radius: 0;
+    cursor: default;
+}
+
 a {
     color: #4DA1FF;
     cursor: pointer;

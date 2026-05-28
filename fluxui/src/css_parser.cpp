@@ -82,105 +82,146 @@ StyleSheet::StyleSheet() {
         "a:hover { color: #0000ee; }\n"
         "a:active { color: #ff0000; }\n"
 
-        // --- Button ---
+        // --- Button (Blink html.css) ---
         "button {\n"
         "    display: inline-block;\n"
-        "    padding: 4px 12px;\n"
-        "    background-color: #f0f0f0;\n"
-        "    border: 1px solid #767676;\n"
-        "    border-radius: 4px;\n"
-        "    color: #333;\n"
-        "    font-size: 14px;\n"
+        "    padding: 1px 6px;\n"
+        "    background-color: #efefef;\n"
+        "    border: 2px outset #767676;\n"
+        "    border-radius: 2px;\n"
+        "    color: #1f1f1f;\n"
+        "    font-size: 13.333px;\n"
         "    font-family: inherit;\n"
-        "    cursor: pointer;\n"
+        "    cursor: default;\n"
         "    text-align: center;\n"
-        "    min-height: 28px;\n"
+        "    min-height: 22px;\n"
+        "    box-sizing: border-box;\n"
         "}\n"
+        "button:active { border-style: inset; }\n"
+        "button:disabled { background-color: rgba(239,239,239,0.3); border-color: rgba(118,118,118,0.3); color: rgba(16,16,16,0.3); }\n"
 
-        // --- Text input & textarea ---
+        // --- Text input & textarea (Blink html.css) ---
         "input {\n"
         "    display: inline-block;\n"
-        "    padding: 4px 8px;\n"
+        "    padding: 1px 2px;\n"
         "    background-color: #ffffff;\n"
-        "    border: 1px solid #767676;\n"
-        "    border-radius: 2px;\n"
+        "    border: 2px inset #767676;\n"
+        "    border-radius: 0;\n"
         "    color: #000000;\n"
         "    font-size: 13.333px;\n"
         "    font-family: inherit;\n"
-        "    min-height: 22px;\n"
+        "    line-height: normal;\n"
+        "    text-transform: none;\n"
+        "    text-indent: 0;\n"
+        "    text-shadow: none;\n"
+        "    text-align: start;\n"
+        "    letter-spacing: normal;\n"
+        "    word-spacing: normal;\n"
+        "    cursor: text;\n"
         "}\n"
         "textarea {\n"
         "    display: block;\n"
-        "    padding: 4px 8px;\n"
+        "    padding: 2px;\n"
         "    background-color: #ffffff;\n"
         "    border: 1px solid #767676;\n"
-        "    border-radius: 2px;\n"
+        "    border-radius: 0;\n"
         "    color: #000000;\n"
         "    font-size: 13.333px;\n"
         "    font-family: monospace;\n"
-        "    min-height: 60px;\n"
+        "    white-space: pre-wrap;\n"
+        "    word-wrap: break-word;\n"
+        "    cursor: text;\n"
         "}\n"
         "input:focus, textarea:focus {\n"
         "    border-color: #4d90fe;\n"
         "    outline: 2px solid rgba(77,144,254,0.4);\n"
-        "    outline-offset: -1px;\n"
+        "    outline-offset: 0;\n"
         "}\n"
+        "input:disabled, textarea:disabled { cursor: default; background-color: rgba(239,239,239,0.3); color: #545454; border-color: rgba(118,118,118,0.3); }\n"
 
         // --- Label ---
         "label { display: inline; cursor: default; }\n"
 
-        // --- Fieldset & legend ---
+        // --- Fieldset & legend (Blink html.css) ---
         "fieldset {\n"
         "    display: block;\n"
         "    margin: 0 2px;\n"
-        "    padding: 8px 12px 12px 12px;\n"
+        "    padding: 0.35em 0.75em 0.625em 0.75em;\n"
         "    border: 2px groove #c0c0c0;\n"
         "    border-radius: 0;\n"
         "}\n"
         "legend {\n"
         "    display: block;\n"
-        "    padding: 0 4px;\n"
+        "    padding: 0 2px;\n"
         "    font-weight: normal;\n"
         "    font-size: 1em;\n"
         "}\n"
 
-        // --- Select dropdown ---
+        // --- Select dropdown (Blink html.css) ---
         "select {\n"
         "    display: inline-block;\n"
-        "    padding: 2px 6px;\n"
+        "    padding: 1px 4px;\n"
         "    background-color: #ffffff;\n"
         "    border: 1px solid #767676;\n"
-        "    border-radius: 2px;\n"
+        "    border-radius: 0;\n"
         "    color: #000000;\n"
         "    font-size: 13.333px;\n"
         "    font-family: inherit;\n"
         "    min-height: 22px;\n"
-        "    cursor: pointer;\n"
+        "    cursor: default;\n"
+        "    box-sizing: border-box;\n"
+        "    white-space: pre;\n"
+        "    line-height: normal;\n"
         "}\n"
+        "select:disabled { opacity: 0.7; border-color: rgba(118,118,118,0.3); }\n"
         "option { display: none; }\n"
 
-        // --- Checkbox ---
+        // --- Checkbox (Blink html.css) ---
         "input[type='checkbox'] {\n"
         "    display: inline-block;\n"
         "    width: 13px;\n"
         "    height: 13px;\n"
         "    padding: 0;\n"
+        "    margin: 3px 3px 3px 4px;\n"
         "    border: 1px solid #767676;\n"
         "    border-radius: 2px;\n"
         "    background-color: #ffffff;\n"
-        "    cursor: pointer;\n"
+        "    cursor: default;\n"
+        "    box-sizing: border-box;\n"
         "}\n"
 
-        // --- Radio button ---
+        // --- Radio button (Blink html.css) ---
         "input[type='radio'] {\n"
         "    display: inline-block;\n"
         "    width: 13px;\n"
         "    height: 13px;\n"
         "    padding: 0;\n"
+        "    margin: 3px 3px 0 5px;\n"
         "    border: 1px solid #767676;\n"
         "    border-radius: 50%;\n"
         "    background-color: #ffffff;\n"
-        "    cursor: pointer;\n"
+        "    cursor: default;\n"
+        "    box-sizing: border-box;\n"
+        "}\n"
+
+        // --- Color Input (Blink-like) ---
+        "input[type='color'] {\n"
+        "    width: 44px;\n"
+        "    height: 27px;\n"
+        "    padding: 3px 2px;\n"
+        "    border: 1px solid #767676;\n"
+        "    border-radius: 4px;\n"
+        "    background-color: #ffffff;\n"
+        "    box-sizing: border-box;\n"
+        "    cursor: default;\n"
+        "}\n"
+
+        // --- File Input (Blink-like) ---
+        "input[type='file'] {\n"
+        "    display: inline-block;\n"
+        "    border: none;\n"
+        "    background-color: transparent;\n"
+        "    cursor: default;\n"
         "}\n"
 
         // --- Range slider ---
@@ -214,8 +255,8 @@ StyleSheet::StyleSheet() {
         "    background-color: #efefef;\n"
         "}\n"
 
-        // --- Horizontal rule ---
-        "hr { display: block; height: 0; border: 0; border-top: 1px solid #ccc; margin: 8px 0; padding: 0; }\n"
+        // --- Horizontal rule (Blink html.css) ---
+        "hr { display: block; overflow: hidden; margin: 0.5em auto; border-style: inset; border-width: 1px; color: gray; }\n"
 
         // --- Details & summary ---
         "details { display: block; margin: 0; padding: 0; }\n"
@@ -250,6 +291,14 @@ StyleSheet::StyleSheet() {
 
         // --- BR ---
         "br { display: block; height: 0; }\n"
+
+        // --- Text decoration elements (Blink html.css) ---
+        "u, ins { text-decoration: underline; }\n"
+        "s, strike, del { text-decoration: line-through; }\n"
+        "tt { font-family: monospace; }\n"
+
+        // --- Focus visible (Blink html.css) ---
+        "input:focus, textarea:focus, select:focus { outline-offset: 0; }\n"
     );
 }
 

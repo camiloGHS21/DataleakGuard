@@ -1,4 +1,8 @@
 #include "fluxui/widgets.h"
+#ifdef _WIN32
+#include <windows.h>
+#include <commdlg.h>
+#endif
 #include "fluxui/compositor.h"
 #include "fluxui/layout.h"
 #include "fluxui/layout_object.h"
@@ -3916,8 +3920,69 @@ void TextInput::update(const InputState& input) {
         selecting_ = false;
         selectionAnchor_ = caretIndex_;
         selectionFocus_ = caretIndex_;
+        auto spawnPicker = [&]() {
+#ifdef _WIN32
+            if (inputType == TextInputType::Color) {
+                CHOOSECOLOR cc;
+                static COLORREF acrCustClr[16];
+                HWND hwnd = NULL;
+                if (auto* app = Application::instance()) {
+                    hwnd = (HWND)app->getWindowHandle();
+                }
+                ZeroMemory(&cc, sizeof(cc));
+                cc.lStructSize = sizeof(cc);
+                cc.hwndOwner = hwnd;
+                Color initColor = value.empty() ? Color(0, 0, 0, 1) : Color::fromHex(value);
+                cc.rgbResult = RGB(
+                    (int)(std::clamp(initColor.r, 0.0f, 1.0f) * 255.0f),
+                    (int)(std::clamp(initColor.g, 0.0f, 1.0f) * 255.0f),
+                    (int)(std::clamp(initColor.b, 0.0f, 1.0f) * 255.0f)
+                );
+                cc.lpCustColors = (LPDWORD) acrCustClr;
+                cc.Flags = CC_FULLOPEN | CC_RGBINIT;
+                if (ChooseColor(&cc) == TRUE) {
+                    char hex[8];
+                    sprintf_s(hex, "#%02x%02x%02x", 
+                              GetRValue(cc.rgbResult), 
+                              GetGValue(cc.rgbResult), 
+                              GetBValue(cc.rgbResult));
+                    value = hex;
+                    markStyleDirtyRecursive();
+                    if (auto* app = Application::instance()) {
+                        app->requestRedraw();
+                    }
+                }
+            } else if (inputType == TextInputType::File) {
+                OPENFILENAME ofn;
+                char szFile[260] = {0};
+                HWND hwnd = NULL;
+                if (auto* app = Application::instance()) {
+                    hwnd = (HWND)app->getWindowHandle();
+                }
+                ZeroMemory(&ofn, sizeof(ofn));
+                ofn.lStructSize = sizeof(ofn);
+                ofn.hwndOwner = hwnd;
+                ofn.lpstrFile = szFile;
+                ofn.nMaxFile = sizeof(szFile);
+                ofn.lpstrFilter = "All Files\0*.*\0";
+                ofn.nFilterIndex = 1;
+                ofn.lpstrFileTitle = NULL;
+                ofn.nMaxFileTitle = 0;
+                ofn.lpstrInitialDir = NULL;
+                ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+                if (GetOpenFileName(&ofn) == TRUE) {
+                    value = szFile;
+                    markStyleDirtyRecursive();
+                    if (auto* app = Application::instance()) {
+                        app->requestRedraw();
+                    }
+                }
+            }
+#endif
+        };
         if (hovered && input.mouseClicked[0]) {
             focused = true;
+            spawnPicker();
         } else if (!hovered && input.mouseClicked[0]) {
             focused = false;
         }
@@ -3928,6 +3993,7 @@ void TextInput::update(const InputState& input) {
         if (keyboardActivate) {
             pressed = true;
             if (onClick) onClick();
+            spawnPicker();
         }
         updateFocusAnimation();
         return;
@@ -4924,10 +4990,36 @@ void Checkbox::render(Renderer& renderer) {
         size,
         size
     };
-    Color fill = checked ? Color::fromHex("#1a73e8") :
-        (s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1));
-    Color borderColor = checked ? Color::fromHex("#1a73e8") :
-        (s.border.color.a > 0.0f ? s.border.color : Color(0.46f, 0.46f, 0.46f, 1));
+    Color fill;
+    Color borderColor;
+    if (checked) {
+        Color baseAccent = Color::fromHex("#1a73e8");
+        Color hoverAccent = Color::fromHex("#155bb5");
+        Color activeAccent = Color::fromHex("#10478e");
+        if (pressed) {
+            fill = activeAccent;
+        } else if (hoverAnim > 0.0f) {
+            fill = Color::lerp(baseAccent, hoverAccent, hoverAnim);
+        } else {
+            fill = baseAccent;
+        }
+        borderColor = fill;
+    } else {
+        Color baseBg = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+        Color activeBg = Color::fromHex("#efefef");
+        Color baseBorder = s.border.color.a > 0.0f ? s.border.color : Color::fromHex("#767676");
+        Color hoverBorder = Color::fromHex("#4f4f4f");
+        if (pressed) {
+            fill = activeBg;
+            borderColor = hoverBorder;
+        } else if (hoverAnim > 0.0f) {
+            fill = baseBg;
+            borderColor = Color::lerp(baseBorder, hoverBorder, hoverAnim);
+        } else {
+            fill = baseBg;
+            borderColor = baseBorder;
+        }
+    }
     renderer.drawRoundedRect(box, fill, BorderRadius(2.0f));
     renderer.drawBorder(box, Border(std::max(1.0f, s.border.width), borderColor), BorderRadius(2.0f));
     if (checked) {
@@ -4937,7 +5029,7 @@ void Checkbox::render(Renderer& renderer) {
     }
     if (focused) {
         renderer.drawBorder({box.x - 3.0f, box.y - 3.0f, box.w + 6.0f, box.h + 6.0f},
-                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            Border(2.0f, Color(0.90f, 0.59f, 0.0f, 1.0f)),
                             BorderRadius(4.0f));
     }
 }
@@ -4976,10 +5068,34 @@ void Radio::render(Renderer& renderer) {
         size,
         size
     };
-    Color fill = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
-    Color accent = Color::fromHex("#1a73e8");
-    Color borderColor = checked ? accent :
-        (s.border.color.a > 0.0f ? s.border.color : Color(0.46f, 0.46f, 0.46f, 1));
+    Color fill;
+    Color borderColor;
+    Color dotColor;
+    Color baseAccent = Color::fromHex("#1a73e8");
+    Color hoverAccent = Color::fromHex("#155bb5");
+    Color activeAccent = Color::fromHex("#10478e");
+    if (checked) {
+        fill = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+        if (pressed) {
+            dotColor = activeAccent; borderColor = activeAccent;
+        } else if (hoverAnim > 0.0f) {
+            dotColor = Color::lerp(baseAccent, hoverAccent, hoverAnim); borderColor = dotColor;
+        } else {
+            dotColor = baseAccent; borderColor = baseAccent;
+        }
+    } else {
+        Color baseBg = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+        Color baseBorder = s.border.color.a > 0.0f ? s.border.color : Color::fromHex("#767676");
+        Color hoverBorder = Color::fromHex("#4f4f4f");
+        if (pressed) {
+            fill = Color::fromHex("#efefef"); borderColor = hoverBorder;
+        } else if (hoverAnim > 0.0f) {
+            fill = baseBg; borderColor = Color::lerp(baseBorder, hoverBorder, hoverAnim);
+        } else {
+            fill = baseBg; borderColor = baseBorder;
+        }
+        dotColor = baseAccent;
+    }
     renderer.drawRoundedRect(ring, fill, BorderRadius(size * 0.5f));
     renderer.drawBorder(ring, Border(std::max(1.0f, s.border.width), borderColor),
                         BorderRadius(size * 0.5f));
@@ -4989,12 +5105,12 @@ void Radio::render(Renderer& renderer) {
                                   ring.y + (ring.h - dot) * 0.5f,
                                   dot,
                                   dot},
-                                 accent,
+                                 dotColor,
                                  BorderRadius(dot * 0.5f));
     }
     if (focused) {
         renderer.drawBorder({ring.x - 3.0f, ring.y - 3.0f, ring.w + 6.0f, ring.h + 6.0f},
-                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            Border(2.0f, Color(0.90f, 0.59f, 0.0f, 1.0f)),
                             BorderRadius((size + 6.0f) * 0.5f));
     }
 }
@@ -5051,22 +5167,32 @@ void RangeInput::render(Renderer& renderer) {
     Rect track = {bounds.x + pad, bounds.y + (bounds.h - trackH) * 0.5f,
                   std::max(1.0f, bounds.w - pad * 2.0f), trackH};
     float t = (max == min) ? 0.0f : std::clamp((value - min) / (max - min), 0.0f, 1.0f);
-    Color trackColor = s.color.a > 0.0f ? s.color.withAlpha(0.42f) : Color(0.56f, 0.56f, 0.56f, 1);
-    Color accent = Color::fromHex("#1a73e8");
+    Color activeAccent = Color::fromHex("#1a73e8");
+    Color hoverAccent = Color::fromHex("#155bb5");
+    Color pressedAccent = Color::fromHex("#10478e");
+    Color accentColor;
+    if (dragging_) {
+        accentColor = pressedAccent;
+    } else if (hoverAnim > 0.0f) {
+        accentColor = Color::lerp(activeAccent, hoverAccent, hoverAnim);
+    } else {
+        accentColor = activeAccent;
+    }
+    Color trackColor = Color::fromHex("#cccccc");
     renderer.drawRoundedRect(track, trackColor, BorderRadius(trackH * 0.5f));
     renderer.drawRoundedRect({track.x, track.y, track.w * t, track.h},
-                             accent.withAlpha(0.86f), BorderRadius(trackH * 0.5f));
+                             accentColor, BorderRadius(trackH * 0.5f));
     float thumb = 14.0f;
     Rect knob = {track.x + track.w * t - thumb * 0.5f,
                  bounds.y + (bounds.h - thumb) * 0.5f,
                  thumb,
                  thumb};
-    renderer.drawRoundedRect(knob, accent, BorderRadius(thumb * 0.5f));
-    renderer.drawBorder(knob, Border(1.0f, Color(1, 1, 1, 0.88f)),
+    renderer.drawRoundedRect(knob, accentColor, BorderRadius(thumb * 0.5f));
+    renderer.drawBorder(knob, Border(1.0f, Color(1, 1, 1, 1.0f)),
                         BorderRadius(thumb * 0.5f));
     if (focused) {
         renderer.drawBorder({knob.x - 3.0f, knob.y - 3.0f, knob.w + 6.0f, knob.h + 6.0f},
-                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            Border(2.0f, Color(0.90f, 0.59f, 0.0f, 1.0f)),
                             BorderRadius((thumb + 6.0f) * 0.5f));
     }
 }
@@ -5184,10 +5310,25 @@ void Select::update(const InputState& input) {
 void Select::render(Renderer& renderer) {
     if (!canPaintWidget(this)) return;
     const Style& s = *computedStyle;
-    Color bg = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+    Color baseBg = s.backgroundColor.a > 0.0f ? s.backgroundColor : Color(1, 1, 1, 1);
+    Color bg = baseBg;
+    if (pressed || expanded) {
+        bg = baseBg;
+    } else if (hoverAnim > 0.0f) {
+        bg = baseBg;
+    }
     renderer.drawRoundedRect(bounds, bg, s.borderRadius);
-    renderer.drawBorder(bounds, s.border.width > 0.0f ? s.border : Border(1.0f, Color(0, 0, 0, 1)),
-                        s.borderRadius);
+    Border baseBorder = s.border.width > 0.0f ? s.border : Border(1.0f, Color::fromHex("#767676"));
+    Color baseBorderColor = baseBorder.color;
+    Color hoverBorderColor = Color::fromHex("#4f4f4f");
+    Color activeBorderColor = Color::fromHex("#005fcc");
+    Color currentBorderColor = baseBorderColor;
+    if (pressed || expanded) {
+        currentBorderColor = activeBorderColor;
+    } else if (hoverAnim > 0.0f) {
+        currentBorderColor = Color::lerp(baseBorderColor, hoverBorderColor, hoverAnim);
+    }
+    renderer.drawBorder(bounds, Border(baseBorder.width, currentBorderColor), s.borderRadius);
     Rect textRect = {bounds.x + s.padding.left,
                      bounds.y + s.padding.top,
                      std::max(0.0f, bounds.w - s.padding.horizontal() - 18.0f),
@@ -5196,30 +5337,30 @@ void Select::render(Renderer& renderer) {
                             s.fontSize, TextAlign::Left, s.fontWeight, renderFontName(s),
                             s.fontStyle, s.direction, s.unicodeBidi);
     Rect arrowRect = {bounds.x + bounds.w - 20.0f, bounds.y, 16.0f, bounds.h};
-    renderer.drawTextInRect("v", arrowRect, s.color,
+    renderer.drawTextInRect("\xE2\x96\xBE", arrowRect, s.color,
                             std::max(9.0f, s.fontSize - 1.0f),
                             TextAlign::Center, FontWeight::Bold, renderFontName(s),
                             FontStyle::Normal, Direction::Ltr, UnicodeBidi::Normal);
     if (focused) {
         renderer.drawBorder({bounds.x - 2.0f, bounds.y - 2.0f, bounds.w + 4.0f, bounds.h + 4.0f},
-                            Border(1.0f, Color(0.54f, 0.70f, 0.98f, 0.95f)),
+                            Border(2.0f, Color(0.90f, 0.59f, 0.0f, 1.0f)),
                             BorderRadius(s.borderRadius.uniform() + 2.0f));
     }
     if (expanded) {
         auto options = selectOptions(this);
         float rowH = std::max(20.0f, s.fontSize * s.lineHeight + 5.0f);
         Rect list = {bounds.x, bounds.y + bounds.h, bounds.w, rowH * options.size()};
-        renderer.drawRoundedRect(list, bg, BorderRadius(4.0f));
-        renderer.drawBorder(list, Border(1.0f, Color(0.36f, 0.38f, 0.42f, 1)),
-                            BorderRadius(4.0f));
+        renderer.drawRoundedRect(list, Color(1, 1, 1, 1), BorderRadius(0.0f));
+        renderer.drawBorder(list, Border(1.0f, Color::fromHex("#767676")),
+                            BorderRadius(0.0f));
         for (size_t i = 0; i < options.size(); ++i) {
             Rect row = {list.x, list.y + rowH * i, list.w, rowH};
             if (i == selectedIndex) {
-                renderer.drawRoundedRect(row, Color(0.54f, 0.70f, 0.98f, 0.34f),
+                renderer.drawRoundedRect(row, Color(0.0f, 0.47f, 0.91f, 0.2f),
                                          BorderRadius(0.0f));
             }
             Rect optionText = {row.x + s.padding.left, row.y, row.w - s.padding.horizontal(), row.h};
-            renderer.drawTextInRect(options[i]->label, optionText, s.color,
+            renderer.drawTextInRect(options[i]->label, optionText, Color(0, 0, 0, 1),
                                     s.fontSize, TextAlign::Left, s.fontWeight,
                                     renderFontName(s), s.fontStyle, s.direction,
                                     s.unicodeBidi);
