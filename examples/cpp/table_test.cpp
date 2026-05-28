@@ -25,7 +25,7 @@ int main() {
         
         // CSS rules setting up the Display types for each tabular component
         ".my-table { display: table; width: 100%; border-collapse: collapse; border-top: 1px solid #1f2937; border-left: 1px solid #1f2937; }"
-        ".my-thead { display: table-header-group; background-color: #1f2937; }"
+        ".my-thead { display: table-header-group; background-color: #1e293b; }"
         ".my-tbody { display: table-row-group; }"
         ".my-tfoot { display: table-footer-group; background-color: #111827; border-top: 2px solid #374151; }"
         ".my-tr { display: table-row; }"
@@ -33,6 +33,14 @@ int main() {
         ".my-th { display: table-cell; font-weight: 700; color: #f1f5f9; padding: 14px 16px; text-align: left; font-size: 14px; border-bottom: 2px solid #374151; border-right: 1px solid #1f2937; }"
         ".my-td { display: table-cell; color: #cbd5e1; padding: 14px 16px; font-size: 14px; vertical-align: middle; border-bottom: 1px solid #1f2937; border-right: 1px solid #1f2937; }"
         
+        // Column specific sizing classes to ensure beautiful proportions
+        ".col-id { width: 80px; }"
+        ".col-desc { width: 360px; }"
+        ".col-priority { width: 100px; }"
+        ".col-scale { width: 90px; }"
+        ".col-price { width: 100px; }"
+        ".col-total { width: 110px; }"
+
         // Utility colors and designs
         ".text-right { text-align: right; }"
         ".text-center { text-align: center; }"
@@ -63,12 +71,12 @@ int main() {
     // Header Group
     auto* thead = table->element("div", "", "my-thead");
     auto* thr = thead->element("div", "", "my-tr");
-    thr->element("div", "Service ID", "my-th");
-    thr->element("div", "Description", "my-th");
-    thr->element("div", "Priority", "my-th");
-    thr->element("div", "Usage Scale", "my-th");
-    thr->element("div", "Unit Price", "my-th text-right");
-    thr->element("div", "Total Cost", "my-th text-right");
+    thr->element("div", "Service ID", "my-th col-id");
+    thr->element("div", "Description", "my-th col-desc");
+    thr->element("div", "Priority", "my-th col-priority");
+    thr->element("div", "Usage Scale", "my-th col-scale");
+    thr->element("div", "Unit Price", "my-th col-price text-right");
+    thr->element("div", "Total Cost", "my-th col-total text-right");
 
     // Body Group
     auto* tbody = table->element("div", "", "my-tbody");
