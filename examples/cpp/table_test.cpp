@@ -131,18 +131,19 @@ int main() {
 
     // Interactivity Control Bar
     auto* btnContainer = root->element("div", "", "button-bar");
-    
     auto* btnToggleSpan = static_cast<FluxUI::Button*>(btnContainer->add<FluxUI::Button>("Toggle Row Spanning", "btn btn-primary"));
     btnToggleSpan->onClick = [=]() {
         static bool spanned = true;
         spanned = !spanned;
+        auto* spanText = static_cast<FluxUI::Text*>(spanTd);
         if (spanned) {
             spanTd->setAttribute("rowspan", "2");
-            spanTd->text("Enterprise Storage Cluster & Automated Backups Strategy (High IOPS Solid State)");
+            spanText->content = "Enterprise Storage Cluster & Automated Backups Strategy (High IOPS Solid State)";
         } else {
             spanTd->setAttribute("rowspan", "1");
-            spanTd->text("Enterprise Storage Cluster Only (Low IOPS Solid State)");
+            spanText->content = "Enterprise Storage Cluster Only (Low IOPS Solid State)";
         }
+        spanTd->markLayoutDirty();
         std::cout << "Dynamic Table Layout Updated: toggled rowspan." << std::endl;
     };
 
@@ -150,13 +151,15 @@ int main() {
     btnColSpan->onClick = [=]() {
         static bool expanded = false;
         expanded = !expanded;
+        auto* labelText = static_cast<FluxUI::Text*>(totalLabel);
         if (expanded) {
             totalLabel->setAttribute("colspan", "4");
-            totalLabel->text("Subtotal Cost (Calculated)");
+            labelText->content = "Subtotal Cost (Calculated)";
         } else {
             totalLabel->setAttribute("colspan", "5");
-            totalLabel->text("Aggregated Infrastructural Charges");
+            labelText->content = "Aggregated Infrastructural Charges";
         }
+        totalLabel->markLayoutDirty();
         std::cout << "Dynamic Table Layout Updated: toggled colspan." << std::endl;
     };
 
