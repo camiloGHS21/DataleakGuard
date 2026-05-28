@@ -108,6 +108,11 @@ int main() {
 
     auto* r3 = tbody->element("div", "", "my-tr");
     r3->element("div", "SRV-03", "my-td");
+    
+    // Placeholder cell for Description in Row 3 (used only when rowspan = 1)
+    auto* r3_placeholder = r3->element("div", "Enterprise Storage Cluster Only (Low IOPS Solid State)", "my-td");
+    r3_placeholder->visible = false; // Start hidden because rowspan is initially 2
+    
     // cell of index 1 (Description) is spanned from r2!
     auto* b3 = r3->element("div", "", "my-td");
     b3->element("span", "Standard", "badge badge-success");
@@ -135,6 +140,7 @@ int main() {
     totalLabel->css("font-weight: 700; color: #f1f5f9;");
     
     auto* totalPrice = ftr->element("div", "$291.68", "my-td text-right");
+    totalPrice->setAttribute("colspan", "1");
     totalPrice->css("font-weight: 700; color: #6366f1; font-size: 16px;");
 
     // Interactivity Control Bar
@@ -147,11 +153,14 @@ int main() {
         if (spanned) {
             spanTd->setAttribute("rowspan", "2");
             spanText->content = "Enterprise Storage Cluster & Automated Backups Strategy (High IOPS Solid State)";
+            r3_placeholder->visible = false;
         } else {
             spanTd->setAttribute("rowspan", "1");
             spanText->content = "Enterprise Storage Cluster Only (Low IOPS Solid State)";
+            r3_placeholder->visible = true;
         }
         spanTd->markLayoutDirty();
+        r3_placeholder->markLayoutDirty();
         std::cout << "Dynamic Table Layout Updated: toggled rowspan." << std::endl;
     };
 
@@ -162,12 +171,15 @@ int main() {
         auto* labelText = static_cast<FluxUI::Text*>(totalLabel);
         if (expanded) {
             totalLabel->setAttribute("colspan", "4");
+            totalPrice->setAttribute("colspan", "2"); // Keep total columns = 6!
             labelText->content = "Subtotal Cost (Calculated)";
         } else {
             totalLabel->setAttribute("colspan", "5");
+            totalPrice->setAttribute("colspan", "1"); // Keep total columns = 6!
             labelText->content = "Aggregated Infrastructural Charges";
         }
         totalLabel->markLayoutDirty();
+        totalPrice->markLayoutDirty();
         std::cout << "Dynamic Table Layout Updated: toggled colspan." << std::endl;
     };
 
