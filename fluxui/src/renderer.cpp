@@ -679,87 +679,202 @@ Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr
         if (start != std::string::npos && end != std::string::npos) {
             std::string sub = value.substr(start + 1, end - start - 1);
             std::vector<float> nums;
-            std::istringstream iss(sub);
-            std::string token;
-            while (std::getline(iss, token, ',')) {
-                token = trimSvgString(token);
-                if (token.empty()) continue;
-                bool percent = (!token.empty() && token.back() == '%');
-                if (percent) token.pop_back();
+            std::vector<bool> isPercent;
+            
+            const char* p = sub.c_str();
+            while (*p) {
+                while (*p && (std::isspace((unsigned char)*p) || *p == ',' || *p == '/')) {
+                    ++p;
+                }
+                if (!*p) break;
+                
                 char* parseEnd = nullptr;
-                float val = std::strtof(token.c_str(), &parseEnd);
-                if (percent) {
-                    val = (val / 100.0f) * 255.0f;
+                float val = std::strtof(p, &parseEnd);
+                if (parseEnd == p) {
+                    ++p;
+                    continue;
+                }
+                p = parseEnd;
+                
+                bool percent = false;
+                if (*p == '%') {
+                    percent = true;
+                    ++p;
                 }
                 nums.push_back(val);
+                isPercent.push_back(percent);
             }
+            
             if (nums.size() >= 3) {
-                // If alpha is specified as a percentage, parse it accordingly
+                float r = isPercent[0] ? (nums[0] / 100.0f) * 255.0f : nums[0];
+                float g = isPercent[1] ? (nums[1] / 100.0f) * 255.0f : nums[1];
+                float b = isPercent[2] ? (nums[2] / 100.0f) * 255.0f : nums[2];
                 float a = 1.0f;
                 if (nums.size() >= 4) {
-                    // Check if raw value has a '%' at the alpha position
-                    size_t commaCount = 0;
-                    size_t searchPos = 0;
-                    while ((searchPos = sub.find(',', searchPos)) != std::string::npos) {
-                        commaCount++;
-                        searchPos++;
-                    }
-                    if (commaCount >= 3) {
-                        // The fourth parameter might have '%' but we already stripped/parsed it in the loop
-                        // Since alpha percentage is 0% to 100%, but in std::strtof percent alpha was multiplied by 255.0f,
-                        // we check if the raw token for alpha ended with '%' and adjust it back to 0.0-1.0 range.
-                        std::istringstream iss2(sub);
-                        std::string tok2;
-                        size_t idx = 0;
-                        bool alphaPercent = false;
-                        while (std::getline(iss2, tok2, ',')) {
-                            if (idx == 3) {
-                                tok2 = trimSvgString(tok2);
-                                if (!tok2.empty() && tok2.back() == '%') {
-                                    alphaPercent = true;
-                                }
-                            }
-                            idx++;
-                        }
-                        if (alphaPercent) {
-                            a = nums[3] / 255.0f; // Scale it back to 0.0f - 1.0f
-                        } else {
-                            a = nums[3];
-                        }
-                    } else {
-                        a = nums[3];
-                    }
+                    a = isPercent[3] ? nums[3] / 100.0f : nums[3];
                 }
-                return Color(nums[0] / 255.0f, nums[1] / 255.0f, nums[2] / 255.0f, a);
+                return Color(r / 255.0f, g / 255.0f, b / 255.0f, a);
             }
         }
     }
 
     struct Named { const char* name; Color color; };
     static const Named named[] = {
-        {"black", Color(0, 0, 0, 1)}, {"white", Color(1, 1, 1, 1)},
-        {"red", Color(1, 0, 0, 1)}, {"green", Color(0, 0.5f, 0, 1)},
-        {"blue", Color(0, 0, 1, 1)}, {"yellow", Color(1, 1, 0, 1)},
-        {"cyan", Color(0, 1, 1, 1)}, {"magenta", Color(1, 0, 1, 1)},
-        {"gray", Color(0.5f, 0.5f, 0.5f, 1)}, {"grey", Color(0.5f, 0.5f, 0.5f, 1)},
-        {"orange", Color(1.0f, 0.647f, 0.0f, 1.0f)},
-        {"purple", Color(0.5f, 0.0f, 0.5f, 1.0f)},
-        {"pink", Color(1.0f, 0.753f, 0.796f, 1.0f)},
-        {"brown", Color(0.647f, 0.165f, 0.165f, 1.0f)},
-        {"gold", Color(1.0f, 0.843f, 0.0f, 1.0f)},
-        {"silver", Color(0.753f, 0.753f, 0.753f, 1.0f)},
-        {"lime", Color(0.0f, 1.0f, 0.0f, 1.0f)},
-        {"navy", Color(0.0f, 0.0f, 0.5f, 1.0f)},
-        {"olive", Color(0.5f, 0.5f, 0.0f, 1.0f)},
-        {"teal", Color(0.0f, 0.5f, 0.5f, 1.0f)},
-        {"maroon", Color(0.5f, 0.0f, 0.0f, 1.0f)},
-        {"violet", Color(0.933f, 0.51f, 0.933f, 1.0f)},
-        {"indigo", Color(0.294f, 0.0f, 0.51f, 1.0f)},
-        {"darkgray", Color(0.663f, 0.663f, 0.663f, 1.0f)},
-        {"lightgray", Color(0.827f, 0.827f, 0.827f, 1.0f)}
+        {"aliceblue", Color::fromHex("#F0F8FF")},
+        {"antiquewhite", Color::fromHex("#FAEBD7")},
+        {"aqua", Color::fromHex("#00FFFF")},
+        {"aquamarine", Color::fromHex("#7FFFD4")},
+        {"azure", Color::fromHex("#F0FFFF")},
+        {"beige", Color::fromHex("#F5F5DC")},
+        {"bisque", Color::fromHex("#FFE4C4")},
+        {"black", Color::fromHex("#000000")},
+        {"blanchedalmond", Color::fromHex("#FFEBCD")},
+        {"blue", Color::fromHex("#0000FF")},
+        {"blueviolet", Color::fromHex("#8A2BE2")},
+        {"brown", Color::fromHex("#A52A2A")},
+        {"burlywood", Color::fromHex("#DEB887")},
+        {"cadetblue", Color::fromHex("#5F9EA0")},
+        {"chartreuse", Color::fromHex("#7FFF00")},
+        {"chocolate", Color::fromHex("#D2691E")},
+        {"coral", Color::fromHex("#FF7F50")},
+        {"cornflowerblue", Color::fromHex("#6495ED")},
+        {"cornsilk", Color::fromHex("#FFF8DC")},
+        {"crimson", Color::fromHex("#DC143C")},
+        {"cyan", Color::fromHex("#00FFFF")},
+        {"darkblue", Color::fromHex("#00008B")},
+        {"darkcyan", Color::fromHex("#008B8B")},
+        {"darkgoldenrod", Color::fromHex("#B8860B")},
+        {"darkgray", Color::fromHex("#A9A9A9")},
+        {"darkgreen", Color::fromHex("#006400")},
+        {"darkgrey", Color::fromHex("#A9A9A9")},
+        {"darkkhaki", Color::fromHex("#BDB76B")},
+        {"darkmagenta", Color::fromHex("#8B008B")},
+        {"darkolivegreen", Color::fromHex("#556B2F")},
+        {"darkorange", Color::fromHex("#FF8C00")},
+        {"darkorchid", Color::fromHex("#9932CC")},
+        {"darkred", Color::fromHex("#8B0000")},
+        {"darksalmon", Color::fromHex("#E9967A")},
+        {"darkseagreen", Color::fromHex("#8FBC8F")},
+        {"darkslateblue", Color::fromHex("#483D8B")},
+        {"darkslategray", Color::fromHex("#2F4F4F")},
+        {"darkslategrey", Color::fromHex("#2F4F4F")},
+        {"darkturquoise", Color::fromHex("#00CED1")},
+        {"darkviolet", Color::fromHex("#9400D3")},
+        {"deeppink", Color::fromHex("#FF1493")},
+        {"deepskyblue", Color::fromHex("#00BFFF")},
+        {"dimgray", Color::fromHex("#696969")},
+        {"dimgrey", Color::fromHex("#696969")},
+        {"dodgerblue", Color::fromHex("#1E90FF")},
+        {"firebrick", Color::fromHex("#B22222")},
+        {"floralwhite", Color::fromHex("#FFFAF0")},
+        {"forestgreen", Color::fromHex("#228B22")},
+        {"fuchsia", Color::fromHex("#FF00FF")},
+        {"gainsboro", Color::fromHex("#DCDCDC")},
+        {"ghostwhite", Color::fromHex("#F8F8FF")},
+        {"gold", Color::fromHex("#FFD700")},
+        {"goldenrod", Color::fromHex("#DAA520")},
+        {"gray", Color::fromHex("#808080")},
+        {"green", Color::fromHex("#008000")},
+        {"greenyellow", Color::fromHex("#ADFF2F")},
+        {"grey", Color::fromHex("#808080")},
+        {"honeydew", Color::fromHex("#F0FFF0")},
+        {"hotpink", Color::fromHex("#FF69B4")},
+        {"indianred", Color::fromHex("#CD5C5C")},
+        {"indigo", Color::fromHex("#4B0082")},
+        {"ivory", Color::fromHex("#FFFFF0")},
+        {"khaki", Color::fromHex("#F0E68C")},
+        {"lavender", Color::fromHex("#E6E6FA")},
+        {"lavenderblush", Color::fromHex("#FFF0F5")},
+        {"lawngreen", Color::fromHex("#7CFC00")},
+        {"lemonchiffon", Color::fromHex("#FFFACD")},
+        {"lightblue", Color::fromHex("#ADD8E6")},
+        {"lightcoral", Color::fromHex("#F08080")},
+        {"lightcyan", Color::fromHex("#E0FFFF")},
+        {"lightgoldenrodyellow", Color::fromHex("#FAFAD2")},
+        {"lightgray", Color::fromHex("#D3D3D3")},
+        {"lightgreen", Color::fromHex("#90EE90")},
+        {"lightgrey", Color::fromHex("#D3D3D3")},
+        {"lightpink", Color::fromHex("#FFB6C1")},
+        {"lightsalmon", Color::fromHex("#FFA07A")},
+        {"lightseagreen", Color::fromHex("#20B2AA")},
+        {"lightskyblue", Color::fromHex("#87CEFA")},
+        {"lightslategray", Color::fromHex("#778899")},
+        {"lightslategrey", Color::fromHex("#778899")},
+        {"lightsteelblue", Color::fromHex("#B0C4DE")},
+        {"lightyellow", Color::fromHex("#FFFFE0")},
+        {"lime", Color::fromHex("#00FF00")},
+        {"limegreen", Color::fromHex("#32CD32")},
+        {"linen", Color::fromHex("#FAF0E6")},
+        {"magenta", Color::fromHex("#FF00FF")},
+        {"maroon", Color::fromHex("#800000")},
+        {"mediumaquamarine", Color::fromHex("#66CDAA")},
+        {"mediumblue", Color::fromHex("#0000CD")},
+        {"mediumorchid", Color::fromHex("#BA55D3")},
+        {"mediumpurple", Color::fromHex("#9370DB")},
+        {"mediumseagreen", Color::fromHex("#3CB371")},
+        {"mediumslateblue", Color::fromHex("#7B68EE")},
+        {"mediumspringgreen", Color::fromHex("#00FA9A")},
+        {"mediumturquoise", Color::fromHex("#48D1CC")},
+        {"mediumvioletred", Color::fromHex("#C71585")},
+        {"midnightblue", Color::fromHex("#191970")},
+        {"mintcream", Color::fromHex("#F5FFFA")},
+        {"mistyrose", Color::fromHex("#FFE4E1")},
+        {"moccasin", Color::fromHex("#FFE4B5")},
+        {"navajowhite", Color::fromHex("#FFDEAD")},
+        {"navy", Color::fromHex("#000080")},
+        {"oldlace", Color::fromHex("#FDF5E6")},
+        {"olive", Color::fromHex("#808000")},
+        {"olivedrab", Color::fromHex("#6B8E23")},
+        {"orange", Color::fromHex("#FFA500")},
+        {"orangered", Color::fromHex("#FF4500")},
+        {"orchid", Color::fromHex("#DA70D6")},
+        {"palegoldenrod", Color::fromHex("#EEE8AA")},
+        {"palegreen", Color::fromHex("#98FB98")},
+        {"paleturquoise", Color::fromHex("#AFEEEE")},
+        {"palevioletred", Color::fromHex("#DB7093")},
+        {"papayawhip", Color::fromHex("#FFEFD5")},
+        {"peachpuff", Color::fromHex("#FFDAB9")},
+        {"peru", Color::fromHex("#CD853F")},
+        {"pink", Color::fromHex("#FFC0CB")},
+        {"plum", Color::fromHex("#DDA0DD")},
+        {"powderblue", Color::fromHex("#B0E0E6")},
+        {"purple", Color::fromHex("#800080")},
+        {"rebeccapurple", Color::fromHex("#663399")},
+        {"red", Color::fromHex("#FF0000")},
+        {"rosybrown", Color::fromHex("#BC8F8F")},
+        {"royalblue", Color::fromHex("#4169E1")},
+        {"saddlebrown", Color::fromHex("#8B4513")},
+        {"salmon", Color::fromHex("#FA8072")},
+        {"sandybrown", Color::fromHex("#F4A460")},
+        {"seagreen", Color::fromHex("#2E8B57")},
+        {"seashell", Color::fromHex("#FFF5EE")},
+        {"sienna", Color::fromHex("#A0522D")},
+        {"silver", Color::fromHex("#C0C0C0")},
+        {"skyblue", Color::fromHex("#87CEEB")},
+        {"slateblue", Color::fromHex("#6A5ACD")},
+        {"slategray", Color::fromHex("#708090")},
+        {"slategrey", Color::fromHex("#708090")},
+        {"snow", Color::fromHex("#FFFAFA")},
+        {"springgreen", Color::fromHex("#00FF7F")},
+        {"steelblue", Color::fromHex("#4682B4")},
+        {"tan", Color::fromHex("#D2B48C")},
+        {"teal", Color::fromHex("#008080")},
+        {"thistle", Color::fromHex("#D8BFD8")},
+        {"tomato", Color::fromHex("#FF6347")},
+        {"turquoise", Color::fromHex("#40E0D0")},
+        {"violet", Color::fromHex("#EE82EE")},
+        {"wheat", Color::fromHex("#F5DEB3")},
+        {"white", Color::fromHex("#FFFFFF")},
+        {"whitesmoke", Color::fromHex("#F5F5F5")},
+        {"yellow", Color::fromHex("#FFFF00")},
+        {"yellowgreen", Color::fromHex("#9ACD32")}
     };
-    for (const auto& item : named) {
-        if (value == item.name) return item.color;
+
+    auto it = std::lower_bound(std::begin(named), std::end(named), value, [](const Named& item, const std::string& val) {
+        return std::strcmp(item.name, val.c_str()) < 0;
+    });
+    if (it != std::end(named) && value == it->name) {
+        return it->color;
     }
     return fallback;
 }
@@ -1051,8 +1166,13 @@ void fillPolygon(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color
     }
     for (int y = (int)std::floor(minY); y <= (int)std::ceil(maxY); ++y) {
         for (int x = (int)std::floor(minX); x <= (int)std::ceil(maxX); ++x) {
-            if (pointInPolygon(x + 0.5f, y + 0.5f, points)) {
-                svgBlendPixel(canvas, x, y, color);
+            int insideCount = 0;
+            if (pointInPolygon(x + 0.25f, y + 0.25f, points)) insideCount++;
+            if (pointInPolygon(x + 0.75f, y + 0.25f, points)) insideCount++;
+            if (pointInPolygon(x + 0.25f, y + 0.75f, points)) insideCount++;
+            if (pointInPolygon(x + 0.75f, y + 0.75f, points)) insideCount++;
+            if (insideCount > 0) {
+                svgBlendPixel(canvas, x, y, color, insideCount / 4.0f);
             }
         }
     }
@@ -1157,10 +1277,12 @@ void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
     float bottom = std::max(p0.y, p1.y);
     for (int py = (int)std::floor(top); py <= (int)std::ceil(bottom); ++py) {
         for (int px = (int)std::floor(left); px <= (int)std::ceil(right); ++px) {
-            float cx = px + 0.5f;
-            float cy = py + 0.5f;
-            bool inside = cx >= left && cx <= right && cy >= top && cy <= bottom;
-            if (inside && fill.a > 0.0f) svgBlendPixel(canvas, px, py, fill);
+            float xOverlap = std::max(0.0f, std::min((float)px + 1.0f, right) - std::max((float)px, left));
+            float yOverlap = std::max(0.0f, std::min((float)py + 1.0f, bottom) - std::max((float)py, top));
+            float coverage = xOverlap * yOverlap;
+            if (coverage > 0.0f && fill.a > 0.0f) {
+                svgBlendPixel(canvas, px, py, fill, coverage);
+            }
         }
     }
     if (stroke.a > 0.0f && strokeWidth > 0.0f) {
@@ -1172,24 +1294,61 @@ void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
 void drawSvgEllipse(SvgCanvas& canvas, float cx, float cy, float rx, float ry,
                     Color fill, Color stroke, float strokeWidth) {
     if (rx <= 0.0f || ry <= 0.0f) return;
-    Vec2 c = svgMapPoint(canvas, cx, cy);
-    float prx = std::abs(rx * canvas.scaleX);
-    float pry = std::abs(ry * canvas.scaleY);
-    int minX = (int)std::floor(c.x - prx - strokeWidth - 1.0f);
-    int maxX = (int)std::ceil(c.x + prx + strokeWidth + 1.0f);
-    int minY = (int)std::floor(c.y - pry - strokeWidth - 1.0f);
-    int maxY = (int)std::ceil(c.y + pry + strokeWidth + 1.0f);
-    float strokeNorm = strokeWidth > 0.0f ? strokeWidth / std::max(1.0f, std::min(prx, pry)) : 0.0f;
-    for (int y = minY; y <= maxY; ++y) {
-        for (int x = minX; x <= maxX; ++x) {
-            float nx = (x + 0.5f - c.x) / std::max(1.0f, prx);
-            float ny = (y + 0.5f - c.y) / std::max(1.0f, pry);
-            float d = std::sqrt(nx * nx + ny * ny);
-            if (d <= 1.0f && fill.a > 0.0f) svgBlendPixel(canvas, x, y, fill, std::clamp(1.5f - d, 0.0f, 1.0f));
-            if (stroke.a > 0.0f && strokeNorm > 0.0f && std::abs(d - 1.0f) <= strokeNorm + 0.02f) {
-                svgBlendPixel(canvas, x, y, stroke);
-            }
-        }
+    
+    std::vector<Vec2> points;
+    const float K = 0.55228475f; // Cubic bezier kappa for elliptical arc approximation
+    
+    // Quadrant 1: Top-Right (from 0 to 90 deg / from (cx + rx, cy) to (cx, cy + ry))
+    Vec2 p0 = {cx + rx, cy};
+    Vec2 cp1 = {cx + rx, cy + ry * K};
+    Vec2 cp2 = {cx + rx * K, cy + ry};
+    Vec2 p1 = {cx, cy + ry};
+    
+    // Evaluate Q1
+    appendCubic(points,
+                svgMapPoint(canvas, p0.x, p0.y),
+                svgMapPoint(canvas, cp1.x, cp1.y),
+                svgMapPoint(canvas, cp2.x, cp2.y),
+                svgMapPoint(canvas, p1.x, p1.y));
+                
+    // Quadrant 2: Bottom-Right (from (cx, cy + ry) to (cx - rx, cy))
+    Vec2 cp3 = {cx - rx * K, cy + ry};
+    Vec2 cp4 = {cx - rx, cy + ry * K};
+    Vec2 p2 = {cx - rx, cy};
+    
+    // Evaluate Q2
+    appendCubic(points,
+                svgMapPoint(canvas, p1.x, p1.y),
+                svgMapPoint(canvas, cp3.x, cp3.y),
+                svgMapPoint(canvas, cp4.x, cp4.y),
+                svgMapPoint(canvas, p2.x, p2.y));
+                
+    // Quadrant 3: Bottom-Left (from (cx - rx, cy) to (cx, cy - ry))
+    Vec2 cp5 = {cx - rx, cy - ry * K};
+    Vec2 cp6 = {cx - rx * K, cy - ry};
+    Vec2 p3 = {cx, cy - ry};
+    
+    // Evaluate Q3
+    appendCubic(points,
+                svgMapPoint(canvas, p2.x, p2.y),
+                svgMapPoint(canvas, cp5.x, cp5.y),
+                svgMapPoint(canvas, cp6.x, cp6.y),
+                svgMapPoint(canvas, p3.x, p3.y));
+                
+    // Quadrant 4: Top-Left (from (cx, cy - ry) to (cx + rx, cy))
+    Vec2 cp7 = {cx + rx * K, cy - ry};
+    Vec2 cp8 = {cx + rx, cy - ry * K};
+    
+    // Evaluate Q4
+    appendCubic(points,
+                svgMapPoint(canvas, p3.x, p3.y),
+                svgMapPoint(canvas, cp7.x, cp7.y),
+                svgMapPoint(canvas, cp8.x, cp8.y),
+                svgMapPoint(canvas, p0.x, p0.y));
+                
+    if (fill.a > 0.0f) fillPolygon(canvas, points, fill);
+    if (stroke.a > 0.0f && strokeWidth > 0.0f) {
+        strokePolyline(canvas, points, stroke, strokeWidth, true);
     }
 }
 
