@@ -677,9 +677,59 @@ Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr
         auto start = value.find('(');
         auto end = value.find(')', start);
         if (start != std::string::npos && end != std::string::npos) {
-            std::vector<float> nums = parseSvgNumberList(value.substr(start + 1, end - start - 1));
+            std::string sub = value.substr(start + 1, end - start - 1);
+            std::vector<float> nums;
+            std::istringstream iss(sub);
+            std::string token;
+            while (std::getline(iss, token, ',')) {
+                token = trimSvgString(token);
+                if (token.empty()) continue;
+                bool percent = (!token.empty() && token.back() == '%');
+                if (percent) token.pop_back();
+                char* parseEnd = nullptr;
+                float val = std::strtof(token.c_str(), &parseEnd);
+                if (percent) {
+                    val = (val / 100.0f) * 255.0f;
+                }
+                nums.push_back(val);
+            }
             if (nums.size() >= 3) {
-                float a = nums.size() >= 4 ? nums[3] : 1.0f;
+                // If alpha is specified as a percentage, parse it accordingly
+                float a = 1.0f;
+                if (nums.size() >= 4) {
+                    // Check if raw value has a '%' at the alpha position
+                    size_t commaCount = 0;
+                    size_t searchPos = 0;
+                    while ((searchPos = sub.find(',', searchPos)) != std::string::npos) {
+                        commaCount++;
+                        searchPos++;
+                    }
+                    if (commaCount >= 3) {
+                        // The fourth parameter might have '%' but we already stripped/parsed it in the loop
+                        // Since alpha percentage is 0% to 100%, but in std::strtof percent alpha was multiplied by 255.0f,
+                        // we check if the raw token for alpha ended with '%' and adjust it back to 0.0-1.0 range.
+                        std::istringstream iss2(sub);
+                        std::string tok2;
+                        size_t idx = 0;
+                        bool alphaPercent = false;
+                        while (std::getline(iss2, tok2, ',')) {
+                            if (idx == 3) {
+                                tok2 = trimSvgString(tok2);
+                                if (!tok2.empty() && tok2.back() == '%') {
+                                    alphaPercent = true;
+                                }
+                            }
+                            idx++;
+                        }
+                        if (alphaPercent) {
+                            a = nums[3] / 255.0f; // Scale it back to 0.0f - 1.0f
+                        } else {
+                            a = nums[3];
+                        }
+                    } else {
+                        a = nums[3];
+                    }
+                }
                 return Color(nums[0] / 255.0f, nums[1] / 255.0f, nums[2] / 255.0f, a);
             }
         }
@@ -691,7 +741,22 @@ Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr
         {"red", Color(1, 0, 0, 1)}, {"green", Color(0, 0.5f, 0, 1)},
         {"blue", Color(0, 0, 1, 1)}, {"yellow", Color(1, 1, 0, 1)},
         {"cyan", Color(0, 1, 1, 1)}, {"magenta", Color(1, 0, 1, 1)},
-        {"gray", Color(0.5f, 0.5f, 0.5f, 1)}, {"grey", Color(0.5f, 0.5f, 0.5f, 1)}
+        {"gray", Color(0.5f, 0.5f, 0.5f, 1)}, {"grey", Color(0.5f, 0.5f, 0.5f, 1)},
+        {"orange", Color(1.0f, 0.647f, 0.0f, 1.0f)},
+        {"purple", Color(0.5f, 0.0f, 0.5f, 1.0f)},
+        {"pink", Color(1.0f, 0.753f, 0.796f, 1.0f)},
+        {"brown", Color(0.647f, 0.165f, 0.165f, 1.0f)},
+        {"gold", Color(1.0f, 0.843f, 0.0f, 1.0f)},
+        {"silver", Color(0.753f, 0.753f, 0.753f, 1.0f)},
+        {"lime", Color(0.0f, 1.0f, 0.0f, 1.0f)},
+        {"navy", Color(0.0f, 0.0f, 0.5f, 1.0f)},
+        {"olive", Color(0.5f, 0.5f, 0.0f, 1.0f)},
+        {"teal", Color(0.0f, 0.5f, 0.5f, 1.0f)},
+        {"maroon", Color(0.5f, 0.0f, 0.0f, 1.0f)},
+        {"violet", Color(0.933f, 0.51f, 0.933f, 1.0f)},
+        {"indigo", Color(0.294f, 0.0f, 0.51f, 1.0f)},
+        {"darkgray", Color(0.663f, 0.663f, 0.663f, 1.0f)},
+        {"lightgray", Color(0.827f, 0.827f, 0.827f, 1.0f)}
     };
     for (const auto& item : named) {
         if (value == item.name) return item.color;
