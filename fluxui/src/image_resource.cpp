@@ -305,7 +305,7 @@ static float parseFloat(const std::string& s, float fb = 0) {
     std::string t = trimStr(s);
     if (t.empty()) return fb;
     char* end = nullptr;
-    float v = std::strtof(t.c_str(), &end);
+    float v = parseLocaleIndependentFloat(t.c_str(), &end);
     return (end == t.c_str()) ? fb : v;
 }
 

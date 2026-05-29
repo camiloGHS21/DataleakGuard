@@ -1081,6 +1081,7 @@ public:
     std::string opacityAttr;
     std::string fillOpacity;
     std::string strokeOpacity;
+    std::string fillRuleAttr;
 
     SvgElement() { type = "svg-element"; }
     virtual ~SvgElement() override = default;

@@ -430,7 +430,7 @@ static float parseSvgLengthLocal(const std::string& value, float fallback = 0.0f
     std::string s = trimAsciiLocal(value);
     if (s.empty()) return fallback;
     char* end = nullptr;
-    float number = std::strtof(s.c_str(), &end);
+    float number = parseLocaleIndependentFloat(s.c_str(), &end);
     if (end == s.c_str()) return fallback;
     return number;
 }
@@ -5770,10 +5770,10 @@ void Image::render(Renderer& renderer) {
                 (visible.y - draw.y) / std::max(1.0f, draw.h),
                 visible.w / std::max(1.0f, draw.w),
                 visible.h / std::max(1.0f, draw.h));
-            renderer.drawImage(currentSrc, visible, sourceUv, computedStyle->opacity);
+            renderer.drawImage(currentSrc, visible, sourceUv, computedStyle->opacity, computedStyle->color);
         }
     } else {
-        renderer.drawImage(currentSrc, draw, computedStyle->opacity);
+        renderer.drawImage(currentSrc, draw, computedStyle->opacity, computedStyle->color);
     }
     renderChildren(renderer);
 }
@@ -7676,6 +7676,7 @@ void SvgElement::setAttribute(const std::string& name, const std::string& value)
     else if (name == "opacity") opacityAttr = value;
     else if (name == "fill-opacity") fillOpacity = value;
     else if (name == "stroke-opacity") strokeOpacity = value;
+    else if (name == "fill-rule") fillRuleAttr = value;
     else if (type == "path" && name == "d") static_cast<SvgPath*>(this)->d = value;
     else if (type == "rect") {
         auto* r = static_cast<SvgRect*>(this);
@@ -7716,8 +7717,14 @@ Svg::~Svg() {
 void Svg::setAttribute(const std::string& name, const std::string& value) {
     Widget::setAttribute(name, value);
     if (name == "viewBox") viewBox = value;
-    else if (name == "width") width = value;
-    else if (name == "height") height = value;
+    else if (name == "width") {
+        width = value;
+        css("width: " + value + (value.find('%') == std::string::npos && value.find("px") == std::string::npos ? "px" : "") + ";");
+    }
+    else if (name == "height") {
+        height = value;
+        css("height: " + value + (value.find('%') == std::string::npos && value.find("px") == std::string::npos ? "px" : "") + ";");
+    }
     else if (name == "preserveAspectRatio") preserveAspectRatio = value;
     isRasterDirty = true;
     if (auto* app = Application::instance()) {

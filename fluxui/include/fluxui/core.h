@@ -16,6 +16,92 @@
 
 namespace FluxUI {
 
+inline float parseLocaleIndependentFloat(const char* str, char** endptr) {
+    if (!str) {
+        if (endptr) *endptr = nullptr;
+        return 0.0f;
+    }
+    const char* p = str;
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) ++p;
+    
+    const char* start = p;
+    bool neg = false;
+    if (*p == '-') {
+        neg = true;
+        ++p;
+    } else if (*p == '+') {
+        ++p;
+    }
+    
+    double val = 0.0;
+    bool has_digits = false;
+    while (*p >= '0' && *p <= '9') {
+        val = val * 10.0 + (*p - '0');
+        has_digits = true;
+        ++p;
+    }
+    
+    if (*p == '.') {
+        const char* dot_ptr = p;
+        ++p;
+        double dec = 1.0;
+        bool has_frac_digits = false;
+        while (*p >= '0' && *p <= '9') {
+            dec *= 0.1;
+            val += (*p - '0') * dec;
+            has_frac_digits = true;
+            ++p;
+        }
+        if (has_frac_digits) {
+            has_digits = true;
+        } else if (!has_digits) {
+            p = dot_ptr; // rollback
+        }
+    }
+    
+    if (!has_digits) {
+        if (endptr) *endptr = const_cast<char*>(str);
+        return 0.0f;
+    }
+    
+    if (*p == 'e' || *p == 'E') {
+        const char* e_ptr = p;
+        ++p;
+        bool e_neg = false;
+        if (*p == '-') {
+            e_neg = true;
+            ++p;
+        } else if (*p == '+') {
+            ++p;
+        }
+        int exp = 0;
+        bool has_exp_digits = false;
+        while (*p >= '0' && *p <= '9') {
+            exp = exp * 10 + (*p - '0');
+            has_exp_digits = true;
+            ++p;
+        }
+        if (has_exp_digits) {
+            val *= std::pow(10.0, e_neg ? -exp : exp);
+        } else {
+            p = e_ptr; // rollback 'e'
+        }
+    }
+    
+    if (neg) val = -val;
+    if (endptr) {
+        *endptr = const_cast<char*>(p);
+    }
+    return static_cast<float>(val);
+}
+
+inline float parseLocaleIndependentFloat(const std::string& str, float fallback = 0.0f) {
+    char* end = nullptr;
+    float val = parseLocaleIndependentFloat(str.c_str(), &end);
+    if (end == str.c_str()) return fallback;
+    return val;
+}
+
 typedef void* NativeWindowHandle;
 typedef void* NativeCursorHandle;
 
@@ -673,12 +759,7 @@ private:
         }
 
         std::string numStr = src.substr(start, pos - start);
-        float val = 0.0f;
-        try {
-            val = std::stof(numStr);
-        } catch (...) {
-            return nullptr;
-        }
+        float val = parseLocaleIndependentFloat(numStr, 0.0f);
 
         CSSValue::Unit unit = CSSValue::None;
         if (pos < src.size() && src[pos] == '%') {

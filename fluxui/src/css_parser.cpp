@@ -3268,7 +3268,7 @@ static bool setObjectPositionKeyword(const std::string& token,
 
 static float parseObjectPositionFloat(const std::string& token) {
     char* end = nullptr;
-    float value = std::strtof(token.c_str(), &end);
+    float value = parseLocaleIndependentFloat(token.c_str(), &end);
     return end == token.c_str() ? 0.0f : value;
 }
 

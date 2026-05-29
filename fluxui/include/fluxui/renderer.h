@@ -249,6 +249,7 @@ public:
     bool loadImageFromMemory(const unsigned char* data, int dataSize,
                              const std::string& name, bool svg = false);
     Vec2 imageSize(const std::string& nameOrPath);
+    const std::vector<unsigned char>* imagePixels(const std::string& nameOrPath);
     bool updateDynamicTexture(const std::string& name, const ImageData& image);
     bool rasterizeSvgWidget(Widget* svgWidget, ImageData& image);
 

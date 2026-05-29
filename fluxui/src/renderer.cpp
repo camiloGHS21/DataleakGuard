@@ -576,7 +576,7 @@ float parseSvgFloat(const std::string& value, float fallback = 0.0f) {
     std::string s = trimSvgString(value);
     if (s.empty()) return fallback;
     char* end = nullptr;
-    float number = std::strtof(s.c_str(), &end);
+    float number = parseLocaleIndependentFloat(s.c_str(), &end);
     if (end == s.c_str()) return fallback;
     return number;
 }
@@ -588,7 +588,7 @@ std::vector<float> parseSvgNumberList(const std::string& value) {
     while (*p) {
         while (*p && (std::isspace((unsigned char)*p) || *p == ',')) ++p;
         if (!*p) break;
-        float v = std::strtof(p, &end);
+        float v = parseLocaleIndependentFloat(p, &end);
         if (end == p) {
             ++p;
             continue;
@@ -689,7 +689,7 @@ Color parseSvgColor(const std::string& raw, Color fallback, bool* none = nullptr
                 if (!*p) break;
                 
                 char* parseEnd = nullptr;
-                float val = std::strtof(p, &parseEnd);
+                float val = parseLocaleIndependentFloat(p, &parseEnd);
                 if (parseEnd == p) {
                     ++p;
                     continue;
@@ -954,6 +954,7 @@ struct SvgPaintState {
     std::string strokeOpacity = "1";
     std::string strokeWidth = "1";
     std::string color = "black";
+    std::string fillRule = "nonzero"; // SVG default is nonzero, not evenodd
 };
 
 SvgAspectRatio parseSvgPreserveAspectRatio(const std::string& rawValue) {
@@ -1050,6 +1051,7 @@ SvgPaintState mergeSvgPaintState(const SvgPaintState& parent, const SvgAttrs& at
     inheritAttr(state.strokeOpacity, "stroke-opacity");
     inheritAttr(state.strokeWidth, "stroke-width");
     inheritAttr(state.color, "color");
+    inheritAttr(state.fillRule, "fill-rule");
     return state;
 }
 
@@ -1164,13 +1166,183 @@ void fillPolygon(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color
         minY = std::min(minY, p.y);
         maxY = std::max(maxY, p.y);
     }
-    for (int y = (int)std::floor(minY); y <= (int)std::ceil(maxY); ++y) {
-        for (int x = (int)std::floor(minX); x <= (int)std::ceil(maxX); ++x) {
+    int startY = std::max(0, (int)std::floor(minY));
+    int endY = std::min(canvas.height - 1, (int)std::ceil(maxY));
+    int startX = std::max(0, (int)std::floor(minX));
+    int endX = std::min(canvas.width - 1, (int)std::ceil(maxX));
+    if (startY > endY || startX > endX) return;
+
+    struct Edge {
+        float x1, y1, x2, y2;
+        int dir; // +1 if y1<y2 (upward), -1 if y1>y2 (downward) — for nonzero winding
+    };
+    std::vector<Edge> edges;
+    edges.reserve(points.size());
+    for (size_t i = 0; i < points.size(); ++i) {
+        Vec2 p1 = points[i];
+        Vec2 p2 = points[(i + 1) % points.size()];
+        if (std::abs(p1.y - p2.y) > 0.0001f) {
+            int dir = (p1.y < p2.y) ? 1 : -1;
+            edges.push_back({p1.x, p1.y, p2.x, p2.y, dir});
+        }
+    }
+
+    std::vector<float> intersections1;
+    std::vector<float> intersections2;
+    intersections1.reserve(16);
+    intersections2.reserve(16);
+
+    for (int y = startY; y <= endY; ++y) {
+        float y_sub1 = y + 0.25f;
+        float y_sub2 = y + 0.75f;
+        intersections1.clear();
+        intersections2.clear();
+
+        for (const auto& edge : edges) {
+            if ((edge.y1 <= y_sub1 && edge.y2 > y_sub1) || (edge.y2 <= y_sub1 && edge.y1 > y_sub1)) {
+                float t = (y_sub1 - edge.y1) / (edge.y2 - edge.y1);
+                intersections1.push_back(edge.x1 + t * (edge.x2 - edge.x1));
+            }
+            if ((edge.y1 <= y_sub2 && edge.y2 > y_sub2) || (edge.y2 <= y_sub2 && edge.y1 > y_sub2)) {
+                float t = (y_sub2 - edge.y1) / (edge.y2 - edge.y1);
+                intersections2.push_back(edge.x1 + t * (edge.x2 - edge.x1));
+            }
+        }
+
+        std::sort(intersections1.begin(), intersections1.end());
+        std::sort(intersections2.begin(), intersections2.end());
+
+        auto isInside = [](float x_sub, const std::vector<float>& intersections) -> bool {
+            for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
+                if (x_sub >= intersections[i] && x_sub <= intersections[i + 1]) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        for (int x = startX; x <= endX; ++x) {
+            float x_sub1 = x + 0.25f;
+            float x_sub2 = x + 0.75f;
             int insideCount = 0;
-            if (pointInPolygon(x + 0.25f, y + 0.25f, points)) insideCount++;
-            if (pointInPolygon(x + 0.75f, y + 0.25f, points)) insideCount++;
-            if (pointInPolygon(x + 0.25f, y + 0.75f, points)) insideCount++;
-            if (pointInPolygon(x + 0.75f, y + 0.75f, points)) insideCount++;
+
+            if (isInside(x_sub1, intersections1)) insideCount++;
+            if (isInside(x_sub2, intersections1)) insideCount++;
+            if (isInside(x_sub1, intersections2)) insideCount++;
+            if (isInside(x_sub2, intersections2)) insideCount++;
+
+            if (insideCount > 0) {
+                svgBlendPixel(canvas, x, y, color, insideCount / 4.0f);
+            }
+        }
+    }
+}
+
+// Multi-path fill with fill-rule support (nonzero winding / evenodd)
+// This is the Blink-parity critical function: it collects edges from ALL subpaths
+// so that holes (inner subpaths with opposite winding) are correctly subtracted.
+void fillMultiPolygon(SvgCanvas& canvas, const std::vector<std::vector<Vec2>>& subpaths,
+                     Color color, bool useEvenOdd) {
+    if (color.a <= 0.0f) return;
+
+    struct Edge {
+        float x1, y1, x2, y2;
+        int dir; // +1 going down, -1 going up (for nonzero winding)
+    };
+
+    // Collect edges from ALL subpaths and compute global bounding box
+    float minX = 1e30f, maxX = -1e30f, minY = 1e30f, maxY = -1e30f;
+    std::vector<Edge> edges;
+    size_t totalPts = 0;
+    for (const auto& path : subpaths) totalPts += path.size();
+    edges.reserve(totalPts);
+
+    for (const auto& path : subpaths) {
+        if (path.size() < 3) continue;
+        for (size_t i = 0; i < path.size(); ++i) {
+            const Vec2& p1 = path[i];
+            const Vec2& p2 = path[(i + 1) % path.size()];
+            minX = std::min(minX, std::min(p1.x, p2.x));
+            maxX = std::max(maxX, std::max(p1.x, p2.x));
+            minY = std::min(minY, std::min(p1.y, p2.y));
+            maxY = std::max(maxY, std::max(p1.y, p2.y));
+            if (std::abs(p1.y - p2.y) > 0.0001f) {
+                int dir = (p1.y < p2.y) ? 1 : -1;
+                edges.push_back({p1.x, p1.y, p2.x, p2.y, dir});
+            }
+        }
+    }
+
+    if (edges.empty()) return;
+
+    int startY = std::max(0, (int)std::floor(minY));
+    int endY = std::min(canvas.height - 1, (int)std::ceil(maxY));
+    int startX = std::max(0, (int)std::floor(minX));
+    int endX = std::min(canvas.width - 1, (int)std::ceil(maxX));
+    if (startY > endY || startX > endX) return;
+
+    // For nonzero winding, store intersection x-values paired with direction
+    struct Crossing {
+        float x;
+        int dir;
+    };
+    std::vector<Crossing> crossings1, crossings2;
+    crossings1.reserve(32);
+    crossings2.reserve(32);
+
+    for (int y = startY; y <= endY; ++y) {
+        float y_sub1 = y + 0.25f;
+        float y_sub2 = y + 0.75f;
+        crossings1.clear();
+        crossings2.clear();
+
+        for (const auto& edge : edges) {
+            if ((edge.y1 <= y_sub1 && edge.y2 > y_sub1) || (edge.y2 <= y_sub1 && edge.y1 > y_sub1)) {
+                float t = (y_sub1 - edge.y1) / (edge.y2 - edge.y1);
+                crossings1.push_back({edge.x1 + t * (edge.x2 - edge.x1), edge.dir});
+            }
+            if ((edge.y1 <= y_sub2 && edge.y2 > y_sub2) || (edge.y2 <= y_sub2 && edge.y1 > y_sub2)) {
+                float t = (y_sub2 - edge.y1) / (edge.y2 - edge.y1);
+                crossings2.push_back({edge.x1 + t * (edge.x2 - edge.x1), edge.dir});
+            }
+        }
+
+        // Sort crossings by x position
+        auto cmpCrossing = [](const Crossing& a, const Crossing& b) { return a.x < b.x; };
+        std::sort(crossings1.begin(), crossings1.end(), cmpCrossing);
+        std::sort(crossings2.begin(), crossings2.end(), cmpCrossing);
+
+        // Lambda to check if subpixel X is inside using the selected fill rule
+        auto isInsideFn = [useEvenOdd](float x_sub, const std::vector<Crossing>& crossings) -> bool {
+            if (useEvenOdd) {
+                // Even-odd: count crossings to the left; odd = inside
+                int count = 0;
+                for (const auto& c : crossings) {
+                    if (c.x > x_sub) break;
+                    ++count;
+                }
+                return (count % 2) != 0;
+            } else {
+                // Nonzero winding: sum directions of crossings to the left; nonzero = inside
+                int winding = 0;
+                for (const auto& c : crossings) {
+                    if (c.x > x_sub) break;
+                    winding += c.dir;
+                }
+                return winding != 0;
+            }
+        };
+
+        for (int x = startX; x <= endX; ++x) {
+            float x_sub1 = x + 0.25f;
+            float x_sub2 = x + 0.75f;
+            int insideCount = 0;
+
+            if (isInsideFn(x_sub1, crossings1)) insideCount++;
+            if (isInsideFn(x_sub2, crossings1)) insideCount++;
+            if (isInsideFn(x_sub1, crossings2)) insideCount++;
+            if (isInsideFn(x_sub2, crossings2)) insideCount++;
+
             if (insideCount > 0) {
                 svgBlendPixel(canvas, x, y, color, insideCount / 4.0f);
             }
@@ -1380,10 +1552,22 @@ struct SvgPathParser {
         skip();
         if (pos >= d.size()) return false;
         char* end = nullptr;
-        value = std::strtof(d.c_str() + pos, &end);
+        value = parseLocaleIndependentFloat(d.c_str() + pos, &end);
         if (end == d.c_str() + pos) return false;
         pos = (size_t)(end - d.c_str());
         return true;
+    }
+
+    bool readFlag(float& value) {
+        skip();
+        if (pos >= d.size()) return false;
+        char c = d[pos];
+        if (c == '0' || c == '1') {
+            value = (c == '1') ? 1.0f : 0.0f;
+            pos++;
+            return true;
+        }
+        return false;
     }
 
     bool readCommand() {
@@ -1495,30 +1679,43 @@ void appendArc(std::vector<Vec2>& out, Vec2 p0, float rx, float ry, float angle,
     }
 }
 
-void drawSvgPath(SvgCanvas& canvas, const std::string& d, Color fill, Color stroke, float strokeWidth) {
+void drawSvgPath(SvgCanvas& canvas, const std::string& d, Color fill, Color stroke, float strokeWidth, bool fillRuleEvenOdd = false) {
     SvgPathParser parser{d};
     std::vector<std::vector<Vec2>> subpaths;
+    std::vector<bool> subpathClosed;
     std::vector<Vec2> currentPath;
     Vec2 current = {0, 0};
     Vec2 start = {0, 0};
-    bool closed = false;
+    Vec2 lastControl = {0, 0};
+    char lastCmd = 0;
 
-    auto flushPath = [&]() {
+    auto flushPath = [&](bool isClosed = false) {
         if (!currentPath.empty()) {
             subpaths.push_back(currentPath);
+            subpathClosed.push_back(isClosed);
             currentPath.clear();
         }
     };
 
+    auto ensureStartPoint = [&]() {
+        if (currentPath.empty()) {
+            currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
+            start = current;
+        }
+    };
+
     while (parser.pos < d.size() && parser.readCommand()) {
+        size_t startPos = parser.pos;
         char cmd = parser.command;
         bool rel = std::islower((unsigned char)cmd) != 0;
         char upper = (char)std::toupper((unsigned char)cmd);
         if (upper == 'Z') {
-            if (!currentPath.empty()) currentPath.push_back(start);
+            if (!currentPath.empty()) currentPath.push_back(svgMapPoint(canvas, start.x, start.y));
             current = start;
-            closed = true;
+            flushPath(true);
             parser.command = 0;
+            lastControl = current;
+            lastCmd = 'Z';
             continue;
         }
 
@@ -1529,34 +1726,45 @@ void drawSvgPath(SvgCanvas& canvas, const std::string& d, Color fill, Color stro
         if (upper == 'M') {
             float x = 0, y = 0;
             if (!parser.readNumber(x) || !parser.readNumber(y)) break;
-            flushPath();
+            flushPath(false);
             current = map(x, y);
             start = current;
             currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
             parser.command = rel ? 'l' : 'L';
-            closed = false;
+            lastControl = current;
+            lastCmd = 'M';
         } else if (upper == 'L') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float x = 0, y = 0;
                 if (!parser.readNumber(x) || !parser.readNumber(y)) break;
                 current = map(x, y);
                 currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
             }
+            lastControl = current;
+            lastCmd = 'L';
         } else if (upper == 'H') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float x = 0;
                 if (!parser.readNumber(x)) break;
                 current.x = rel ? current.x + x : x;
                 currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
             }
+            lastControl = current;
+            lastCmd = 'H';
         } else if (upper == 'V') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float y = 0;
                 if (!parser.readNumber(y)) break;
                 current.y = rel ? current.y + y : y;
                 currentPath.push_back(svgMapPoint(canvas, current.x, current.y));
             }
+            lastControl = current;
+            lastCmd = 'V';
         } else if (upper == 'C') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float x1, y1, x2, y2, x, y;
                 if (!parser.readNumber(x1) || !parser.readNumber(y1) ||
@@ -1565,43 +1773,102 @@ void drawSvgPath(SvgCanvas& canvas, const std::string& d, Color fill, Color stro
                 Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
                 Vec2 c1 = rel ? svgMapPoint(canvas, current.x + x1, current.y + y1) : svgMapPoint(canvas, x1, y1);
                 Vec2 c2 = rel ? svgMapPoint(canvas, current.x + x2, current.y + y2) : svgMapPoint(canvas, x2, y2);
+                Vec2 unmappedC2 = rel ? Vec2(current.x + x2, current.y + y2) : Vec2(x2, y2);
                 current = map(x, y);
                 Vec2 p3 = svgMapPoint(canvas, current.x, current.y);
                 appendCubic(currentPath, p0, c1, c2, p3);
+                lastControl = unmappedC2;
+            }
+            lastCmd = 'C';
+        } else if (upper == 'S') {
+            ensureStartPoint();
+            while (parser.hasNumber()) {
+                float x2, y2, x, y;
+                if (!parser.readNumber(x2) || !parser.readNumber(y2) ||
+                    !parser.readNumber(x) || !parser.readNumber(y)) break;
+                Vec2 unmappedC1;
+                if (lastCmd == 'C' || lastCmd == 'S') {
+                    unmappedC1.x = 2.0f * current.x - lastControl.x;
+                    unmappedC1.y = 2.0f * current.y - lastControl.y;
+                } else {
+                    unmappedC1 = current;
+                }
+                Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
+                Vec2 c1 = svgMapPoint(canvas, unmappedC1.x, unmappedC1.y);
+                Vec2 c2 = rel ? svgMapPoint(canvas, current.x + x2, current.y + y2) : svgMapPoint(canvas, x2, y2);
+                Vec2 unmappedC2 = rel ? Vec2(current.x + x2, current.y + y2) : Vec2(x2, y2);
+                current = map(x, y);
+                Vec2 p3 = svgMapPoint(canvas, current.x, current.y);
+                appendCubic(currentPath, p0, c1, c2, p3);
+                lastControl = unmappedC2;
+                lastCmd = 'S';
             }
         } else if (upper == 'Q') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float x1, y1, x, y;
                 if (!parser.readNumber(x1) || !parser.readNumber(y1) ||
                     !parser.readNumber(x) || !parser.readNumber(y)) break;
                 Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
                 Vec2 c1 = rel ? svgMapPoint(canvas, current.x + x1, current.y + y1) : svgMapPoint(canvas, x1, y1);
+                Vec2 unmappedC1 = rel ? Vec2(current.x + x1, current.y + y1) : Vec2(x1, y1);
                 current = map(x, y);
                 Vec2 p2 = svgMapPoint(canvas, current.x, current.y);
                 appendQuad(currentPath, p0, c1, p2);
+                lastControl = unmappedC1;
+            }
+            lastCmd = 'Q';
+        } else if (upper == 'T') {
+            ensureStartPoint();
+            while (parser.hasNumber()) {
+                float x, y;
+                if (!parser.readNumber(x) || !parser.readNumber(y)) break;
+                Vec2 unmappedC1;
+                if (lastCmd == 'Q' || lastCmd == 'T') {
+                    unmappedC1.x = 2.0f * current.x - lastControl.x;
+                    unmappedC1.y = 2.0f * current.y - lastControl.y;
+                } else {
+                    unmappedC1 = current;
+                }
+                Vec2 p0 = svgMapPoint(canvas, current.x, current.y);
+                Vec2 c1 = svgMapPoint(canvas, unmappedC1.x, unmappedC1.y);
+                current = map(x, y);
+                Vec2 p2 = svgMapPoint(canvas, current.x, current.y);
+                appendQuad(currentPath, p0, c1, p2);
+                lastControl = unmappedC1;
+                lastCmd = 'T';
             }
         } else if (upper == 'A') {
+            ensureStartPoint();
             while (parser.hasNumber()) {
                 float rx, ry, rot, largeArc, sweep, x, y;
                 if (!parser.readNumber(rx) || !parser.readNumber(ry) || !parser.readNumber(rot) ||
-                    !parser.readNumber(largeArc) || !parser.readNumber(sweep) ||
+                    !parser.readFlag(largeArc) || !parser.readFlag(sweep) ||
                     !parser.readNumber(x) || !parser.readNumber(y)) break;
                 Vec2 p1 = map(x, y);
                 appendArc(currentPath, current, rx, ry, rot, largeArc != 0.0f, sweep != 0.0f, p1, canvas);
                 current = p1;
             }
+            lastControl = current;
+            lastCmd = 'A';
         } else {
             parser.command = 0;
             ++parser.pos;
         }
-    }
-    flushPath();
 
-    for (const auto& path : subpaths) {
-        if (fill.a > 0.0f && path.size() >= 3) fillPolygon(canvas, path, fill);
+        if (parser.pos == startPos) {
+            parser.command = 0;
+            break;
+        }
     }
-    for (const auto& path : subpaths) {
-        if (stroke.a > 0.0f) strokePolyline(canvas, path, stroke, strokeWidth, closed);
+    flushPath(false);
+
+    if (fill.a > 0.0f) {
+        fillMultiPolygon(canvas, subpaths, fill, fillRuleEvenOdd);
+    }
+    for (size_t i = 0; i < subpaths.size(); ++i) {
+        bool isClosed = i < subpathClosed.size() ? subpathClosed[i] : false;
+        if (stroke.a > 0.0f) strokePolyline(canvas, subpaths[i], stroke, strokeWidth, isClosed);
     }
 }
 
@@ -1612,7 +1879,7 @@ void paintSvgRenderableElement(SvgCanvas& canvas,
     float opacity = parseSvgFloat(paint.opacity, 1.0f);
     bool noFill = false;
     bool noStroke = false;
-    Color currentColor = parseSvgColor(paint.color, Color(0, 0, 0, 1));
+    Color currentColor = parseSvgColor(paint.color, Color(1, 1, 1, 1));
     Color fill = parseSvgColor(paint.fill, currentColor, &noFill);
     Color stroke = parseSvgColor(paint.stroke, currentColor, &noStroke);
     fill.a *= parseSvgFloat(paint.fillOpacity, 1.0f) * opacity;
@@ -1657,7 +1924,9 @@ void paintSvgRenderableElement(SvgCanvas& canvas,
         fillPolygon(canvas, points, fill);
         strokePolyline(canvas, points, stroke, strokeWidth, true);
     } else if (name == "path") {
-        drawSvgPath(canvas, svgAttr(attrs, "d"), fill, stroke, std::max(1.0f, strokeWidth));
+        std::string fr = lowerSvgString(trimSvgString(paint.fillRule));
+        bool isEvenOdd = (fr == "evenodd");
+        drawSvgPath(canvas, svgAttr(attrs, "d"), fill, stroke, std::max(1.0f, strokeWidth), isEvenOdd);
     }
 }
 
@@ -1712,13 +1981,13 @@ bool rasterizeSvgToRgba(const unsigned char* data, int dataSize, ImageData& imag
         canvas.offsetY = (outH - viewH * uniformScale) * aspect.alignY;
     }
     SvgPaintState rootPaint;
-    rootPaint.fill = svgAttr(root, "fill", "black");
+    rootPaint.fill = svgAttr(root, "fill", "currentColor");
     rootPaint.stroke = svgAttr(root, "stroke", "none");
     rootPaint.opacity = svgAttr(root, "opacity", "1");
     rootPaint.fillOpacity = svgAttr(root, "fill-opacity", "1");
     rootPaint.strokeOpacity = svgAttr(root, "stroke-opacity", "1");
     rootPaint.strokeWidth = svgAttr(root, "stroke-width", "1");
-    rootPaint.color = svgAttr(root, "color", "black");
+    rootPaint.color = svgAttr(root, "color", "white");
 
     std::vector<SvgAffine> transformStack;
     transformStack.push_back(SvgAffine::identity());
@@ -1914,13 +2183,13 @@ bool Renderer::rasterizeSvgWidget(Widget* svgWidget, ImageData& image) {
     }
     
     SvgPaintState rootPaint;
-    rootPaint.fill = "black";
+    rootPaint.fill = "currentColor";
     rootPaint.stroke = "none";
     rootPaint.opacity = "1";
     rootPaint.fillOpacity = "1";
     rootPaint.strokeOpacity = "1";
     rootPaint.strokeWidth = "1";
-    rootPaint.color = "black";
+    rootPaint.color = "currentColor";
     
     std::vector<SvgAffine> transformStack;
     transformStack.push_back(SvgAffine::identity());
@@ -1945,6 +2214,7 @@ bool Renderer::rasterizeSvgWidget(Widget* svgWidget, ImageData& image) {
             if (!g->opacityAttr.empty()) attrs["opacity"] = g->opacityAttr;
             if (!g->fillOpacity.empty()) attrs["fill-opacity"] = g->fillOpacity;
             if (!g->strokeOpacity.empty()) attrs["stroke-opacity"] = g->strokeOpacity;
+            if (!g->fillRuleAttr.empty()) attrs["fill-rule"] = g->fillRuleAttr;
             
             SvgPaintState elementPaint = mergeSvgPaintState(paintStack.back(), attrs);
             
@@ -1973,12 +2243,13 @@ bool Renderer::rasterizeSvgWidget(Widget* svgWidget, ImageData& image) {
             if (!elem->opacityAttr.empty()) attrs["opacity"] = elem->opacityAttr;
             if (!elem->fillOpacity.empty()) attrs["fill-opacity"] = elem->fillOpacity;
             if (!elem->strokeOpacity.empty()) attrs["stroke-opacity"] = elem->strokeOpacity;
+            if (!elem->fillRuleAttr.empty()) attrs["fill-rule"] = elem->fillRuleAttr;
             
             SvgPaintState paint = mergeSvgPaintState(paintStack.back(), attrs);
             
             bool noFill = false;
             bool noStroke = false;
-            Color currentColor = parseSvgColor(paint.color, Color(0, 0, 0, 1));
+            Color currentColor = parseSvgColor(paint.color, svgWidget->computedStyle->color);
             Color fill = parseSvgColor(paint.fill, currentColor, &noFill);
             Color stroke = parseSvgColor(paint.stroke, currentColor, &noStroke);
             float opacity = parseSvgFloat(paint.opacity, 1.0f);
@@ -2036,7 +2307,9 @@ bool Renderer::rasterizeSvgWidget(Widget* svgWidget, ImageData& image) {
                 strokePolyline(canvas, points, stroke, strokeWidth, true);
             } else if (type == "path") {
                 SvgPath* p = static_cast<SvgPath*>(w);
-                drawSvgPath(canvas, p->d, fill, stroke, std::max(1.0f, strokeWidth));
+                std::string fr = lowerSvgString(trimSvgString(paint.fillRule));
+                bool isEvenOdd = (fr == "evenodd");
+                drawSvgPath(canvas, p->d, fill, stroke, std::max(1.0f, strokeWidth), isEvenOdd);
             }
             
             canvas.transform = previousTransform;
@@ -6274,6 +6547,18 @@ Vec2 Renderer::imageSize(const std::string& nameOrPath) {
     return {(float)it->second.width, (float)it->second.height};
 }
 
+const std::vector<unsigned char>* Renderer::imagePixels(const std::string& nameOrPath) {
+    auto it = images_.find(nameOrPath);
+    if (it == images_.end() || !it->second.loaded) {
+        loadImage(nameOrPath);
+        it = images_.find(nameOrPath);
+    }
+    if (it == images_.end() || !it->second.loaded) {
+        return nullptr;
+    }
+    return &it->second.pixels;
+}
+
 void Renderer::warmFontCache(float size, const std::string& name) {
     if (size <= 0.0f) return;
 
@@ -7698,20 +7983,6 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
 void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
                          const Rect& sourceUv,
                          float opacity, const Color& tint) {
-    if (isRecording()) {
-        RenderCommand cmd;
-        cmd.type = RenderCommandType::TexturedQuad;
-        cmd.rect = rect;
-        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
-        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
-        cmd.text = nameOrPath;
-        cmd.sourceUv = sourceUv;
-        cmd.opacity = opacity;
-        cmd.color = tint;
-        recording_->push_back(cmd);
-        return;
-    }
-
     if (nameOrPath.empty() || rect.w <= 0.0f || rect.h <= 0.0f ||
         opacity <= 0.0f || tint.a <= 0.0f) {
         return;
@@ -7724,13 +7995,32 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
         if (it == images_.end() || !it->second.loaded) return;
     }
 
+    Color finalTint = tint;
+    if (!it->second.svg) {
+        finalTint = Color(1.0f, 1.0f, 1.0f, tint.a);
+    }
+
+    if (isRecording()) {
+        RenderCommand cmd;
+        cmd.type = RenderCommandType::TexturedQuad;
+        cmd.rect = rect;
+        cmd.rect.x += (translation_.x - recordingTranslationStart_.x);
+        cmd.rect.y += (translation_.y - recordingTranslationStart_.y);
+        cmd.text = nameOrPath;
+        cmd.sourceUv = sourceUv;
+        cmd.opacity = opacity;
+        cmd.color = finalTint;
+        recording_->push_back(cmd);
+        return;
+    }
+
     if (activeBackend_ == RenderBackendType::Vulkan) {
-        drawVulkanImage(nameOrPath, it->second, rect, sourceUv, tint, opacity);
+        drawVulkanImage(nameOrPath, it->second, rect, sourceUv, finalTint, opacity);
         return;
     }
 
     if (activeBackend_ == RenderBackendType::Compatibility) {
-        drawSoftwareImage(nameOrPath, it->second, rect, sourceUv, tint, opacity);
+        drawSoftwareImage(nameOrPath, it->second, rect, sourceUv, finalTint, opacity);
         return;
     }
 
@@ -7752,18 +8042,18 @@ void Renderer::drawImage(const std::string& nameOrPath, const Rect& rect,
         drawRect.h *= scale_;
     }
 
-    float a = tint.a * opacity;
+    float a = finalTint.a * opacity;
     float u0 = std::clamp(sourceUv.x, 0.0f, 1.0f);
     float v0 = std::clamp(sourceUv.y, 0.0f, 1.0f);
     float u1 = std::clamp(sourceUv.x + sourceUv.w, 0.0f, 1.0f);
     float v1 = std::clamp(sourceUv.y + sourceUv.h, 0.0f, 1.0f);
     float vertices[] = {
-        drawRect.x,              drawRect.y,              u0, v0, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y,              u1, v0, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, tint.r, tint.g, tint.b, a,
-        drawRect.x,              drawRect.y,              u0, v0, tint.r, tint.g, tint.b, a,
-        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, tint.r, tint.g, tint.b, a,
-        drawRect.x,              drawRect.y + drawRect.h, u0, v1, tint.r, tint.g, tint.b, a,
+        drawRect.x,              drawRect.y,              u0, v0, finalTint.r, finalTint.g, finalTint.b, a,
+        drawRect.x + drawRect.w, drawRect.y,              u1, v0, finalTint.r, finalTint.g, finalTint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, finalTint.r, finalTint.g, finalTint.b, a,
+        drawRect.x,              drawRect.y,              u0, v0, finalTint.r, finalTint.g, finalTint.b, a,
+        drawRect.x + drawRect.w, drawRect.y + drawRect.h, u1, v1, finalTint.r, finalTint.g, finalTint.b, a,
+        drawRect.x,              drawRect.y + drawRect.h, u0, v1, finalTint.r, finalTint.g, finalTint.b, a,
     };
 
     flushRectBatch();
