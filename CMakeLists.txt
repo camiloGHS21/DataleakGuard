@@ -456,6 +456,17 @@ target_include_directories(table_test PRIVATE
 )
 enable_release_lto(table_test)
 
+add_executable(test_math
+    examples/cpp/test_math.cpp
+)
+target_link_libraries(test_math PRIVATE
+    fluxui
+)
+target_include_directories(test_math PRIVATE
+    "${CMAKE_BINARY_DIR}/generated"
+)
+enable_release_lto(test_math)
+
 
 
 

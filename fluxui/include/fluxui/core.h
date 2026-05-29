@@ -322,6 +322,8 @@ enum ContainmentFlags : uint8_t {
 };
 
 
+class CSSMathExpressionNode;
+
 // ============================================================
 //  CSS Value (supports px, %, auto)
 // ============================================================
@@ -339,8 +341,11 @@ struct CSSValue {
     float calcValue3 = 0;
     Unit calcUnit3 = None;
 
+    std::shared_ptr<CSSMathExpressionNode> mathExpr;
+
     CSSValue() = default;
     CSSValue(float v, Unit u = Px) : value(v), unit(u) {}
+    CSSValue(std::shared_ptr<CSSMathExpressionNode> expr);
 
     static CSSValue px(float v) { return {v, Px}; }
     static CSSValue pct(float v) { return {v, Percent}; }
@@ -359,39 +364,15 @@ struct CSSValue {
     static CSSValue maxContent() { return {0, MaxContent}; }
     static CSSValue fitContent() { return {0, FitContent}; }
 
-    float resolve(float parentSize, float viewportW = 1920.0f, float viewportH = 1080.0f, float emBase = 16.0f) const {
-        float primary = resolveUnit(value, unit, parentSize, viewportW, viewportH, emBase);
-        if (calcOp == CalcNone) return primary;
-        float secondary = resolveUnit(calcValue2, calcUnit2, parentSize, viewportW, viewportH, emBase);
-        switch (calcOp) {
-            case CalcAdd: return primary + secondary;
-            case CalcSub: return primary - secondary;
-            case CalcMul: return primary * secondary;
-            case CalcDiv: return secondary != 0.0f ? primary / secondary : 0.0f;
-            case CalcMin: return std::min(primary, secondary);
-            case CalcMax: return std::max(primary, secondary);
-            case CalcClamp: {
-                float tertiary = resolveUnit(calcValue3, calcUnit3, parentSize, viewportW, viewportH, emBase);
-                // Clamp primary (preferred) between secondary (min) and tertiary (max)
-                return primary < secondary ? secondary : (primary > tertiary ? tertiary : primary);
-            }
-            default: return primary;
-        }
-    }
-
+    float resolve(float parentSize, float viewportW = 1920.0f, float viewportH = 1080.0f, float emBase = 16.0f) const;
 
     bool isAuto() const { return unit == Auto; }
-    bool isSet() const { return unit != None; }
+    bool isSet() const;
     bool isIntrinsic() const { return unit == MinContent || unit == MaxContent || unit == FitContent; }
 
-    bool operator==(const CSSValue& o) const {
-        return value == o.value && unit == o.unit && calcOp == o.calcOp &&
-               calcValue2 == o.calcValue2 && calcUnit2 == o.calcUnit2 &&
-               calcValue3 == o.calcValue3 && calcUnit3 == o.calcUnit3;
-    }
+    bool operator==(const CSSValue& o) const;
     bool operator!=(const CSSValue& o) const { return !(*this == o); }
 
-private:
     static float resolveUnit(float val, Unit u, float parentSize, float vpW, float vpH, float emBase) {
         switch (u) {
             case Percent: return val * parentSize / 100.0f;
@@ -406,10 +387,379 @@ private:
             case Vb: return val * vpH / 100.0f;  // Block axis in horizontal writing mode (height)
             case Dvw: return val * vpW / 100.0f; // Dynamic viewport width (same as vw)
             case Dvh: return val * vpH / 100.0f; // Dynamic viewport height (same as vh)
-            default: return 0;
+            default: return val; // For raw unit-less numbers in calculations
         }
     }
 };
+
+enum class MathNodeType {
+    Value,
+    BinaryOp,
+    Function
+};
+
+class CSSMathExpressionNode {
+public:
+    virtual ~CSSMathExpressionNode() = default;
+    virtual float resolve(float parentSize, float viewportW, float viewportH, float emBase) const = 0;
+    virtual MathNodeType type() const = 0;
+    virtual bool isEqual(const CSSMathExpressionNode& other) const = 0;
+};
+
+class CSSMathExpressionValue : public CSSMathExpressionNode {
+public:
+    float value;
+    CSSValue::Unit unit;
+
+    CSSMathExpressionValue(float v, CSSValue::Unit u) : value(v), unit(u) {}
+
+    float resolve(float parentSize, float viewportW, float viewportH, float emBase) const override {
+        return CSSValue::resolveUnit(value, unit, parentSize, viewportW, viewportH, emBase);
+    }
+
+    MathNodeType type() const override { return MathNodeType::Value; }
+
+    bool isEqual(const CSSMathExpressionNode& other) const override {
+        if (other.type() != MathNodeType::Value) return false;
+        auto& o = static_cast<const CSSMathExpressionValue&>(other);
+        return value == o.value && unit == o.unit;
+    }
+};
+
+class CSSMathExpressionBinaryOp : public CSSMathExpressionNode {
+public:
+    enum Op { Add, Sub, Mul, Div };
+    Op op;
+    std::shared_ptr<CSSMathExpressionNode> left;
+    std::shared_ptr<CSSMathExpressionNode> right;
+
+    CSSMathExpressionBinaryOp(Op o, std::shared_ptr<CSSMathExpressionNode> l, std::shared_ptr<CSSMathExpressionNode> r)
+        : op(o), left(l), right(r) {}
+
+    float resolve(float parentSize, float viewportW, float viewportH, float emBase) const override {
+        float lVal = left ? left->resolve(parentSize, viewportW, viewportH, emBase) : 0.0f;
+        float rVal = right ? right->resolve(parentSize, viewportW, viewportH, emBase) : 0.0f;
+        switch (op) {
+            case Add: return lVal + rVal;
+            case Sub: return lVal - rVal;
+            case Mul: return lVal * rVal;
+            case Div: return rVal != 0.0f ? lVal / rVal : 0.0f;
+            default: return 0.0f;
+        }
+    }
+
+    MathNodeType type() const override { return MathNodeType::BinaryOp; }
+
+    bool isEqual(const CSSMathExpressionNode& other) const override {
+        if (other.type() != MathNodeType::BinaryOp) return false;
+        auto& o = static_cast<const CSSMathExpressionBinaryOp&>(other);
+        if (op != o.op) return false;
+        bool leftEqual = (!left && !o.left) || (left && o.left && left->isEqual(*o.left));
+        bool rightEqual = (!right && !o.right) || (right && o.right && right->isEqual(*o.right));
+        return leftEqual && rightEqual;
+    }
+};
+
+class CSSMathExpressionFunction : public CSSMathExpressionNode {
+public:
+    enum Func { Min, Max, Clamp };
+    Func func;
+    std::vector<std::shared_ptr<CSSMathExpressionNode>> args;
+
+    CSSMathExpressionFunction(Func f, std::vector<std::shared_ptr<CSSMathExpressionNode>> a)
+        : func(f), args(a) {}
+
+    float resolve(float parentSize, float viewportW, float viewportH, float emBase) const override {
+        if (args.empty()) return 0.0f;
+        if (func == Min) {
+            float minVal = args[0]->resolve(parentSize, viewportW, viewportH, emBase);
+            for (size_t i = 1; i < args.size(); ++i) {
+                minVal = std::min(minVal, args[i]->resolve(parentSize, viewportW, viewportH, emBase));
+            }
+            return minVal;
+        } else if (func == Max) {
+            float maxVal = args[0]->resolve(parentSize, viewportW, viewportH, emBase);
+            for (size_t i = 1; i < args.size(); ++i) {
+                maxVal = std::max(maxVal, args[i]->resolve(parentSize, viewportW, viewportH, emBase));
+            }
+            return maxVal;
+        } else if (func == Clamp) {
+            if (args.size() < 3) return 0.0f;
+            float minVal = args[0]->resolve(parentSize, viewportW, viewportH, emBase);
+            float prefVal = args[1]->resolve(parentSize, viewportW, viewportH, emBase);
+            float maxVal = args[2]->resolve(parentSize, viewportW, viewportH, emBase);
+            return prefVal < minVal ? minVal : (prefVal > maxVal ? maxVal : prefVal);
+        }
+        return 0.0f;
+    }
+
+    MathNodeType type() const override { return MathNodeType::Function; }
+
+    bool isEqual(const CSSMathExpressionNode& other) const override {
+        if (other.type() != MathNodeType::Function) return false;
+        auto& o = static_cast<const CSSMathExpressionFunction&>(other);
+        if (func != o.func) return false;
+        if (args.size() != o.args.size()) return false;
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (!args[i]->isEqual(*o.args[i])) return false;
+        }
+        return true;
+    }
+};
+
+class CSSMathExpressionParser {
+public:
+    static std::shared_ptr<CSSMathExpressionNode> parse(const std::string& str) {
+        CSSMathExpressionParser parser(str);
+        return parser.parseExpression();
+    }
+
+private:
+    std::string src;
+    size_t pos = 0;
+
+    CSSMathExpressionParser(const std::string& s) : src(s) {}
+
+    void skipWhitespace() {
+        while (pos < src.size() && (src[pos] == ' ' || src[pos] == '\t' || src[pos] == '\r' || src[pos] == '\n')) {
+            pos++;
+        }
+    }
+
+    char peek() {
+        skipWhitespace();
+        if (pos >= src.size()) return '\0';
+        return src[pos];
+    }
+
+    char next() {
+        skipWhitespace();
+        if (pos >= src.size()) return '\0';
+        return src[pos++];
+    }
+
+    bool consume(char expected) {
+        skipWhitespace();
+        if (pos < src.size() && src[pos] == expected) {
+            pos++;
+            return true;
+        }
+        return false;
+    }
+
+    bool consumeWord(const std::string& word) {
+        skipWhitespace();
+        if (pos + word.size() <= src.size() && src.compare(pos, word.size(), word) == 0) {
+            char nextChar = pos + word.size() < src.size() ? src[pos + word.size()] : '\0';
+            if (nextChar == '(' || nextChar == ' ' || nextChar == '\t' || nextChar == '\0' || nextChar == ',' || nextChar == ')') {
+                pos += word.size();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::shared_ptr<CSSMathExpressionNode> parseExpression() {
+        auto node = parseTerm();
+        if (!node) return nullptr;
+
+        while (true) {
+            skipWhitespace();
+            char opChar = peek();
+            if (opChar == '+' || opChar == '-') {
+                next();
+                CSSMathExpressionBinaryOp::Op op = (opChar == '+') ? CSSMathExpressionBinaryOp::Add : CSSMathExpressionBinaryOp::Sub;
+                auto right = parseTerm();
+                if (!right) return nullptr;
+                node = std::make_shared<CSSMathExpressionBinaryOp>(op, node, right);
+            } else {
+                break;
+            }
+        }
+        return node;
+    }
+
+    std::shared_ptr<CSSMathExpressionNode> parseTerm() {
+        auto node = parseFactor();
+        if (!node) return nullptr;
+
+        while (true) {
+            skipWhitespace();
+            char opChar = peek();
+            if (opChar == '*' || opChar == '/') {
+                next();
+                CSSMathExpressionBinaryOp::Op op = (opChar == '*') ? CSSMathExpressionBinaryOp::Mul : CSSMathExpressionBinaryOp::Div;
+                auto right = parseFactor();
+                if (!right) return nullptr;
+                node = std::make_shared<CSSMathExpressionBinaryOp>(op, node, right);
+            } else {
+                break;
+            }
+        }
+        return node;
+    }
+
+    std::shared_ptr<CSSMathExpressionNode> parseFactor() {
+        skipWhitespace();
+        char c = peek();
+        if (c == '\0') return nullptr;
+
+        if (consume('(')) {
+            auto node = parseExpression();
+            consume(')');
+            return node;
+        }
+
+        if (consumeWord("calc")) {
+            if (consume('(')) {
+                auto node = parseExpression();
+                consume(')');
+                return node;
+            }
+        }
+        if (consumeWord("min")) {
+            if (consume('(')) {
+                std::vector<std::shared_ptr<CSSMathExpressionNode>> args;
+                do {
+                    auto arg = parseExpression();
+                    if (arg) args.push_back(arg);
+                } while (consume(','));
+                consume(')');
+                return std::make_shared<CSSMathExpressionFunction>(CSSMathExpressionFunction::Min, args);
+            }
+        }
+        if (consumeWord("max")) {
+            if (consume('(')) {
+                std::vector<std::shared_ptr<CSSMathExpressionNode>> args;
+                do {
+                    auto arg = parseExpression();
+                    if (arg) args.push_back(arg);
+                } while (consume(','));
+                consume(')');
+                return std::make_shared<CSSMathExpressionFunction>(CSSMathExpressionFunction::Max, args);
+            }
+        }
+        if (consumeWord("clamp")) {
+            if (consume('(')) {
+                std::vector<std::shared_ptr<CSSMathExpressionNode>> args;
+                do {
+                    auto arg = parseExpression();
+                    if (arg) args.push_back(arg);
+                } while (consume(','));
+                consume(')');
+                return std::make_shared<CSSMathExpressionFunction>(CSSMathExpressionFunction::Clamp, args);
+            }
+        }
+
+        return parseValue();
+    }
+
+    std::shared_ptr<CSSMathExpressionNode> parseValue() {
+        skipWhitespace();
+        if (pos >= src.size()) return nullptr;
+
+        size_t start = pos;
+        if (src[pos] == '+' || src[pos] == '-') {
+            pos++;
+        }
+        bool hasDigits = false;
+        while (pos < src.size() && ((src[pos] >= '0' && src[pos] <= '9') || src[pos] == '.')) {
+            hasDigits = true;
+            pos++;
+        }
+
+        if (!hasDigits) {
+            return nullptr;
+        }
+
+        std::string numStr = src.substr(start, pos - start);
+        float val = 0.0f;
+        try {
+            val = std::stof(numStr);
+        } catch (...) {
+            return nullptr;
+        }
+
+        CSSValue::Unit unit = CSSValue::None;
+        if (pos < src.size() && src[pos] == '%') {
+            unit = CSSValue::Percent;
+            pos++;
+        } else {
+            std::string suffix;
+            while (pos < src.size() && ((src[pos] >= 'a' && src[pos] <= 'z') || (src[pos] >= 'A' && src[pos] <= 'Z'))) {
+                suffix += src[pos++];
+            }
+            if (!suffix.empty()) {
+                std::string lowerSuffix = lowerAscii(suffix);
+                if (lowerSuffix == "px") unit = CSSValue::Px;
+                else if (lowerSuffix == "em") unit = CSSValue::Em;
+                else if (lowerSuffix == "rem") unit = CSSValue::Rem;
+                else if (lowerSuffix == "vw") unit = CSSValue::Vw;
+                else if (lowerSuffix == "vh") unit = CSSValue::Vh;
+                else if (lowerSuffix == "ch") unit = CSSValue::Ch;
+                else if (lowerSuffix == "lh") unit = CSSValue::Lh;
+                else if (lowerSuffix == "vi") unit = CSSValue::Vi;
+                else if (lowerSuffix == "vb") unit = CSSValue::Vb;
+                else if (lowerSuffix == "dvw") unit = CSSValue::Dvw;
+                else if (lowerSuffix == "dvh") unit = CSSValue::Dvh;
+                else {
+                    unit = CSSValue::Px;
+                }
+            } else {
+                unit = CSSValue::Px;
+            }
+        }
+
+        return std::make_shared<CSSMathExpressionValue>(val, unit);
+    }
+
+    static std::string lowerAscii(const std::string& str) {
+        std::string res = str;
+        for (char& c : res) {
+            if (c >= 'A' && c <= 'Z') c = c - 'A' + 'a';
+        }
+        return res;
+    }
+};
+
+inline CSSValue::CSSValue(std::shared_ptr<CSSMathExpressionNode> expr) : value(0), unit(None), mathExpr(expr) {}
+
+inline float CSSValue::resolve(float parentSize, float viewportW, float viewportH, float emBase) const {
+    if (mathExpr) {
+        return mathExpr->resolve(parentSize, viewportW, viewportH, emBase);
+    }
+    float primary = resolveUnit(value, unit, parentSize, viewportW, viewportH, emBase);
+    if (calcOp == CalcNone) return primary;
+    float secondary = resolveUnit(calcValue2, calcUnit2, parentSize, viewportW, viewportH, emBase);
+    switch (calcOp) {
+        case CalcAdd: return primary + secondary;
+        case CalcSub: return primary - secondary;
+        case CalcMul: return primary * secondary;
+        case CalcDiv: return secondary != 0.0f ? primary / secondary : 0.0f;
+        case CalcMin: return std::min(primary, secondary);
+        case CalcMax: return std::max(primary, secondary);
+        case CalcClamp: {
+            float tertiary = resolveUnit(calcValue3, calcUnit3, parentSize, viewportW, viewportH, emBase);
+            return primary < secondary ? secondary : (primary > tertiary ? tertiary : primary);
+        }
+        default: return primary;
+    }
+}
+
+inline bool CSSValue::isSet() const {
+    return unit != None || mathExpr != nullptr;
+}
+
+inline bool CSSValue::operator==(const CSSValue& o) const {
+    if (unit != o.unit || value != o.value || calcOp != o.calcOp ||
+        calcValue2 != o.calcValue2 || calcUnit2 != o.calcUnit2 ||
+        calcValue3 != o.calcValue3 || calcUnit3 != o.calcUnit3) {
+        return false;
+    }
+    if (!mathExpr && !o.mathExpr) return true;
+    if (!mathExpr || !o.mathExpr) return false;
+    return mathExpr->isEqual(*o.mathExpr);
+}
 
 struct FastCustomProperties {
     std::shared_ptr<std::unordered_map<std::string, std::string>> map;

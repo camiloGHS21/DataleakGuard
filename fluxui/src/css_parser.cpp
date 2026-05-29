@@ -4717,92 +4717,11 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
     if (lower == "max-content") return CSSValue::maxContent();
     if (lower == "fit-content") return CSSValue::fitContent();
 
-    // calc() support - simplified but covers calc(100% - 200px) pattern
-    if (lower.rfind("calc(", 0) == 0) {
-        std::string inner = functionInner(v);
-        inner = trim(inner);
-        // Find + or - operator (skip the first char to allow negative numbers)
-        size_t opPos = std::string::npos;
-        CSSValue::CalcOp op = CSSValue::CalcNone;
-        int depth = 0;
-        for (size_t i = 1; i < inner.size(); ++i) {
-            if (inner[i] == '(') depth++;
-            else if (inner[i] == ')') depth--;
-            if (depth == 0 && (inner[i] == '+' || inner[i] == '-') &&
-                i > 0 && inner[i-1] == ' ') {
-                opPos = i;
-                op = (inner[i] == '+') ? CSSValue::CalcAdd : CSSValue::CalcSub;
-                break;
-            }
-            if (depth == 0 && inner[i] == '*') {
-                opPos = i;
-                op = CSSValue::CalcMul;
-                break;
-            }
-            if (depth == 0 && inner[i] == '/') {
-                opPos = i;
-                op = CSSValue::CalcDiv;
-                break;
-            }
-        }
-        if (opPos != std::string::npos && op != CSSValue::CalcNone) {
-            CSSValue left = parseCSSValue(trim(inner.substr(0, opPos)));
-            CSSValue right = parseCSSValue(trim(inner.substr(opPos + 1)));
-            CSSValue result;
-            result.value = left.value;
-            result.unit = left.unit;
-            result.calcOp = op;
-            result.calcValue2 = right.value;
-            result.calcUnit2 = right.unit;
-            return result;
-        }
-        return parseCSSValue(inner);
-    }
-
-    // min() / max() / clamp() - evaluate dynamically
-    if (lower.rfind("min(", 0) == 0) {
-        auto parts = splitTopLevel(functionInner(v), ',');
-        if (parts.size() >= 2) {
-            CSSValue a = parseCSSValue(trim(parts[0]));
-            CSSValue b = parseCSSValue(trim(parts[1]));
-            CSSValue result;
-            result.value = a.value;
-            result.unit = a.unit;
-            result.calcOp = CSSValue::CalcMin;
-            result.calcValue2 = b.value;
-            result.calcUnit2 = b.unit;
-            return result;
-        }
-    }
-    if (lower.rfind("max(", 0) == 0) {
-        auto parts = splitTopLevel(functionInner(v), ',');
-        if (parts.size() >= 2) {
-            CSSValue a = parseCSSValue(trim(parts[0]));
-            CSSValue b = parseCSSValue(trim(parts[1]));
-            CSSValue result;
-            result.value = a.value;
-            result.unit = a.unit;
-            result.calcOp = CSSValue::CalcMax;
-            result.calcValue2 = b.value;
-            result.calcUnit2 = b.unit;
-            return result;
-        }
-    }
-    if (lower.rfind("clamp(", 0) == 0) {
-        auto parts = splitTopLevel(functionInner(v), ',');
-        if (parts.size() >= 3) {
-            CSSValue lo = parseCSSValue(trim(parts[0]));
-            CSSValue val2 = parseCSSValue(trim(parts[1]));
-            CSSValue hi = parseCSSValue(trim(parts[2]));
-            CSSValue result;
-            result.value = val2.value;
-            result.unit = val2.unit;
-            result.calcOp = CSSValue::CalcClamp;
-            result.calcValue2 = lo.value;
-            result.calcUnit2 = lo.unit;
-            result.calcValue3 = hi.value;
-            result.calcUnit3 = hi.unit;
-            return result;
+    // calc() / min() / max() / clamp() - evaluate dynamically via CSSMathExpressionParser
+    if (lower.rfind("calc(", 0) == 0 || lower.rfind("min(", 0) == 0 ||
+        lower.rfind("max(", 0) == 0 || lower.rfind("clamp(", 0) == 0) {
+        if (auto expr = CSSMathExpressionParser::parse(v)) {
+            return CSSValue(expr);
         }
     }
 
