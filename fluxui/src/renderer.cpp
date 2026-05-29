@@ -904,6 +904,10 @@ bool svgTagIsSelfClosing(const std::string& tag) {
     return false;
 }
 
+void appendCubic(std::vector<Vec2>& out, Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3);
+void appendQuad(std::vector<Vec2>& out, Vec2 p0, Vec2 p1, Vec2 p2);
+void appendArc(std::vector<Vec2>& out, Vec2 p0, float rx, float ry, float angle, bool largeArcFlag, bool sweepFlag, Vec2 p1, SvgCanvas& canvas);
+
 void svgBlendPixel(SvgCanvas& canvas, int x, int y, Color color, float coverage = 1.0f) {
     if (!canvas.pixels || x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return;
     float srcA = std::clamp(color.a * coverage, 0.0f, 1.0f);
@@ -992,6 +996,81 @@ void fillPolygon(SvgCanvas& canvas, const std::vector<Vec2>& points, Color color
 void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
                  float rx, float ry, Color fill, Color stroke, float strokeWidth) {
     if (w <= 0.0f || h <= 0.0f) return;
+    
+    // Clamp rx and ry according to SVG spec
+    if (rx < 0.0f && ry < 0.0f) rx = ry = 0.0f;
+    else if (rx >= 0.0f && ry < 0.0f) ry = rx;
+    else if (ry >= 0.0f && rx < 0.0f) rx = ry;
+    
+    rx = std::min(rx, w / 2.0f);
+    ry = std::min(ry, h / 2.0f);
+    
+    if (rx > 0.0f && ry > 0.0f) {
+        // High-fidelity Bezier corner approximation (Chromium/Blink parity)
+        std::vector<Vec2> points;
+        const float K = 0.55228475f; // Cubic bezier kappa for elliptical arc approximation
+        
+        // 1. Top edge and top-right corner
+        Vec2 tr_start = {x + rx, y};
+        Vec2 tr_end = {x + w - rx, y};
+        points.push_back(svgMapPoint(canvas, tr_start.x, tr_start.y));
+        points.push_back(svgMapPoint(canvas, tr_end.x, tr_end.y));
+        
+        Vec2 cp1 = {x + w - rx * (1.0f - K), y};
+        Vec2 cp2 = {x + w, y + ry * (1.0f - K)};
+        Vec2 tr_curve_end = {x + w, y + ry};
+        appendCubic(points,
+                    svgMapPoint(canvas, tr_end.x, tr_end.y),
+                    svgMapPoint(canvas, cp1.x, cp1.y),
+                    svgMapPoint(canvas, cp2.x, cp2.y),
+                    svgMapPoint(canvas, tr_curve_end.x, tr_curve_end.y));
+                    
+        // 2. Right edge and bottom-right corner
+        Vec2 br_end = {x + w, y + h - ry};
+        points.push_back(svgMapPoint(canvas, br_end.x, br_end.y));
+        
+        cp1 = {x + w, y + h - ry * (1.0f - K)};
+        cp2 = {x + w - rx * (1.0f - K), y + h};
+        Vec2 br_curve_end = {x + w - rx, y + h};
+        appendCubic(points,
+                    svgMapPoint(canvas, br_end.x, br_end.y),
+                    svgMapPoint(canvas, cp1.x, cp1.y),
+                    svgMapPoint(canvas, cp2.x, cp2.y),
+                    svgMapPoint(canvas, br_curve_end.x, br_curve_end.y));
+                    
+        // 3. Bottom edge and bottom-left corner
+        Vec2 bl_end = {x + rx, y + h};
+        points.push_back(svgMapPoint(canvas, bl_end.x, bl_end.y));
+        
+        cp1 = {x + rx * (1.0f - K), y + h};
+        cp2 = {x, y + h - ry * (1.0f - K)};
+        Vec2 bl_curve_end = {x, y + h - ry};
+        appendCubic(points,
+                    svgMapPoint(canvas, bl_end.x, bl_end.y),
+                    svgMapPoint(canvas, cp1.x, cp1.y),
+                    svgMapPoint(canvas, cp2.x, cp2.y),
+                    svgMapPoint(canvas, bl_curve_end.x, bl_curve_end.y));
+                    
+        // 4. Left edge and top-left corner
+        Vec2 tl_end = {x, y + ry};
+        points.push_back(svgMapPoint(canvas, tl_end.x, tl_end.y));
+        
+        cp1 = {x, y + ry * (1.0f - K)};
+        cp2 = {x + rx * (1.0f - K), y};
+        Vec2 tl_curve_end = {x + rx, y};
+        appendCubic(points,
+                    svgMapPoint(canvas, tl_end.x, tl_end.y),
+                    svgMapPoint(canvas, cp1.x, cp1.y),
+                    svgMapPoint(canvas, cp2.x, cp2.y),
+                    svgMapPoint(canvas, tl_curve_end.x, tl_curve_end.y));
+                    
+        if (fill.a > 0.0f) fillPolygon(canvas, points, fill);
+        if (stroke.a > 0.0f && strokeWidth > 0.0f) {
+            strokePolyline(canvas, points, stroke, strokeWidth, true);
+        }
+        return;
+    }
+    
     if (!canvas.transform.axisAligned()) {
         std::vector<Vec2> points = {
             svgMapPoint(canvas, x, y),
@@ -1011,17 +1090,11 @@ void drawSvgRect(SvgCanvas& canvas, float x, float y, float w, float h,
     float right = std::max(p0.x, p1.x);
     float top = std::min(p0.y, p1.y);
     float bottom = std::max(p0.y, p1.y);
-    float rr = std::max(rx * canvas.scaleX, ry * canvas.scaleY);
     for (int py = (int)std::floor(top); py <= (int)std::ceil(bottom); ++py) {
         for (int px = (int)std::floor(left); px <= (int)std::ceil(right); ++px) {
             float cx = px + 0.5f;
             float cy = py + 0.5f;
             bool inside = cx >= left && cx <= right && cy >= top && cy <= bottom;
-            if (inside && rr > 0.0f) {
-                float qx = std::max(std::max(left + rr - cx, 0.0f), cx - (right - rr));
-                float qy = std::max(std::max(top + rr - cy, 0.0f), cy - (bottom - rr));
-                inside = qx * qx + qy * qy <= rr * rr;
-            }
             if (inside && fill.a > 0.0f) svgBlendPixel(canvas, px, py, fill);
         }
     }
