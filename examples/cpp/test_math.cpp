@@ -48,6 +48,46 @@ int main() {
     std::cout << "calc(10px + (20% - 2rem) * 1.5) resolved to: " << res4 << " (expected 262)" << std::endl;
     assert(res4 == 262.0f);
 
+    // Test new viewport and typographic units
+    auto v5 = FluxUI::StyleSheet::parseCSSValue("calc(10vmin + 5vmax)");
+    // viewportWidth = 1920, viewportHeight = 1080 (defaults in application/stylesheet)
+    // vmin = 1080 -> 10vmin = 108px
+    // vmax = 1920 -> 5vmax = 96px
+    // Total = 108 + 96 = 204px
+    float res5 = v5.resolve(0.0f, 1920.0f, 1080.0f, 16.0f);
+    std::cout << "calc(10vmin + 5vmax) resolved to: " << res5 << " (expected 204)" << std::endl;
+    assert(res5 == 204.0f);
+
+    auto v6 = FluxUI::StyleSheet::parseCSSValue("calc(2ex + 1ic + 1cap + 1rlh)");
+    // ex = 0.5 * emBase = 8px -> 2ex = 16px
+    // ic = emBase = 16px -> 1ic = 16px
+    // cap = 0.7 * emBase = 11.2px -> 1cap = 11.2px
+    // rlh = 16px * 1.2 = 19.2px -> 1rlh = 19.2px
+    // Total = 16 + 16 + 11.2 + 19.2 = 62.4px
+    float res6 = v6.resolve(0.0f, 1920.0f, 1080.0f, 16.0f);
+    std::cout << "calc(2ex + 1ic + 1cap + 1rlh) resolved to: " << res6 << " (expected 62.4)" << std::endl;
+    assert(std::abs(res6 - 62.4f) < 0.001f);
+
+    // Test Container Query Units
+    auto v7 = FluxUI::StyleSheet::parseCSSValue("calc(10cqw + 20cqh)");
+    // cqw using parentSize fallback = 500 -> 10cqw = 50px
+    // cqh using parentSize fallback = 500 -> 20cqh = 100px
+    // Total = 150px
+    float res7 = v7.resolve(500.0f, 1920.0f, 1080.0f, 16.0f);
+    std::cout << "calc(10cqw + 20cqh) resolved to: " << res7 << " (expected 150)" << std::endl;
+    assert(res7 == 150.0f);
+
+    // Test parseLengthPixels integration with complex math expressions!
+    float len1 = FluxUI::StyleSheet::parseLengthPixels("calc(100% + 2rem)", 16.0f);
+    // 100% of emBase (16.0f) + 2rem (32.0f) = 48.0f
+    std::cout << "parseLengthPixels(\"calc(100% + 2rem)\") resolved to: " << len1 << " (expected 48)" << std::endl;
+    assert(len1 == 48.0f);
+
+    float len2 = FluxUI::StyleSheet::parseLengthPixels("clamp(10px, 20%, 30px)", 50.0f);
+    // 20% of emBase (50.0f) = 10px -> clamp(10px, 10px, 30px) = 10.0f
+    std::cout << "parseLengthPixels(\"clamp(10px, 20%, 30px)\") resolved to: " << len2 << " (expected 10)" << std::endl;
+    assert(len2 == 10.0f);
+
     std::cout << "All math tests passed successfully!" << std::endl;
     return 0;
 }

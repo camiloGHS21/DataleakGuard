@@ -4787,49 +4787,13 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
     if (lower == "max-content") return CSSValue::maxContent();
     if (lower == "fit-content") return CSSValue::fitContent();
 
-    // calc() / min() / max() / clamp() - evaluate dynamically via CSSMathExpressionParser
-    if (lower.rfind("calc(", 0) == 0 || lower.rfind("min(", 0) == 0 ||
-        lower.rfind("max(", 0) == 0 || lower.rfind("clamp(", 0) == 0) {
-        if (auto expr = CSSMathExpressionParser::parse(v)) {
-            return CSSValue(expr);
-        }
+    // Parse calc(), min(), max(), clamp(), as well as single values containing units using the robust CSSMathExpressionParser
+    if (auto expr = CSSMathExpressionParser::parse(v)) {
+        return CSSValue(expr);
     }
 
     if (v.back() == '%') {
         return CSSValue::pct(std::stof(v.substr(0, v.size() - 1)));
-    }
-
-    // vw / vh / viewport / typographic units (Blink style)
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "dvw") {
-        return CSSValue::dvw(parseFloat(lower));
-    }
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "dvh") {
-        return CSSValue::dvh(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vw") {
-        return CSSValue::vw(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vh") {
-        return CSSValue::vh(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "ch") {
-        return CSSValue::ch(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "lh") {
-        return CSSValue::lh(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vi") {
-        return CSSValue::vi(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vb") {
-        return CSSValue::vb(parseFloat(lower));
-    }
-
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "rem") {
-        return CSSValue::rem(parseFloat(lower));
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "em") {
-        return CSSValue::em(parseFloat(lower));
     }
 
     // Remove px suffix
@@ -4846,8 +4810,10 @@ CSSValue StyleSheet::parseCSSValue(const std::string& val) {
 
 float StyleSheet::parseLengthPixels(const std::string& val, float emBase) {
     std::string v = trim(val);
-    std::string lower = lowerAscii(v);
-    if (lower.empty() || lower == "auto") return 0.0f;
+    if (v.empty() || lowerAscii(v) == "auto") return 0.0f;
+
+    // Call parseCSSValue to get a rich CSSValue (handles all calc(), min(), max(), clamp(), all units)
+    CSSValue cssVal = parseCSSValue(v);
 
     float vpW = 1920.0f;
     float vpH = 1080.0f;
@@ -4856,43 +4822,15 @@ float StyleSheet::parseLengthPixels(const std::string& val, float emBase) {
         vpH = app->stylesheet().viewportHeight();
     }
 
+    // Special handling for backward compatibility with legacy internal units like __qem
+    std::string lower = lowerAscii(v);
     if (lower.find("__qem") != std::string::npos) {
         return parseFloat(lower) * emBase;
     }
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "rem") {
-        return parseFloat(lower) * 16.0f;
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "em") {
-        return parseFloat(lower) * emBase;
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "ch") {
-        return parseFloat(lower) * emBase * 0.5f; // 0.5em width of '0' character fallback
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "lh") {
-        return parseFloat(lower) * emBase * 1.2f; // line-height: 1.2em fallback
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vi") {
-        return parseFloat(lower) * vpW / 100.0f;
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vb") {
-        return parseFloat(lower) * vpH / 100.0f;
-    }
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "dvw") {
-        return parseFloat(lower) * vpW / 100.0f;
-    }
-    if (lower.size() > 3 && lower.substr(lower.size() - 3) == "dvh") {
-        return parseFloat(lower) * vpH / 100.0f;
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vw") {
-        return parseFloat(lower) * vpW / 100.0f;
-    }
-    if (lower.size() > 2 && lower.substr(lower.size() - 2) == "vh") {
-        return parseFloat(lower) * vpH / 100.0f;
-    }
-    if (lower.back() == '%') {
-        return parseFloat(lower) * emBase / 100.0f;
-    }
-    return parseFloat(lower);
+
+    // Resolve the CSSValue. Since it is a margin/padding/fontsize/border length,
+    // a percentage value is relative to the emBase of the element.
+    return cssVal.resolve(emBase, vpW, vpH, emBase);
 }
 
 float StyleSheet::parseFontSizePixels(const std::string& val, float currentSize) {

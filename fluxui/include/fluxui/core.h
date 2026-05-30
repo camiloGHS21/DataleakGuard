@@ -415,7 +415,14 @@ class CSSMathExpressionNode;
 // ============================================================
 
 struct CSSValue {
-    enum Unit { Px, Percent, Auto, None, Vw, Vh, Em, Rem, MinContent, MaxContent, FitContent, Ch, Lh, Vi, Vb, Dvw, Dvh };
+    enum Unit {
+        Px, Percent, Auto, None, Vw, Vh, Em, Rem, MinContent, MaxContent, FitContent, Ch, Lh, Vi, Vb, Dvw, Dvh,
+        Vmin, Vmax, Rlh, Ex, Ic, Cap,
+        SvW, SvH, SvMin, SvMax,
+        LvW, LvH, LvMin, LvMax,
+        DvMin, DvMax,
+        Cqw, Cqh, Cqi, Cqb, Cqmin, Cqmax
+    };
     float value = 0;
     Unit unit = None;
 
@@ -446,6 +453,28 @@ struct CSSValue {
     static CSSValue vb(float v) { return {v, Vb}; }
     static CSSValue dvw(float v) { return {v, Dvw}; }
     static CSSValue dvh(float v) { return {v, Dvh}; }
+    static CSSValue vmin(float v) { return {v, Vmin}; }
+    static CSSValue vmax(float v) { return {v, Vmax}; }
+    static CSSValue rlh(float v) { return {v, Rlh}; }
+    static CSSValue ex(float v) { return {v, Ex}; }
+    static CSSValue ic(float v) { return {v, Ic}; }
+    static CSSValue cap(float v) { return {v, Cap}; }
+    static CSSValue svw(float v) { return {v, SvW}; }
+    static CSSValue svh(float v) { return {v, SvH}; }
+    static CSSValue svmin(float v) { return {v, SvMin}; }
+    static CSSValue svmax(float v) { return {v, SvMax}; }
+    static CSSValue lvw(float v) { return {v, LvW}; }
+    static CSSValue lvh(float v) { return {v, LvH}; }
+    static CSSValue lvmin(float v) { return {v, LvMin}; }
+    static CSSValue lvmax(float v) { return {v, LvMax}; }
+    static CSSValue dvmin(float v) { return {v, DvMin}; }
+    static CSSValue dvmax(float v) { return {v, DvMax}; }
+    static CSSValue cqw(float v) { return {v, Cqw}; }
+    static CSSValue cqh(float v) { return {v, Cqh}; }
+    static CSSValue cqi(float v) { return {v, Cqi}; }
+    static CSSValue cqb(float v) { return {v, Cqb}; }
+    static CSSValue cqmin(float v) { return {v, Cqmin}; }
+    static CSSValue cqmax(float v) { return {v, Cqmax}; }
     static CSSValue minContent() { return {0, MinContent}; }
     static CSSValue maxContent() { return {0, MaxContent}; }
     static CSSValue fitContent() { return {0, FitContent}; }
@@ -460,6 +489,8 @@ struct CSSValue {
     bool operator!=(const CSSValue& o) const { return !(*this == o); }
 
     static float resolveUnit(float val, Unit u, float parentSize, float vpW, float vpH, float emBase) {
+        float vminVal = std::min(vpW, vpH);
+        float vmaxVal = std::max(vpW, vpH);
         switch (u) {
             case Percent: return val * parentSize / 100.0f;
             case Px: return val;
@@ -473,6 +504,34 @@ struct CSSValue {
             case Vb: return val * vpH / 100.0f;  // Block axis in horizontal writing mode (height)
             case Dvw: return val * vpW / 100.0f; // Dynamic viewport width (same as vw)
             case Dvh: return val * vpH / 100.0f; // Dynamic viewport height (same as vh)
+            case Vmin: return val * vminVal / 100.0f;
+            case Vmax: return val * vmaxVal / 100.0f;
+            case Rlh: return val * 16.0f * 1.2f; // Root line height fallback: 16px font-size * 1.2 factor = 19.2px
+            case Ex: return val * emBase * 0.5f;
+            case Ic: return val * emBase;
+            case Cap: return val * emBase * 0.7f;
+            case SvW: return val * vpW / 100.0f;
+            case SvH: return val * vpH / 100.0f;
+            case SvMin: return val * vminVal / 100.0f;
+            case SvMax: return val * vmaxVal / 100.0f;
+            case LvW: return val * vpW / 100.0f;
+            case LvH: return val * vpH / 100.0f;
+            case LvMin: return val * vminVal / 100.0f;
+            case LvMax: return val * vmaxVal / 100.0f;
+            case DvMin: return val * vminVal / 100.0f;
+            case DvMax: return val * vmaxVal / 100.0f;
+            case Cqw: return val * (parentSize > 0.0f ? parentSize : vpW) / 100.0f;
+            case Cqh: return val * (parentSize > 0.0f ? parentSize : vpH) / 100.0f;
+            case Cqi: return val * (parentSize > 0.0f ? parentSize : vpW) / 100.0f;
+            case Cqb: return val * (parentSize > 0.0f ? parentSize : vpH) / 100.0f;
+            case Cqmin: {
+                float cSize = parentSize > 0.0f ? parentSize : vminVal;
+                return val * cSize / 100.0f;
+            }
+            case Cqmax: {
+                float cSize = parentSize > 0.0f ? parentSize : vmaxVal;
+                return val * cSize / 100.0f;
+            }
             default: return val; // For raw unit-less numbers in calculations
         }
     }
@@ -783,6 +842,28 @@ private:
                 else if (lowerSuffix == "vb") unit = CSSValue::Vb;
                 else if (lowerSuffix == "dvw") unit = CSSValue::Dvw;
                 else if (lowerSuffix == "dvh") unit = CSSValue::Dvh;
+                else if (lowerSuffix == "vmin") unit = CSSValue::Vmin;
+                else if (lowerSuffix == "vmax") unit = CSSValue::Vmax;
+                else if (lowerSuffix == "rlh") unit = CSSValue::Rlh;
+                else if (lowerSuffix == "ex") unit = CSSValue::Ex;
+                else if (lowerSuffix == "ic") unit = CSSValue::Ic;
+                else if (lowerSuffix == "cap") unit = CSSValue::Cap;
+                else if (lowerSuffix == "svw") unit = CSSValue::SvW;
+                else if (lowerSuffix == "svh") unit = CSSValue::SvH;
+                else if (lowerSuffix == "svmin") unit = CSSValue::SvMin;
+                else if (lowerSuffix == "svmax") unit = CSSValue::SvMax;
+                else if (lowerSuffix == "lvw") unit = CSSValue::LvW;
+                else if (lowerSuffix == "lvh") unit = CSSValue::LvH;
+                else if (lowerSuffix == "lvmin") unit = CSSValue::LvMin;
+                else if (lowerSuffix == "lvmax") unit = CSSValue::LvMax;
+                else if (lowerSuffix == "dvmin") unit = CSSValue::DvMin;
+                else if (lowerSuffix == "dvmax") unit = CSSValue::DvMax;
+                else if (lowerSuffix == "cqw") unit = CSSValue::Cqw;
+                else if (lowerSuffix == "cqh") unit = CSSValue::Cqh;
+                else if (lowerSuffix == "cqi") unit = CSSValue::Cqi;
+                else if (lowerSuffix == "cqb") unit = CSSValue::Cqb;
+                else if (lowerSuffix == "cqmin") unit = CSSValue::Cqmin;
+                else if (lowerSuffix == "cqmax") unit = CSSValue::Cqmax;
                 else {
                     unit = CSSValue::Px;
                 }
