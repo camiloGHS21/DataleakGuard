@@ -148,6 +148,42 @@ int main() {
         std::cout << "Test 2: Sibling combinators matching (+ and ~) passed successfully." << std::endl;
     }
 
+    // Test 3: W3C Spec-Compliant Multi-Pass StyleCascade & EM Resolution
+    {
+        StyleSheet sheet;
+        sheet.parse(".box { padding: 2em; font-size: 20px; }");
+
+        // Resolve style for widget with class="box"
+        auto widget = std::make_shared<Panel>("box");
+        Style style = sheet.resolve("box", "", "panel", {}, nullptr, widget.get());
+        style.resolveLogicalProperties();
+
+        // Under standard Cascade/Blink resolution:
+        // 1. font-size (high-priority typo property) resolves first to 20px
+        // 2. padding resolves next using style.fontSize, resulting in 2em * 20px = 40px
+        assert(style.fontSize == 20.0f);
+        assert(style.padding.left == 40.0f);
+        assert(style.padding.right == 40.0f);
+        assert(style.padding.top == 40.0f);
+        assert(style.padding.bottom == 40.0f);
+
+        // Test custom variables resolved in first pass
+        StyleSheet sheetVar;
+        sheetVar.parse(".var-box { --base-padding: 1.5em; font-size: 10px; padding: var(--base-padding); }");
+
+        auto widgetVar = std::make_shared<Panel>("var-box");
+        Style styleVar = sheetVar.resolve("var-box", "", "panel", {}, nullptr, widgetVar.get());
+        styleVar.resolveLogicalProperties();
+
+        // 1. --base-padding resolved as 1.5em (Pass 1)
+        // 2. font-size resolved as 10px (Pass 2)
+        // 3. padding resolved using --base-padding (1.5em) relative to 10px -> 15px (Pass 3)
+        assert(styleVar.fontSize == 10.0f);
+        assert(styleVar.padding.left == 15.0f);
+
+        std::cout << "Test 3: W3C Multi-Pass StyleCascade and EM resolution passed successfully." << std::endl;
+    }
+
     std::cout << "All Selector Parity Tests Passed!" << std::endl;
     return 0;
 }

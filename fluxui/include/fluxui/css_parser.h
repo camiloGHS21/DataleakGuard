@@ -183,6 +183,7 @@ public:
                              bool* valid = nullptr) const;
 
     // Merge a resolved style onto a base style
+    static const StyleSheet& getUaSheet();
     static uint64_t computeInheritedHash(const Style& style);
     static void mergeProperty(Style& style, const std::string& name, const std::string& value, float emBase = 16.0f);
     static bool mergePropertyPart1(Style& style, const std::string& name, const std::string& value, float emBase = 16.0f);

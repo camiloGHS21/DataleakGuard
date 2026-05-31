@@ -2128,6 +2128,78 @@ uint64_t StyleSheet::computeInheritedHash(const Style& style) {
     return hash;
 }
 
+enum class CascadeOrigin {
+    UserAgentNormal = 0,
+    UserNormal,
+    AuthorNormal,
+    InlineNormal,
+    Animation,
+    InlineImportant,
+    AuthorImportant,
+    UserImportant,
+    UserAgentImportant,
+    Transition
+};
+
+static bool isHighPriorityProperty(const std::string& name) {
+    return name == "font-size" ||
+           name == "font" ||
+           name == "font-weight" ||
+           name == "font-style" ||
+           name == "font-family" ||
+           name == "direction" ||
+           name == "line-height";
+}
+
+struct StyleCascade {
+    struct Entry {
+        const CSSProperty* property = nullptr;
+        std::string customValue;
+        int specificity = 0;
+        CascadeOrigin origin = CascadeOrigin::AuthorNormal;
+        uint32_t sourceOrder = 0;
+        int layerPriority = 0;
+
+        bool isWorseThan(const Entry& o) const {
+            if (origin != o.origin) return origin < o.origin;
+            
+            if (layerPriority != o.layerPriority) {
+                bool isImportant = (origin == CascadeOrigin::AuthorImportant || 
+                                    origin == CascadeOrigin::InlineImportant ||
+                                    origin == CascadeOrigin::UserImportant ||
+                                    origin == CascadeOrigin::UserAgentImportant);
+                if (isImportant) {
+                    return layerPriority > o.layerPriority; // Reverse priority for important layers
+                } else {
+                    return layerPriority < o.layerPriority; // Standard priority for normal layers
+                }
+            }
+
+            if (specificity != o.specificity) return specificity < o.specificity;
+            return sourceOrder < o.sourceOrder;
+        }
+    };
+
+    std::unordered_map<std::string, Entry> baseProperties;
+    std::unordered_map<std::string, Entry> hoverProperties;
+    std::unordered_map<std::string, Entry> focusProperties;
+    std::unordered_map<std::string, Entry> activeProperties;
+
+    void add(const std::string& name, const CSSProperty* prop, const std::string& customVal, int specificity, CascadeOrigin origin, uint32_t sourceOrder, std::string_view pseudo, int layerPri = 0) {
+        Entry entry{prop, customVal, specificity, origin, sourceOrder, layerPri};
+        
+        std::unordered_map<std::string, Entry>* targetMap = &baseProperties;
+        if (pseudo == "hover") targetMap = &hoverProperties;
+        else if (pseudo == "focus" || pseudo == "focus-visible") targetMap = &focusProperties;
+        else if (pseudo == "active") targetMap = &activeProperties;
+
+        auto it = targetMap->find(name);
+        if (it == targetMap->end() || it->second.isWorseThan(entry)) {
+            (*targetMap)[name] = entry;
+        }
+    }
+};
+
 Style StyleSheet::resolve(std::string_view className,
                           std::string_view id,
                           std::string_view type,
@@ -2153,7 +2225,8 @@ Style StyleSheet::resolve(std::string_view className,
     } else {
         style.fontSize = 16.0f;
     }
-    applyUserAgentDefaults(style, type, ancestors, widget);
+
+    // Initialize custom properties with defaults and inherited variables
     for (const auto& entry : propertyDefinitions_) {
         if (!entry.second.initialValue.empty()) {
             style.customProperties[entry.second.name] = entry.second.initialValue;
@@ -2177,56 +2250,36 @@ Style StyleSheet::resolve(std::string_view className,
         }
     }
 
-    struct WinningProperty {
-        const CSSProperty* property = nullptr;
-        int specificity = 0;
-        bool important = false;
-        int layerPriority = 0;
+    StyleCascade cascade;
 
-        bool isWorseThan(const WinningProperty& o) const {
-            if (important != o.important) return !important && o.important;
-            if (layerPriority != o.layerPriority) {
-                if (important) {
-                    return layerPriority > o.layerPriority;
-                } else {
-                    return layerPriority < o.layerPriority;
-                }
+    // 1. Gather all matched User Agent rules
+    const StyleSheet& uaSheet = getUaSheet();
+    std::vector<size_t> uaCandidateRules;
+    uaSheet.collectCandidateRules("", "", type, uaCandidateRules);
+    for (size_t ruleIndex : uaCandidateRules) {
+        if (ruleIndex >= uaSheet.rules.size()) continue;
+        const auto& rule = uaSheet.rules[ruleIndex];
+        std::string_view pseudo;
+        if (selectorMatches(rule, "", "", type, ancestors, &pseudo, widget)) {
+            if (targetPseudo.empty()) {
+                if (!pseudo.empty() && pseudo != "hover" &&
+                    pseudo != "focus" && pseudo != "focus-visible" &&
+                    pseudo != "active") continue;
+            } else {
+                if (pseudo != targetPseudo) continue;
             }
-            if (specificity != o.specificity) return specificity < o.specificity;
-            return property->sourceOrder < o.property->sourceOrder;
-        }
-    };
 
-    struct CascadeMap {
-        struct Entry {
-            std::string_view name;
-            WinningProperty winning;
-        };
-        std::vector<Entry> entries;
-
-        void add(std::string_view name, const WinningProperty& prop) {
-            for (auto& entry : entries) {
-                if (entry.name == name) {
-                    if (entry.winning.isWorseThan(prop)) {
-                        entry.winning = prop;
-                    }
-                    return;
-                }
+            for (const auto& prop : rule.properties) {
+                std::string value = prop.value;
+                bool isImp = stripImportant(value);
+                CascadeOrigin origin = isImp ? CascadeOrigin::UserAgentImportant : CascadeOrigin::UserAgentNormal;
+                cascade.add(prop.name.getString(), &prop, value, rule.specificity, origin, prop.sourceOrder, pseudo);
             }
-            entries.push_back({name, prop});
         }
+    }
 
-        void clear() {
-            entries.clear();
-        }
-    };
-
-    CascadeMap baseMap;
-    CascadeMap hoverMap;
-    CascadeMap focusMap;
-    CascadeMap activeMap;
+    // 2. Gather all matched Author rules
     std::vector<size_t> candidateRules;
-
     collectCandidateRules(className, id, type, candidateRules);
 
     bool insideBlinkDoc = false;
@@ -2255,11 +2308,6 @@ Style StyleSheet::resolve(std::string_view className,
         if (ruleIndex >= rules.size()) continue;
         const auto& rule = rules[ruleIndex];
         if (insideBlinkDoc) {
-            // Allow UA-level type-only selectors (e.g. "a", "dialog", "button",
-            // "a:hover") through even inside the blink sandbox so that elements
-            // get their correct default styles.  Only block author-level rules
-            // (those with class '.' or id '#' selectors) that don't explicitly
-            // target blink-native-doc.
             const std::string& sel = rule.selector;
             bool isAuthorRule = (sel.find('.') != std::string::npos ||
                                  sel.find('#') != std::string::npos);
@@ -2282,68 +2330,82 @@ Style StyleSheet::resolve(std::string_view className,
             for (const auto& prop : rule.properties) {
                 std::string value = prop.value;
                 bool isImp = stripImportant(value);
+                CascadeOrigin origin = isImp ? CascadeOrigin::AuthorImportant : CascadeOrigin::AuthorNormal;
                 int layerPri = getLayerPriority(rule.layer);
-                WinningProperty cascaded{&prop, rule.specificity, isImp, layerPri};
-                if (pseudo == "hover") {
-                    hoverMap.add(prop.name.view(), cascaded);
-                } else if (pseudo == "focus" || pseudo == "focus-visible") {
-                    focusMap.add(prop.name.view(), cascaded);
-                } else if (pseudo == "active") {
-                    activeMap.add(prop.name.view(), cascaded);
-                } else {
-                    baseMap.add(prop.name.view(), cascaded);
-                }
+                cascade.add(prop.name.getString(), &prop, value, rule.specificity, origin, prop.sourceOrder, pseudo, layerPri);
             }
         }
     }
 
-    auto applyCustomProperties = [&](const CascadeMap& map,
-                                     FastCustomProperties& customProperties) {
-        for (const auto& item : map.entries) {
-            if (item.name.rfind("--", 0) != 0) continue;
-            bool valid = true;
-            std::string value = resolveValueInternal(item.winning.property->value, customProperties.getMapPointer(), &valid);
-            if (!valid) continue;
-            stripImportant(value);
-
-            // Syntax validation check
-            auto defIt = propertyDefinitions_.find(std::string(item.name));
-            if (defIt != propertyDefinitions_.end()) {
-                if (!isValidSyntax(value, defIt->second.syntax)) {
-                    value = defIt->second.initialValue;
-                }
-            }
-
-            customProperties[std::string(item.name)] = value;
+    // 3. Gather inline style properties (highest cascade priority)
+    if (widget) {
+        for (const auto& prop : widget->inlineProperties) {
+            std::string value = prop.value;
+            bool isImp = stripImportant(value);
+            CascadeOrigin origin = isImp ? CascadeOrigin::InlineImportant : CascadeOrigin::InlineNormal;
+            cascade.add(prop.name.getString(), &prop, value, 1000000, origin, prop.sourceOrder, "");
         }
-    };
+    }
 
+    // 4. Multi-pass cascade style resolution lambda
     Style initialStyle;
-    auto applyProperties = [&](const CascadeMap& map,
+    auto applyProperties = [&](const std::unordered_map<std::string, StyleCascade::Entry>& map,
                                auto mergeFn,
-                               const FastCustomProperties& customProperties) {
-        for (const auto& item : map.entries) {
-            if (item.name.rfind("--", 0) == 0) continue;
-            bool valid = true;
-            std::string value = resolveValueInternal(item.winning.property->value, customProperties.getMapPointer(), &valid);
-            if (!valid) continue;
-            stripImportant(value);
-            if (applyCSSWideProperty(style,
-                                     std::string(item.name),
-                                     lowerAscii(value),
-                                     parentStyle,
-                                     initialStyle)) {
-                continue;
+                               FastCustomProperties& customProperties,
+                               int pass) {
+        for (const auto& item : map) {
+            const auto& entry = item.second;
+            bool isCustom = item.first.rfind("--", 0) == 0;
+            if (pass == 1) {
+                if (!isCustom) continue;
+            } else {
+                if (isCustom) continue;
+                bool isHigh = isHighPriorityProperty(item.first);
+                if (pass == 2 && !isHigh) continue;
+                if (pass == 3 && isHigh) continue;
             }
-            mergeFn(style, std::string(item.name), value);
+
+            bool valid = true;
+            std::string value = resolveValueInternal(entry.customValue, customProperties.getMapPointer(), &valid);
+            if (!valid) continue;
+
+            if (pass == 1) {
+                // Syntax validation check
+                auto defIt = propertyDefinitions_.find(item.first);
+                if (defIt != propertyDefinitions_.end()) {
+                    if (!isValidSyntax(value, defIt->second.syntax)) {
+                        value = defIt->second.initialValue;
+                    }
+                }
+                customProperties[item.first] = value;
+            } else {
+                if (applyCSSWideProperty(style,
+                                         item.first,
+                                         lowerAscii(value),
+                                         parentStyle,
+                                         initialStyle)) {
+                    continue;
+                }
+                mergeFn(style, item.first, value);
+            }
         }
     };
 
-    applyCustomProperties(baseMap, style.customProperties);
-    applyProperties(baseMap, [](Style& target, const std::string& name, const std::string& value) {
-        StyleSheet::mergeProperty(target, name, value, target.fontSize);
-    }, style.customProperties);
+    // --- BASE STATE RESOLUTION ---
+    // Pass 1: Custom variables
+    applyProperties(cascade.baseProperties, [](Style&, const std::string&, const std::string&){}, style.customProperties, 1);
 
+    // Pass 2: High-priority typographical metrics (computes style.fontSize first)
+    applyProperties(cascade.baseProperties, [](Style& target, const std::string& name, const std::string& value) {
+        StyleSheet::mergeProperty(target, name, value, target.fontSize);
+    }, style.customProperties, 2);
+
+    // Pass 3: Standard dependent properties (calculates em/margins correctly using the resolved fontSize)
+    applyProperties(cascade.baseProperties, [](Style& target, const std::string& name, const std::string& value) {
+        StyleSheet::mergeProperty(target, name, value, target.fontSize);
+    }, style.customProperties, 3);
+
+    // --- HOVER STATE RESOLUTION ---
     auto hoverCustomProperties = style.customProperties;
     if (parentStyle && !parentStyle->hoverCustomProperties.empty()) {
         for (const auto& entry : parentStyle->hoverCustomProperties) {
@@ -2357,8 +2419,12 @@ Style StyleSheet::resolve(std::string_view className,
             }
         }
     }
-    applyCustomProperties(hoverMap, hoverCustomProperties);
+    applyProperties(cascade.hoverProperties, [](Style&, const std::string&, const std::string&){}, hoverCustomProperties, 1);
+    applyProperties(cascade.hoverProperties, [](Style& target, const std::string& name, const std::string& value) {
+        StyleSheet::mergeHoverProperty(target, name, value);
+    }, hoverCustomProperties, 3);
 
+    // --- FOCUS STATE RESOLUTION ---
     auto focusCustomProperties = style.customProperties;
     if (parentStyle && !parentStyle->focusCustomProperties.empty()) {
         for (const auto& entry : parentStyle->focusCustomProperties) {
@@ -2372,8 +2438,12 @@ Style StyleSheet::resolve(std::string_view className,
             }
         }
     }
-    applyCustomProperties(focusMap, focusCustomProperties);
+    applyProperties(cascade.focusProperties, [](Style&, const std::string&, const std::string&){}, focusCustomProperties, 1);
+    applyProperties(cascade.focusProperties, [](Style& target, const std::string& name, const std::string& value) {
+        StyleSheet::mergeFocusProperty(target, name, value);
+    }, focusCustomProperties, 3);
 
+    // --- ACTIVE STATE RESOLUTION ---
     auto activeCustomProperties = style.customProperties;
     if (parentStyle && !parentStyle->activeCustomProperties.empty()) {
         for (const auto& entry : parentStyle->activeCustomProperties) {
@@ -2387,21 +2457,14 @@ Style StyleSheet::resolve(std::string_view className,
             }
         }
     }
-    applyCustomProperties(activeMap, activeCustomProperties);
+    applyProperties(cascade.activeProperties, [](Style&, const std::string&, const std::string&){}, activeCustomProperties, 1);
+    applyProperties(cascade.activeProperties, [](Style& target, const std::string& name, const std::string& value) {
+        StyleSheet::mergeActiveProperty(target, name, value);
+    }, activeCustomProperties, 3);
 
     style.hoverCustomProperties = hoverCustomProperties;
     style.focusCustomProperties = focusCustomProperties;
     style.activeCustomProperties = activeCustomProperties;
-
-    applyProperties(hoverMap, [](Style& target, const std::string& name, const std::string& value) {
-        StyleSheet::mergeHoverProperty(target, name, value);
-    }, hoverCustomProperties);
-    applyProperties(focusMap, [](Style& target, const std::string& name, const std::string& value) {
-        StyleSheet::mergeFocusProperty(target, name, value);
-    }, focusCustomProperties);
-    applyProperties(activeMap, [](Style& target, const std::string& name, const std::string& value) {
-        StyleSheet::mergeActiveProperty(target, name, value);
-    }, activeCustomProperties);
 
     style.inheritedHash = computeInheritedHash(style);
 #if FLUXUI_STYLE_CACHE_SIZE > 0
@@ -2872,10 +2935,7 @@ static bool applyCSSWideProperty(Style& target,
     return true;
 }
 
-void StyleSheet::applyUserAgentDefaults(Style& style,
-                                        std::string_view type,
-                                        const std::vector<CSSSelectorNode>& ancestors,
-                                        const Widget* widget) {
+const StyleSheet& StyleSheet::getUaSheet() {
     static StyleSheet uaSheet;
     static bool initialized = false;
     if (!initialized) {
@@ -3216,7 +3276,14 @@ void StyleSheet::applyUserAgentDefaults(Style& style,
         )CSS");
         initialized = true;
     }
+    return uaSheet;
+}
 
+void StyleSheet::applyUserAgentDefaults(Style& style,
+                                        std::string_view type,
+                                        const std::vector<CSSSelectorNode>& ancestors,
+                                        const Widget* widget) {
+    const StyleSheet& uaSheet = getUaSheet();
     std::vector<size_t> candidateRules;
     uaSheet.collectCandidateRules("", "", type, candidateRules);
 
